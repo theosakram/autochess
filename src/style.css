@@ -1,0 +1,230 @@
+:root {
+  --bg: #14161c;
+  --panel: #1d2029;
+  --cell: #262a35;
+  --cell-alt: #2b303c;
+  --text: #e6e8ee;
+  --muted: #8b90a0;
+  --accent: #e0a63a;
+  --tier-1: #8a8f99;
+  --tier-2: #3fae5a;
+  --tier-3: #3a84d6;
+  --tier-4: #a457d6;
+  --tier-5: #e0a63a;
+  font-family: system-ui, sans-serif;
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+kbd {
+  font-size: 0.75em;
+  padding: 0 4px;
+  border: 1px solid var(--muted);
+  border-radius: 3px;
+  color: var(--muted);
+}
+
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: var(--panel);
+  border-radius: 8px;
+  color: var(--muted);
+}
+.hud b { color: var(--text); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 16px;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.board,
+.bench {
+  width: min(100%, 560px);
+  align-self: center;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.bench {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.cell {
+  aspect-ratio: 1;
+  background: var(--cell);
+  border-radius: 4px;
+  display: flex;
+}
+.board .cell:nth-child(16n + 2),
+.board .cell:nth-child(16n + 4),
+.board .cell:nth-child(16n + 6),
+.board .cell:nth-child(16n + 8),
+.board .cell:nth-child(16n + 9),
+.board .cell:nth-child(16n + 11),
+.board .cell:nth-child(16n + 13),
+.board .cell:nth-child(16n + 15) {
+  background: var(--cell-alt);
+}
+
+.cell.enemy { opacity: 0.35; }
+/* Divider between the enemy half and yours. */
+.board .cell:nth-child(n + 25):nth-child(-n + 32) { margin-bottom: 6px; }
+
+.unit {
+  flex: 1;
+  margin: 3px;
+  border-radius: 4px;
+  border: 2px solid var(--tier-color);
+  background: color-mix(in srgb, var(--tier-color) 25%, var(--cell));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+}
+.unit-star { color: var(--accent); font-size: 10px; }
+
+.tier-1 { --tier-color: var(--tier-1); }
+.tier-2 { --tier-color: var(--tier-2); }
+.tier-3 { --tier-color: var(--tier-3); }
+.tier-4 { --tier-color: var(--tier-4); }
+.tier-5 { --tier-color: var(--tier-5); }
+
+.shop {
+  padding: 8px;
+  background: var(--panel);
+  border-radius: 8px;
+  border: 2px dashed transparent;
+}
+.dragging .shop {
+  border-color: #d65151;
+}
+.dragging .shop::before {
+  content: 'Drop here to sell';
+  display: block;
+  margin-bottom: 6px;
+  color: #d65151;
+  font-size: 13px;
+}
+
+.shop-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.shop-card {
+  height: 90px;
+  border-radius: 6px;
+  border: 2px solid var(--tier-color, transparent);
+  background: color-mix(in srgb, var(--tier-color, var(--cell)) 18%, var(--cell));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.shop-card.empty { background: var(--cell); }
+/* Buying this completes a merge. */
+.shop-card.upgrade { box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
+.shop-card.upgrade::after { content: '★★'; color: var(--accent); font-size: 11px; }
+.shop-card:disabled { opacity: 0.45; cursor: not-allowed; }
+.shop-card:not(:disabled):hover { filter: brightness(1.2); }
+.shop-card .traits { font-size: 11px; color: var(--muted); }
+.shop-card .cost { color: var(--accent); font-weight: 600; }
+
+.shop-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.shop-buttons button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #3a3f4d;
+  background: var(--cell);
+}
+.shop-buttons button:hover { background: var(--cell-alt); }
+.shop-buttons .primary { border-color: var(--accent); }
+
+.opponents {
+  padding: 8px 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.opponents h3 { margin: 4px 0 8px; font-size: 14px; }
+.opponents ul { list-style: none; margin: 0; padding: 0; }
+.opponents li {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--cell);
+}
+.opponents li span:last-child { color: var(--muted); }
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  background: #d65151;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; }
+  .unit { font-size: 9px; }
+  .shop-card { height: 70px; font-size: 12px; }
+}
