@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction, type Action } from './actions';
-import { BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, POOL_SIZE, REROLL_COST, START_LEVEL } from './config';
+import { BASE_INCOME, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
+import { interest, levelUpCost } from './player';
 import { runBot } from './bot';
 import { createGame, resolveCombat, startRound } from './game';
 import { copiesOf } from './merge';
 import { DRAGON_ALTAR, SCAVENGER } from './traits';
 import { nextInt } from './rng';
+import { isItemCard } from './items';
+import { returnShop } from './shop';
 import type { GameState } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
 
@@ -39,7 +42,8 @@ function you(state: GameState) {
 function totalCopies(state: GameState): number {
   let n = Object.values(state.pool).reduce((a, b) => a + b, 0);
   for (const p of state.players) {
-    n += p.shop.filter(Boolean).length;
+    // Upgrade cards aren't units, so they hold no copies.
+    n += p.shop.filter((id) => id && !isItemCard(id)).length;
     for (const u of [...p.bench, ...p.board]) if (u) n += copiesOf(u);
   }
   return n;
@@ -60,7 +64,8 @@ describe('game setup', () => {
     expect(p.board.every((u) => u === null)).toBe(true);
     const starters = p.bench.filter((u) => u !== null);
     expect(starters.reduce((n, u) => n + copiesOf(u), 0)).toBe(FREE_UNITS);
-    expect(starters.every((u) => UNIT_BY_ID[u.defId].tier <= 2)).toBe(true);
+    // Drawn at level-3 odds, which top out at 3-gold.
+    expect(starters.every((u) => SHOP_ODDS[START_LEVEL - 1][UNIT_BY_ID[u.defId].tier - 1] > 0)).toBe(true);
     expect(totalCopies(state)).toBe(POOL_TOTAL);
   });
 
@@ -224,7 +229,7 @@ describe('invariants', () => {
       p.gold += nextInt(fuzz, 3);
       const actions: Action[] = [
         { type: 'reroll' },
-        { type: 'buyXp' },
+        { type: 'levelUp' },
         { type: 'buy', slot: nextInt(fuzz, 5) },
         { type: 'sell', from: loc() },
         { type: 'move', from: loc(), to: loc() },
@@ -275,7 +280,7 @@ describe('scavenger', () => {
   }
 
   test('level 2 takes the cheapest shop unit for free, after the refresh', () => {
-    const { state, p } = setup(['scrapper', 'magpie']);
+    const { state, p } = setup(['scrapper', 'penari']);
     const bonuses = startRound(state);
     const mine = bonuses.find((b) => b.playerId === p.id)!;
     expect(mine.trait).toBe('scavenger');
@@ -290,17 +295,17 @@ describe('scavenger', () => {
   });
 
   test('level 3 also pays 2 gold', () => {
-    const { state, p } = setup(['scrapper', 'magpie', 'junkbaron']);
+    const { state, p } = setup(['scrapper', 'penari', 'junkbaron']);
     const gold = p.gold;
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
     expect(mine.gold).toBe(SCAVENGER.gold[1]);
     expect(mine.looted).not.toBeNull();
     // +2 on top of normal income and interest
-    expect(p.gold).toBe(gold + 5 + Math.min(5, Math.floor(gold / 10)) + SCAVENGER.gold[1]);
+    expect(p.gold).toBe(gold + BASE_INCOME + interest(gold) + SCAVENGER.gold[1]);
   });
 
   test('skipped when the bench is full and the unit would not merge', () => {
-    const { state, p } = setup(['scrapper', 'magpie']);
+    const { state, p } = setup(['scrapper', 'penari']);
     p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: 600 + i, defId: 'titan', star: 1 }));
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
     expect(mine.looted).toBeNull();
@@ -310,5 +315,79 @@ describe('scavenger', () => {
   test('no Scavenger active, no payout', () => {
     const state = newGame();
     expect(startRound(state).filter((b) => b.playerId === you(state).id)).toHaveLength(0);
+  });
+});
+
+describe('economy', () => {
+  test('shop odds cover every level and each row sums to 100', () => {
+    expect(SHOP_ODDS).toHaveLength(MAX_LEVEL);
+    for (const row of SHOP_ODDS) expect(row.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  test('interest is +2 per 10 gold, capped at +4', () => {
+    expect([0, 9, 10, 19, 20, 35, 99].map(interest)).toEqual([0, 0, 2, 2, 4, 4, 4]);
+  });
+
+  test('level up buys exactly the missing xp, in one click', () => {
+    const state = newGame();
+    const p = you(state);
+    p.xp = 1;
+    const cost = levelUpCost(p)!;
+    const level = p.level;
+    p.gold = cost - 1;
+    expect(applyAction(state, p.id, { type: 'levelUp' })).toEqual({ ok: false, error: `Need ${cost} gold to level up` });
+    p.gold = cost;
+    expect(applyAction(state, p.id, { type: 'levelUp' }).ok).toBe(true);
+    expect([p.level, p.xp, p.gold]).toEqual([level + 1, 0, 0]);
+  });
+
+  test('no level up past max level', () => {
+    const state = newGame();
+    const p = you(state);
+    p.level = MAX_LEVEL;
+    p.gold = 999;
+    expect(levelUpCost(p)).toBeNull();
+    expect(applyAction(state, p.id, { type: 'levelUp' }).ok).toBe(false);
+  });
+});
+
+describe('shop lock', () => {
+  test('a locked shop skips one refresh, keeps its gaps, then unlocks', () => {
+    const state = newGame();
+    const p = you(state);
+    returnShop(state, p); // hand-built shop below, so the old one goes back to the pool first
+    p.shop = ['titan', null, null, null, null];
+    state.pool.titan--;
+    expect(applyAction(state, p.id, { type: 'toggleLock' }).ok).toBe(true);
+    startRound(state);
+    expect(p.shop).toEqual(['titan', null, null, null, null]);
+    expect(p.shopLocked).toBe(false);
+    startRound(state);
+    expect(p.shop.filter(Boolean)).toHaveLength(5);
+    expect(totalCopies(state)).toBe(POOL_TOTAL);
+  });
+
+  test('Scavenger loots from the kept shop: lock a lone 5-cost and get it next round', () => {
+    const state = newGame();
+    const p = you(state);
+    p.board[0] = { uid: 700, defId: 'scrapper', star: 1 };
+    p.board[1] = { uid: 701, defId: 'penari', star: 1 };
+    returnShop(state, p);
+    p.shop = [null, null, 'titan', null, null];
+    state.pool.titan--;
+    applyAction(state, p.id, { type: 'toggleLock' });
+    const mine = startRound(state).find((b) => b.playerId === p.id)!;
+    expect(mine.looted).toBe('titan');
+    expect(p.bench.some((u) => u?.defId === 'titan')).toBe(true);
+    expect(p.shop.every((id) => id === null)).toBe(true);
+  });
+
+  test('reroll still works while locked, and the lock stays', () => {
+    const state = newGame();
+    const p = you(state);
+    p.gold = 10;
+    applyAction(state, p.id, { type: 'toggleLock' });
+    expect(applyAction(state, p.id, { type: 'reroll' }).ok).toBe(true);
+    expect(p.shopLocked).toBe(true);
   });
 });

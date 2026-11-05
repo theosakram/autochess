@@ -24,7 +24,7 @@ body {
 }
 
 #app {
-  max-width: 1280px;
+  max-width: 1360px;
   margin: 0 auto;
   padding: 16px;
 }
@@ -54,6 +54,10 @@ kbd {
   color: var(--muted);
 }
 .hud b { color: var(--text); }
+.hud-stat { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.hud-stat small { color: var(--muted); font-size: 11px; }
+.xp-bar { display: inline-block; width: 44px; height: 6px; border-radius: 3px; background: var(--cell); overflow: hidden; }
+.xp-bar span { display: block; height: 100%; background: #7c6cf0; }
 .hud-book {
   margin-left: auto;
   padding: 0 4px;
@@ -64,12 +68,18 @@ kbd {
 }
 .hud-book:hover { filter: brightness(1.3); transform: scale(1.1); }
 
+/* Left (synergies + damage) and right columns are the same width, so the board sits dead centre. */
 .layout {
   display: grid;
-  grid-template-columns: 76px 1fr 220px;
+  grid-template-columns: 64px 160px minmax(0, 1fr) 240px;
+  grid-template-areas: 'traits meter main side';
   align-items: start;
   gap: 16px;
 }
+.layout > .traits { grid-area: traits; }
+.layout > .meter { grid-area: meter; }
+.layout > main { grid-area: main; }
+.layout > .side { grid-area: side; }
 
 main {
   display: flex;
@@ -77,16 +87,18 @@ main {
   gap: 12px;
 }
 
+/* Board, bench and shop share one width so the play area lines up. */
 .board,
-.bench {
-  width: min(100%, 560px);
+.bench,
+.shop {
+  width: min(100%, 660px);
   align-self: center;
 }
 
 .board {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(var(--cols), 1fr);
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   background: var(--panel);
@@ -95,7 +107,7 @@ main {
 
 .bench {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   background: var(--panel);
@@ -138,6 +150,13 @@ main {
   user-select: none;
 }
 .unit-star { color: var(--accent); font-size: 10px; }
+.unit-name, .shop-card .unit-name, .shop-card .traits {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unit, .shop-card { min-width: 0; }
 /* Trait icons in the chip's top-left corner (below the combat hp/mana bars). */
 .unit-traits {
   position: absolute;
@@ -160,20 +179,28 @@ main {
   border-radius: 8px;
   border: 2px dashed transparent;
 }
+/* Sell hint while dragging. Must not change layout: anything that moves the dragged unit
+   at drag start makes Chrome cancel the drag. */
+.shop { position: relative; }
 .dragging .shop {
   border-color: #d65151;
 }
-.dragging .shop::before {
+.dragging .shop::after {
   content: 'Drop here to sell';
-  display: block;
-  margin-bottom: 6px;
-  color: #d65151;
-  font-size: 13px;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #d6515133;
+  color: #ff8a8a;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .shop-cards {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -211,6 +238,30 @@ main {
 }
 .shop-buttons button:hover { background: var(--cell-alt); }
 .shop-buttons .primary { border-color: var(--accent); }
+.shop-buttons .lock { flex: 0 0 48px; }
+.shop-buttons .lock.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, var(--cell)); }
+.shop.locked .shop-cards { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+.meter {
+  padding: 8px 10px;
+  background: var(--panel);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.meter h3 { display: flex; justify-content: space-between; margin: 2px 0 8px; font-size: 13px; }
+.meter h3 small { color: var(--muted); font-weight: 400; }
+.meter ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.meter li.dead { opacity: 0.45; }
+.meter-label { display: flex; justify-content: space-between; gap: 6px; }
+.meter-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meter-label b { font-variant-numeric: tabular-nums; }
+.meter li[class*='tier-'] .meter-label span { color: color-mix(in srgb, var(--tier-color) 60%, var(--text)); }
+.meter-bar { display: flex; height: 6px; margin-top: 2px; border-radius: 3px; background: var(--cell); overflow: hidden; }
+.meter-bar span, .meter-legend span { transition: width 0.15s; }
+.meter .attack { background: #e08a3a; }
+.meter .skill { background: #4a8ff0; }
+.meter-empty, .meter-legend { color: var(--muted); margin: 8px 0 0; }
+.meter-legend span { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 3px 0 6px; }
 
 .side {
   display: flex;
@@ -259,6 +310,17 @@ main {
 .unit-detail dd { margin: 0; text-align: right; font-weight: 600; }
 .unit-detail dd em { color: #3fae5a; font-style: normal; font-size: 11px; font-weight: 400; }
 .unit-detail .skill { margin: 0; color: var(--muted); }
+.unit-sell {
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #d65151;
+  background: color-mix(in srgb, #d65151 15%, var(--cell));
+}
+/* While a unit is selected, empty cells are click targets for moving it. */
+.has-selection .cell[data-area]:empty { cursor: pointer; box-shadow: inset 0 0 0 1px #ffffff33; }
+.has-selection .cell[data-area]:empty:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 
 .opponents {
   padding: 8px 12px;
@@ -320,6 +382,10 @@ main {
   color: var(--muted);
 }
 .trait-units { list-style: none; margin: 0; padding: 0; }
+.aura-line { color: #ff8a3d; }
+p.aura-line { margin: 2px 0 0; font-size: 12px; }
+.bearer-facts { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.bearer-facts b { color: var(--text); }
 
 .gallery {
   position: relative;
@@ -394,6 +460,98 @@ main {
   transition-timing-function: linear;
 }
 .fighter.foe { box-shadow: inset 0 0 0 1px #d65151; }
+.unit-items { position: absolute; bottom: 2px; left: 3px; font-size: 10px; line-height: 1; pointer-events: none; }
+
+.armory {
+  width: min(100%, 660px);
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border-radius: 8px;
+  border: 2px dashed transparent;
+}
+.dragging-item .armory { border-color: var(--muted); }
+.item-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--cell);
+  border: 1px solid #3a3f4d;
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+}
+.item-chip .item-icon { font-size: 16px; }
+.item-chip b { color: var(--accent); }
+.item-chip small { color: var(--muted); }
+.item-chip.equipped { border-color: var(--accent); }
+.item-chip.inactive { opacity: 0.45; }
+.item-chip.selected { box-shadow: 0 0 0 2px var(--accent); cursor: pointer; }
+/* While an item is picked up, every unit is a click target for equipping it. */
+.has-item-selection .cell[data-area] .unit { outline: 2px dashed var(--accent); outline-offset: -2px; cursor: pointer; }
+.dragging-item .cell[data-area] .unit { outline: 1px dashed var(--accent); }
+
+.shop-card.item-card {
+  border: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--cell));
+}
+
+.detail-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.detail-items li { position: relative; padding: 6px 8px; border-radius: 6px; background: var(--cell); }
+.detail-items li.inactive { opacity: 0.5; }
+.detail-items li small { color: var(--muted); font-weight: 400; }
+.detail-items li p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.detail-items .chip { position: absolute; top: 4px; right: 4px; }
+.trait-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.trait-items li { opacity: 0.6; }
+.trait-items li.owned { opacity: 1; }
+.trait-items li small { color: var(--muted); }
+.trait-items .trait-desc { margin-top: 2px; }
+
+.fighter.stunned { filter: grayscale(0.7) brightness(0.8); }
+.fighter.stunned::after { content: '💫'; position: absolute; top: -14px; right: -4px; font-size: 14px; }
+.effect-keris { --effect-color: #ff6b9a; }
+.effect-offering { --effect-color: #ff8a3d; }
+.effect-phantomexecution { --effect-color: #b48cff; }
+.effect-phantom { --effect-color: #7a5cff; }
+.effect-chaosassault { --effect-color: #e05cff; }
+.effect-mooneater { --effect-color: #9db4ff; }
+.fighter.buffed { box-shadow: 0 0 0 2px var(--effect-color), 0 0 10px var(--effect-color); }
+
+.orb-badge { position: absolute; top: 2px; right: 3px; font-size: 11px; line-height: 1; }
+.chosen-badge + .orb-badge { right: 17px; }
+.orb-line { margin: 6px 0 0; font-size: 12px; color: #c77dff; }
+.orb-use {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #c77dff;
+  background: color-mix(in srgb, #c77dff 15%, var(--cell));
+}
+.orb-popup { position: relative; width: min(420px, calc(100vw - 32px)); text-align: left; }
+.orb-popup h2 { margin: 0 0 6px; }
+.orb-popup .meta { color: var(--muted); font-size: 13px; margin: 4px 0; }
+.orb-options { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.orb-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #3a3f4d;
+  background: var(--cell);
+  text-align: left;
+}
+.orb-option:hover { border-color: #c77dff; }
+.orb-option small { color: var(--muted); }
+
 .chosen-badge { position: absolute; top: 2px; right: 3px; font-size: 12px; line-height: 1; }
 .trait-stacks { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 .trait-stacks b { color: var(--accent); }
@@ -528,17 +686,25 @@ main {
 .toast.show { opacity: 1; }
 .toast.info { background: #3a6ea5; }
 
-@media (max-width: 1000px) {
-  .layout { grid-template-columns: 76px 1fr; }
-  .side { grid-column: 1 / -1; }
+/* Narrower: synergies stay left with a matching empty column right; damage and players go below. */
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 64px minmax(0, 1fr) 64px;
+    grid-template-areas:
+      'traits main .'
+      'meter meter meter'
+      'side side side';
+  }
 }
 
 @media (max-width: 760px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'traits' 'main' 'meter' 'side';
+  }
   /* Synergies become a row above the board. */
   .traits { flex-direction: row; flex-wrap: wrap; }
   .trait-tile { min-width: 60px; }
-  .side { order: 2; }
   .unit { font-size: 9px; }
   .shop-card { height: 70px; font-size: 12px; }
 }

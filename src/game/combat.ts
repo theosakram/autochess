@@ -1,8 +1,11 @@
 import { MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side } from './grid';
+import { activeItems, fieldStats, heldBy } from './inventory';
+import { ITEMS } from './items';
 import { nextFloat, shuffle } from './rng';
-import { applyMods, type DamageType, type Stats } from './stats';
-import { activeTraits, chosenBy, traitPulses, traitTiles, unitStats, unitTriggers, type TraitLevels, type Trigger } from './traits';
+import { SKILLS, type SkillApi } from './skills';
+import { applyMods, attackInterval, type DamageType, type Stats } from './stats';
+import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -22,6 +25,8 @@ export interface Fighter {
   maxMana: number;
   onTile: boolean; // started on a trait's special tile
   chosen: string | null; // id of the trait whose chosen unit this is (and that's active for its side)
+  items: { id: string; tier: number }[]; // active items and the tier each works at
+  orb: string | null; // trait its player's Magic Orb boosts through this unit type
 }
 
 // Mana values are after the event, rounded for display. Regen between events isn't logged.
@@ -38,8 +43,17 @@ export type CombatEvent =
       targetMana: number;
       crit?: true;
     }
-  // Damage from a trait itself (a pulse), not from a unit.
-  | { t: number; type: 'effect'; trait: string; target: number; damage: number; hp: number }
+  // Damage from an effect (a trait pulse, or an item's when `by` is set) rather than an attack.
+  | { t: number; type: 'effect'; effect: string; by?: number; target: number; damage: number; hp: number; crit?: true }
+  | { t: number; type: 'heal'; id: number; amount: number; hp: number }
+  // `until` is the tick the stun wears off.
+  | { t: number; type: 'stun'; id: number; by: number; until: number }
+  // A unit skill went off (its hits follow as effect events with `by`).
+  | { t: number; type: 'skill'; id: number; skill: string }
+  // An instant reposition, e.g. a dash; drawn as a quick slide rather than a walk.
+  | { t: number; type: 'dash'; id: number; x: number; y: number }
+  // A lasting buff from `effect` (a trait or item id), e.g. Mooneater's column haste.
+  | { t: number; type: 'buff'; id: number; by: number; effect: string }
   // A member's trait trigger fired: it may have warped to (x, y) and healed `heal`.
   | { t: number; type: 'trigger'; trait: string; id: number; x: number; y: number; hp: number; heal: number }
   | { t: number; type: 'death'; id: number };
@@ -64,6 +78,12 @@ interface SimFighter extends Fighter {
   stats: Stats;
   shred: number; // armor and mr currently removed by enemy attacks
   triggers: { trait: string; trigger: Trigger; fired: boolean }[];
+  pulses: { item: string; every: number; atkPct: number; type: DamageType }[]; // every in ticks
+  openers: { source: string; width: number; depth: number; stunTicks: number; columnAttackSpeed: number }[];
+  stunnedUntil: number;
+  guardUntil: number; // takes less damage before this tick
+  guardReduction: number;
+  skill: Record<string, number>; // the unit skill's memory for this fight
   nextAttack: number;
   nextMove: number;
   target: SimFighter | null;
@@ -81,10 +101,12 @@ export function defenseMult(defense: number): number {
 
 function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chosen: Record<string, string>, out: SimFighter[]): void {
   const tiles = traitTiles(levels);
+  const allStats = fieldStats(p, levels, chosen, scale);
   p.board.forEach((u, cell) => {
     if (!u) return;
     const def = UNIT_BY_ID[u.defId];
-    const stats = unitStats(def, u.star, { levels, cell, scale, chosen, stacks: p.stacks });
+    const items = activeItems(heldBy(p, u.uid), levels);
+    const stats = allStats.get(u.uid)!;
     out.push({
       id: out.length,
       side,
@@ -97,17 +119,40 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       maxMana: stats.maxMana,
       onTile: tiles.has(cell),
       chosen: chosenBy(levels, chosen, u.defId),
+      items,
+      orb: p.orb?.defId === u.defId ? p.orb.trait : null,
       stats,
       shred: 0,
       triggers: unitTriggers(levels, def).map((tr) => ({ ...tr, fired: false })),
-      nextAttack: Math.floor(stats.attackTicks / 2),
+      pulses: items.flatMap(({ id, tier }) => {
+        const pulse = ITEMS[id].pulse?.(tier);
+        return pulse ? [{ item: id, every: Math.round(pulse.every * TICKS_PER_SECOND), atkPct: pulse.atkPct, type: pulse.damageType }] : [];
+      }),
+      openers: [
+        ...items.flatMap(({ id, tier }) => {
+          const opener = ITEMS[id].opener?.(tier);
+          return opener ? [{ source: id, opener }] : [];
+        }),
+        ...unitOpeners(levels, def),
+      ].map(({ source, opener: o }) => ({
+        source,
+        width: o.width,
+        depth: o.depth,
+        stunTicks: Math.round(o.stunSeconds * TICKS_PER_SECOND),
+        columnAttackSpeed: o.columnAttackSpeed ?? 0,
+      })),
+      stunnedUntil: 0,
+      guardUntil: 0,
+      guardReduction: 0,
+      skill: {},
+      nextAttack: Math.floor(attackInterval(stats) / 2),
       nextMove: 0,
       target: null,
     });
   });
 }
 
-const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTile, chosen }: Fighter): Fighter => ({
+const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTile, chosen, items, orb }: Fighter): Fighter => ({
   id,
   side,
   defId,
@@ -120,6 +165,8 @@ const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTil
   maxMana,
   onTile,
   chosen,
+  items,
+  orb,
 });
 
 function nearest(f: SimFighter, enemies: SimFighter[]): SimFighter {
@@ -132,8 +179,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   const useTraits = opts.traits ?? [true, true];
   const scale = opts.statMult ?? [1, 1];
   const traits: CombatResult['traits'] = [
-    useTraits[0] ? activeTraits(home.board) : {},
-    useTraits[1] ? activeTraits(away.board) : {},
+    useTraits[0] ? playerTraits(home) : {},
+    useTraits[1] ? playerTraits(away) : {},
   ];
 
   const fighters: SimFighter[] = [];
@@ -151,8 +198,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // The one place hp goes down. `amp` is the attacker's damageAmp (0 for trait damage).
   function damage(target: SimFighter, raw: number, type: DamageType, amp: number): number {
-    const defense = (type === 'physical' ? target.stats.armor : target.stats.mr) - target.shred;
-    const dealt = Math.round(raw * (1 + amp) * defenseMult(defense));
+    const defense = type === 'pure' ? 0 : (type === 'physical' ? target.stats.armor : target.stats.mr) - target.shred;
+    const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
+    const dealt = Math.round(raw * (1 + amp) * defenseMult(defense) * guard);
     target.hp = Math.max(0, target.hp - dealt);
     return dealt;
   }
@@ -182,8 +230,71 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     }
   }
 
+  // Heals the dealer for a share of what it dealt: lifesteal on basic attacks, spell lifesteal on the rest.
+  function leech(f: SimFighter, dealt: number, basicAttack: boolean, t: number): void {
+    const rate = basicAttack ? f.stats.lifesteal : f.stats.spellLifesteal;
+    if (rate <= 0 || f.hp <= 0) return;
+    const amount = Math.min(f.maxHp - f.hp, Math.round(dealt * rate));
+    if (amount <= 0) return;
+    f.hp += amount;
+    events.push({ t, type: 'heal', id: f.id, amount, hp: f.hp });
+  }
+
+  // A hit from a skill, credited to its caster. `basic` makes it an enhanced basic attack:
+  // it can crit, applies shred and heals by lifesteal instead of spell lifesteal. Returns whether it killed.
+  function skillHit(s: SimFighter, victim: SimFighter, raw: number, type: DamageType, effect: string, basic: boolean): boolean {
+    if (victim.hp <= 0) return false;
+    let crit = false;
+    if (basic) {
+      victim.shred = Math.max(victim.shred, s.stats.armorShred);
+      crit = s.stats.critChance > 0 && nextFloat(rng) < s.stats.critChance;
+    }
+    const dealt = damage(victim, raw * (crit ? s.stats.critDamage : 1), type, s.stats.damageAmp);
+    events.push({ t, type: 'effect', effect, by: s.id, target: victim.id, damage: dealt, hp: victim.hp, ...(crit && { crit: true }) });
+    afterDamage(victim, t);
+    leech(s, dealt, basic, t);
+    return victim.hp <= 0;
+  }
+
+  // What skills may do; each call goes through the same paths as attacks and effects.
+  const api: SkillApi = {
+    enemiesOf: (f) => fighters.filter((e) => e.side !== f.side && e.hp > 0),
+    nearestEnemy: (f) => {
+      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      return enemies.length ? nearest(f as SimFighter, enemies) : null;
+    },
+    occupant: (p) => {
+      const id = occupied[gridIndex(p)];
+      return id >= 0 ? fighters[id] : null;
+    },
+    hit: (source, target, raw, type, effect) => skillHit(fighters[source.id], fighters[target.id], raw, type, effect, false),
+    basicHit: (source, target, raw, type, effect) => skillHit(fighters[source.id], fighters[target.id], raw, type, effect, true),
+    safestCell: (f) => safestCell(occupied, f, fighters.filter((e) => e.side !== f.side && e.hp > 0)),
+    dashTo: (who, to) => {
+      const f = fighters[who.id];
+      occupied[gridIndex(f)] = -1;
+      f.x = to.x;
+      f.y = to.y;
+      occupied[gridIndex(f)] = f.id;
+      events.push({ t, type: 'dash', id: f.id, x: f.x, y: f.y });
+    },
+    guard: (who, seconds, reduction) => {
+      const f = fighters[who.id];
+      f.guardUntil = t + Math.round(seconds * TICKS_PER_SECOND);
+      f.guardReduction = reduction;
+    },
+  };
+
   function strike(f: SimFighter, target: SimFighter, t: number): void {
     const cast = f.mana >= f.maxMana;
+    const skill = cast ? UNIT_BY_ID[f.defId].skill : undefined;
+    if (skill) {
+      f.mana = 0;
+      events.push({ t, type: 'skill', id: f.id, skill });
+      SKILLS[skill].cast(api, f, target);
+      f.nextAttack = t + attackInterval(f.stats);
+      return;
+    }
     let dealt: number;
     let crit = false;
     if (cast) {
@@ -194,7 +305,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       target.shred = Math.max(target.shred, f.stats.armorShred);
       // Only roll when there's a chance, so crit-free fights replay exactly as before crits existed.
       crit = f.stats.critChance > 0 && nextFloat(rng) < f.stats.critChance;
-      dealt = damage(target, f.stats.atk * (crit ? f.stats.critDamage : 1), 'physical', f.stats.damageAmp);
+      const type = UNIT_BY_ID[f.defId].attackType ?? 'physical';
+      dealt = damage(target, f.stats.atk * (crit ? f.stats.critDamage : 1), type, f.stats.damageAmp);
       gainMana(f, MANA_PER_ATTACK);
     }
     gainMana(target, MANA_PER_HIT_TAKEN);
@@ -209,8 +321,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       targetMana: Math.floor(target.mana),
       ...(crit && { crit: true }),
     });
-    f.nextAttack = t + f.stats.attackTicks;
+    f.nextAttack = t + attackInterval(f.stats);
     afterDamage(target, t);
+    leech(f, dealt, !cast, t);
   }
 
   // Trait pulses: each side's fire on the tick they're due, hitting every living enemy.
@@ -223,9 +336,58 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       for (const target of fighters) {
         if (target.side === side || target.hp <= 0) continue;
         const dealt = damage(target, target.maxHp * pulse.pctMaxHp, pulse.damageType, 0);
-        events.push({ t, type: 'effect', trait, target: target.id, damage: dealt, hp: target.hp });
+        events.push({ t, type: 'effect', effect: trait, target: target.id, damage: dealt, hp: target.hp });
         afterDamage(target, t);
       }
+    }
+  }
+
+  // Item pulses (e.g. Keris' Mortal Strike): from a living holder, hitting every living enemy.
+  // They fire even while the holder is stunned.
+  function fireItemPulses(t: number): void {
+    if (t === 0) return;
+    for (const f of fighters) {
+      for (const pulse of f.pulses) {
+        if (f.hp <= 0 || t % pulse.every !== 0) continue;
+        for (const target of fighters) {
+          if (target.side === f.side || target.hp <= 0) continue;
+          const dealt = damage(target, f.stats.atk * pulse.atkPct, pulse.type, f.stats.damageAmp);
+          events.push({ t, type: 'effect', effect: pulse.item, by: f.id, target: target.id, damage: dealt, hp: target.hp });
+          afterDamage(target, t);
+          leech(f, dealt, false, t);
+        }
+      }
+    }
+  }
+
+  // Battle-start effects: stun enemies in an area in front of each carrier (toward the enemy half),
+  // then haste every ally in a carrier's column (one bonus per column, the biggest).
+  function fireOpeners(): void {
+    const haste = new Map<string, { bonus: number; by: number; source: string }>();
+    for (const f of fighters) {
+      for (const o of f.openers) {
+        const forward = f.side === 0 ? -1 : 1;
+        const left = Math.floor((o.width - 1) / 2);
+        const column = `${f.side}:${f.x}`;
+        if (o.columnAttackSpeed > (haste.get(column)?.bonus ?? 0)) haste.set(column, { bonus: o.columnAttackSpeed, by: f.id, source: o.source });
+        for (let dy = 1; dy <= Math.min(o.depth, GRID_H); dy++) {
+          for (let dx = -left; dx < o.width - left; dx++) {
+            const p = { x: f.x + dx, y: f.y + forward * dy };
+            if (p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H) continue;
+            const id = occupied[gridIndex(p)];
+            const target = id >= 0 ? fighters[id] : null;
+            if (!target || target.side === f.side || o.stunTicks <= target.stunnedUntil) continue;
+            target.stunnedUntil = o.stunTicks;
+            events.push({ t: 0, type: 'stun', id: target.id, by: f.id, until: o.stunTicks });
+          }
+        }
+      }
+    }
+    for (const ally of fighters) {
+      const h = haste.get(`${ally.side}:${ally.x}`);
+      if (!h) continue;
+      ally.stats = applyMods(ally.stats, [{ stat: 'attackSpeed', add: h.bonus }]);
+      events.push({ t: 0, type: 'buff', id: ally.id, by: h.by, effect: h.source });
     }
   }
 
@@ -242,14 +404,17 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     f.nextAttack = Math.max(f.nextAttack, t + MOVE_TICKS);
   }
 
+  if (alive(0) && alive(1)) fireOpeners();
+
   let t = 0;
   for (; t < MAX_COMBAT_TICKS && alive(0) && alive(1); t++) {
     for (const f of fighters) if (f.hp > 0) gainMana(f, f.stats.manaRegen / TICKS_PER_SECOND);
     firePulses(t);
+    fireItemPulses(t);
 
     // Shuffled each tick so neither side always strikes first.
     for (const f of shuffle(rng, fighters.filter((f) => f.hp > 0))) {
-      if (f.hp <= 0) continue;
+      if (f.hp <= 0 || t < f.stunnedUntil) continue;
       const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0);
       if (enemies.length === 0) break;
 

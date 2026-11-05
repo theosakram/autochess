@@ -7,6 +7,7 @@ import { unitBodyHtml } from './views';
 
 const TICK_MS = 1000 / TICKS_PER_SECOND;
 const RESULT_MS = 1500;
+const DASH_MS = 120;
 
 export interface Playback {
   skip(): void;
@@ -18,9 +19,15 @@ interface FighterView {
   maxMana: number;
 }
 
-// Replays a fight's event log onto `layer`, viewer's side at the bottom. Calls
-// onDone once the result banner has shown (or straight away when skipped twice).
-export function playFight(layer: HTMLElement, fight: Fight, viewerId: string, onDone: () => void): Playback {
+// Replays a fight's event log onto `layer`, viewer's side at the bottom. `onEvent` sees each
+// event as it's shown. Calls onDone once the result banner has shown (or straight away when skipped twice).
+export function playFight(
+  layer: HTMLElement,
+  fight: Fight,
+  viewerId: string,
+  onEvent: (e: CombatEvent) => void,
+  onDone: () => void,
+): Playback {
   const { result } = fight;
   const mySide: Side = fight.home === viewerId ? 0 : 1;
   const views = new Map<number, FighterView>();
@@ -43,7 +50,13 @@ export function playFight(layer: HTMLElement, fight: Fight, viewerId: string, on
     el.style.transitionDuration = `${MOVE_TICKS * TICK_MS}ms`;
     el.innerHTML = `<div class="hp"><div class="hp-fill"></div></div>
       <div class="mana"><div class="mana-fill"></div></div>
-      ${unitBodyHtml(f.defId, f.star, f.chosen !== null)}`;
+      ${unitBodyHtml(
+        f.defId,
+        f.star,
+        f.chosen !== null,
+        f.items.map((i) => i.id),
+        f.orb,
+      )}`;
     place(el, f);
     layer.append(el);
     views.set(f.id, { el, maxHp: f.maxHp, maxMana: f.maxMana });
@@ -66,6 +79,7 @@ export function playFight(layer: HTMLElement, fight: Fight, viewerId: string, on
   };
 
   const apply = (e: CombatEvent) => {
+    onEvent(e);
     switch (e.type) {
       case 'move':
         place(views.get(e.id)!.el, e);
@@ -79,10 +93,33 @@ export function playFight(layer: HTMLElement, fight: Fight, viewerId: string, on
         popDamage(e.target, e.damage, e.type === 'cast' ? 'spell' : e.crit ? 'crit' : '');
         break;
       case 'effect':
-        // Per-trait look comes from CSS: .struck.effect-<trait> and .dmg.effect-<trait>.
-        flash(e.target, 'struck', `effect-${e.trait}`);
+        // Per-effect look comes from CSS: .struck.effect-<id> and .dmg.effect-<id>.
+        flash(e.target, 'struck', `effect-${e.effect}`);
         setBar(e.target, 'hp', e.hp);
-        popDamage(e.target, e.damage, `effect-${e.trait}`);
+        popDamage(e.target, e.damage, e.crit ? 'crit' : `effect-${e.effect}`);
+        break;
+      case 'heal':
+        setBar(e.id, 'hp', e.hp);
+        popDamage(e.id, `+${e.amount}`, 'heal');
+        break;
+      case 'skill':
+        flash(e.id, 'casting');
+        setBar(e.id, 'mana', 0);
+        break;
+      case 'dash': {
+        // A dash is a quick slide, not a walk.
+        const { el } = views.get(e.id)!;
+        el.style.transitionDuration = `${DASH_MS}ms`;
+        place(el, e);
+        window.setTimeout(() => (el.style.transitionDuration = `${MOVE_TICKS * TICK_MS}ms`), DASH_MS);
+        break;
+      }
+      case 'buff':
+        views.get(e.id)!.el.classList.add('buffed', `effect-${e.effect}`);
+        break;
+      case 'stun':
+        views.get(e.id)!.el.classList.add('stunned');
+        stunEnds.set(e.id, e.until);
         break;
       case 'trigger': {
         // Warps snap instantly instead of sliding like a walk.
@@ -102,6 +139,16 @@ export function playFight(layer: HTMLElement, fight: Fight, viewerId: string, on
     }
   };
 
+  // Stunned fighters and the tick their stun wears off.
+  const stunEnds = new Map<number, number>();
+  const wakeUp = (all: boolean) => {
+    for (const [id, until] of stunEnds) {
+      if (!all && tick < until) continue;
+      views.get(id)!.el.classList.remove('stunned');
+      stunEnds.delete(id);
+    }
+  };
+
   let tick = 0;
   let next = 0;
   let finished = false;
@@ -109,11 +156,13 @@ export function playFight(layer: HTMLElement, fight: Fight, viewerId: string, on
 
   const timer = window.setInterval(() => {
     while (next < result.events.length && result.events[next].t <= tick) apply(result.events[next++]);
+    wakeUp(false);
     if (++tick > result.ticks) finish();
   }, TICK_MS);
 
   function finish(): void {
     clearInterval(timer);
+    wakeUp(true);
     finished = true;
     const won = result.winner === mySide;
     const banner = document.createElement('div');

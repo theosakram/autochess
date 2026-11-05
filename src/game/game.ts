@@ -7,7 +7,6 @@ import {
   BOARD_COLS,
   BOARD_ROWS,
   FREE_UNITS,
-  MAX_INTEREST,
   PASSIVE_XP,
   POOL_SIZE,
   SHOP_SIZE,
@@ -15,10 +14,13 @@ import {
   START_LEVEL,
 } from './config';
 import { copiesOf, mergeUnits } from './merge';
-import { addXp, isAlive } from './player';
+import { addXp, interest, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop } from './shop';
 import { claimShopSlot, canClaim } from './actions';
+import { syncItems } from './inventory';
+import { grantOrbs } from './orb';
+import { isItemCard } from './items';
 import { gainStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
 import type { GameState, Player } from './types';
@@ -58,8 +60,12 @@ export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
       bench: Array(BENCH_SIZE).fill(null),
       board: Array(BOARD_COLS * BOARD_ROWS).fill(null),
       shop: Array(SHOP_SIZE).fill(null),
+      shopLocked: false,
       place: null,
       stacks: {},
+      items: [],
+      orbs: [],
+      orb: null,
     })),
   };
   state.chosen = rollChosen(state);
@@ -90,15 +96,19 @@ export interface RoundBonus {
 // Preparation phase start. Returns the round-start trait bonuses that were paid out.
 export function startRound(state: GameState): RoundBonus[] {
   state.round++;
+  grantOrbs(state);
   const alive = state.players.filter(isAlive);
   for (const p of alive) {
     if (state.round > 1) addXp(p, PASSIVE_XP);
-    p.gold += BASE_INCOME + Math.min(MAX_INTEREST, Math.floor(p.gold / 10));
-    refreshShop(state, p);
+    p.gold += BASE_INCOME + interest(p.gold);
+    // A locked shop keeps what's left in it for this round, then unlocks.
+    if (p.shopLocked) p.shopLocked = false;
+    else refreshShop(state, p);
   }
   const bonuses = alive.flatMap((p) =>
-    roundStartEffects(p.board).map(({ trait, effect }) => ({ playerId: p.id, trait, ...payOut(state, p, effect) })),
+    roundStartEffects(p).map(({ trait, effect }) => ({ playerId: p.id, trait, ...payOut(state, p, effect) })),
   );
+  for (const p of alive) syncItems(state, p);
   for (const p of alive) {
     if (p.isBot) runBot(state, p);
   }
@@ -113,7 +123,7 @@ function payOut(state: GameState, p: Player, effect: RoundStart): { gold: number
 
 // Takes one shop unit for free: the cheapest (ties random) or any at random. Skipped if it can't fit.
 function loot(state: GameState, p: Player, rule: 'cheapest' | 'random'): string | null {
-  let slots = p.shop.flatMap((id, slot) => (id ? [slot] : []));
+  let slots = p.shop.flatMap((id, slot) => (id && !isItemCard(id) ? [slot] : []));
   if (rule === 'cheapest') {
     const min = Math.min(...slots.map((s) => UNIT_BY_ID[p.shop[s]!].tier));
     slots = slots.filter((s) => UNIT_BY_ID[p.shop[s]!].tier === min);

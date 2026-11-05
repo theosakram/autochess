@@ -1,3 +1,4 @@
+import type { Opener } from '../effects';
 import type { DamageType, StatMod } from '../stats';
 
 // What a trait sees about one unit when its side has the trait active.
@@ -49,9 +50,18 @@ export interface TraitDef {
   tiles?(level: number): number[];
   pulses?(level: number): Pulse[];
   triggers?(level: number): Trigger[]; // members only
+  opener?(level: number): Opener; // members only
   // At game start, one member of these tiers is picked at random as the chosen unit, for every player, all game.
   chosen?: { tiers: number[] };
   roundStart?(level: number): RoundStart;
+  // Exclusive items this trait hands out (see items/) and lets the shop upgrade.
+  items?: {
+    pool: string[];
+    grants: number[]; // items owned per level
+    shopChance: number; // per shop slot while active: an upgrade card instead of a unit
+    maxShopTier: number;
+    topLevel?: number; // from this level, every item works at its max tier
+  };
   // A counter the player keeps across fights: +1 per enemy death while active, capped per fight and overall.
   stacks?: { perFight: number; max: number };
 }

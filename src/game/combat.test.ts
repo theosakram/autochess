@@ -3,7 +3,8 @@ import { defenseMult, simulateCombat, type CombatEvent } from './combat';
 import { BASE_CRIT_DAMAGE, BASE_DAMAGE, CAST_MULT, START_HP } from './config';
 import { createGame, isGameOver, resolveCombat } from './game';
 import { dist, GRID_H, GRID_W, gridIndex, safestCell } from './grid';
-import { activeTraits, DEADEYE, DRAGON_ALTAR, gainStacks, PHASEWARPER, SKYBRINGER, STORYWEAVER, TRAITS, traitCounts, traitLevel, traitTiles, unitMods, unitStats, unitTriggers } from './traits';
+import { activeTraits, DEADEYE, DRAGON_ALTAR, gainStacks, MOONEATER, PHASEWARPER, SKYBRINGER, STORYWEAVER, TRAITS, traitCounts, traitLevel, traitTiles, unitMods, unitStats, unitTriggers } from './traits';
+import { attackInterval } from './stats';
 import { UNIT_BY_ID } from './units';
 import type { GameState, Player, Star } from './types';
 
@@ -130,10 +131,11 @@ describe('traits', () => {
     const b: Player['board'] = Array(32).fill(null);
     b[0] = { uid: 1, defId: 'skeleton', star: 1 };
     b[1] = { uid: 2, defId: 'skeleton', star: 1 };
-    expect(traitCounts(b).undead).toBe(1);
-    b[2] = { uid: 3, defId: 'lich', star: 1 };
-    expect(traitCounts(b)).toEqual({ undead: 2, stargazer: 1 });
-    expect(activeTraits(b)).toEqual({ undead: 1 });
+    expect(traitCounts(b).hunter).toBe(1);
+    b[2] = { uid: 3, defId: 'ghoul', star: 1 };
+    b[3] = { uid: 4, defId: 'penari', star: 1 }; // Gustiwana + Scavenger
+    expect(traitCounts(b)).toEqual({ hunter: 2, gustiwana: 1, scavenger: 1 });
+    expect(activeTraits(b)).toEqual({ hunter: 1 });
   });
 
   test('armor reduces damage, negative armor amplifies it', () => {
@@ -142,7 +144,7 @@ describe('traits', () => {
     expect(defenseMult(-100)).toBe(1.5);
   });
 
-  test('Undead shred applies in full from the first hit', () => {
+  test('Hunter shred applies in full from the first hit', () => {
     const state = newGame();
     const [a, b] = state.players;
     field(a, [['skeleton', 1, 3], ['ghoul', 1, 4]]);
@@ -204,6 +206,16 @@ describe('dragon altar', () => {
 });
 
 describe('trait plumbing', () => {
+  // A unit is at most one faction and one role, so two roles can never share a unit
+  // (that's what made Undead x Deadeye 6/6 reachable on a 10-unit board).
+  test('every unit has at most one faction and one role', () => {
+    for (const u of Object.values(UNIT_BY_ID)) {
+      const kinds = u.traits.map((id) => TRAITS[id].kind);
+      expect(kinds.filter((k) => k === 'faction').length).toBeLessThanOrEqual(1);
+      expect(kinds.filter((k) => k === 'role').length).toBeLessThanOrEqual(1);
+    }
+  });
+
   test('every trait description key has one value per breakpoint', () => {
     for (const t of Object.values(TRAITS)) {
       const values = t.values();
@@ -214,12 +226,12 @@ describe('trait plumbing', () => {
   });
 
   test('mods only come from active traits, and members get their extras', () => {
-    const def = UNIT_BY_ID.lich; // Undead + Stargazer
+    const def = UNIT_BY_ID.skeleton; // Hunter; Stargazer's team regen reaches it too
     expect(unitMods(def, { levels: {}, cell: 0 })).toEqual([]);
-    const mods = unitMods(def, { levels: { undead: 1, stargazer: 1 }, cell: 0 });
+    const mods = unitMods(def, { levels: { hunter: 1, stargazer: 1 }, cell: 0 });
     expect(mods.map((m) => m.stat).sort()).toEqual(['armorShred', 'manaRegen']);
-    const outsider = unitMods(UNIT_BY_ID.footman, { levels: { undead: 1 }, cell: 0 })[0];
-    const member = unitMods(def, { levels: { undead: 1 }, cell: 0 })[0];
+    const outsider = unitMods(UNIT_BY_ID.footman, { levels: { hunter: 1 }, cell: 0 })[0];
+    const member = unitMods(def, { levels: { hunter: 1 }, cell: 0 })[0];
     expect(member.add!).toBeGreaterThan(outsider.add!);
   });
 });
@@ -290,7 +302,7 @@ describe('phasewarper', () => {
   test('first drop below 50% warps away, heals and adds damage, once', () => {
     const state = newGame();
     const [a, b] = state.players;
-    field(a, [['blinkblade', 1, 3], ['riftmage', 1, 17]]);
+    field(a, [['blinkblade', 1, 3], ['rarajonggrang', 1, 17]]);
     field(b, [['titan', 1, 3]]);
     const r = simulateCombat({ rng: 1 }, a, b);
     const blade = r.fighters.find((f) => f.defId === 'blinkblade')!;
@@ -374,5 +386,69 @@ describe('storyweaver', () => {
     resolveCombat(state);
     expect(a.stacks.storyweaver).toBe(2);
     expect(b.stacks.storyweaver).toBeUndefined();
+  });
+});
+
+describe('mooneater', () => {
+  // Board cells are row * 7 + col, row 0 = front. Home column c is grid x = c; away column c is x = 6 - c.
+  test("stuns enemies in the Mooneater's column and hastes every ally in it, behind or in front", () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    // Rembulan in the back of column 2, a Footman in front of it, another Footman in column 4.
+    // Rara Jonggrang (the 2nd Mooneater) sits in column 6.
+    field(a, [['rembulan', 1, 16], ['footman', 1, 2], ['footman', 1, 4], ['rarajonggrang', 1, 20]]);
+    // Enemy footman lands in grid column 2 (away col 4); enemy archer in grid column 3.
+    field(b, [['footman', 1, 4], ['archer', 1, 3]]);
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const at = (side: number, x: number) => r.fighters.filter((f) => f.side === side && f.x === x).map((f) => f.id);
+
+    const stunned = r.events.filter((e) => e.type === 'stun').map((e) => e.type === 'stun' && e.id);
+    expect(stunned).toEqual(at(1, 2));
+    const until = r.events.find((e) => e.type === 'stun');
+    expect(until?.type === 'stun' && until.until).toBe(MOONEATER.stun[0] * 10);
+
+    const hasted = new Set(r.events.filter((e) => e.type === 'buff').map((e) => e.type === 'buff' && e.id));
+    expect(hasted).toEqual(new Set([...at(0, 2), ...at(0, 6)]));
+    expect(at(0, 4).some((id) => hasted.has(id))).toBe(false);
+  });
+
+  test('two Mooneaters in one column do not stack the haste', () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    field(a, [['rembulan', 1, 16], ['rarajonggrang', 1, 9]]); // both column 2
+    field(b, [['footman', 1, 0]]);
+    const buffs = simulateCombat({ rng: 1 }, a, b).events.filter((e) => e.type === 'buff');
+    expect(buffs).toHaveLength(2); // one per ally, not two each
+  });
+
+  test('attack speed shortens the time between attacks', () => {
+    const base = unitStats(UNIT_BY_ID.footman, 1);
+    expect(attackInterval(base)).toBe(UNIT_BY_ID.footman.attackTicks);
+    const hasted = attackInterval({ ...base, attackSpeed: 1 + MOONEATER.attackSpeed[0] });
+    expect(hasted).toBe(Math.round(UNIT_BY_ID.footman.attackTicks / (1 + MOONEATER.attackSpeed[0])));
+    expect(hasted).toBeLessThan(UNIT_BY_ID.footman.attackTicks);
+  });
+});
+
+describe('attack types', () => {
+  test("Resi's basic attacks are magic: reduced by magic resist, not armor", () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    field(a, [['resi', 1, 17]]);
+    field(b, [['knight', 1, 3]]); // lots of armor, less magic resist
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const resi = r.fighters.find((f) => f.defId === 'resi')!;
+    const hit = r.events.find((e) => e.type === 'attack' && e.id === resi.id);
+    const expected = Math.round(UNIT_BY_ID.resi.atk * defenseMult(UNIT_BY_ID.knight.mr));
+    expect(hit?.type === 'attack' && !hit.crit && hit.damage).toBe(expected);
+  });
+
+  test('Gustiwana 4-golds: Senopati is physical Deadeye, Resi magical Stargazer, both ranged', () => {
+    expect(UNIT_BY_ID.senopati.traits).toEqual(['gustiwana', 'deadeye']);
+    expect(UNIT_BY_ID.resi.traits).toEqual(['gustiwana', 'stargazer']);
+    expect(UNIT_BY_ID.senopati.range).toBeGreaterThan(1);
+    expect(UNIT_BY_ID.resi.range).toBeGreaterThan(1);
+    expect(UNIT_BY_ID.senopati.attackType ?? 'physical').toBe('physical');
+    expect(UNIT_BY_ID.resi.attackType).toBe('magic');
   });
 });

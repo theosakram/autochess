@@ -1,37 +1,46 @@
 import { nextInt } from '../rng';
+import type { Opener } from '../effects';
 import { applyMods, baseStats, type StatMod, type Stats } from '../stats';
-import type { Player, Star, Unit, UnitDef } from '../types';
+import type { Orb, Player, Star, Unit, UnitDef } from '../types';
 import { UNIT_BY_ID, UNITS } from '../units';
+import { cultOfFire } from './cultOfFire';
 import { deadeye } from './deadeye';
+import { ITEMS } from '../items';
 import { dragonAltar } from './dragonAltar';
+import { gustiwana } from './gustiwana';
+import { hunter } from './hunter';
+import { mooneater } from './mooneater';
 import { phasewarper } from './phasewarper';
 import { scavenger } from './scavenger';
 import { skybringer } from './skybringer';
 import { stargazer } from './stargazer';
 import { storyweaver } from './storyweaver';
 import type { Pulse, RoundStart, TraitDef, Trigger } from './types';
-import { undead } from './undead';
 
 export type { Pulse, RoundStart, TraitDef, Trigger, UnitContext } from './types';
+export { CULT_OF_FIRE } from './cultOfFire';
 export { DEADEYE } from './deadeye';
 export { DRAGON_ALTAR } from './dragonAltar';
+export { GUSTIWANA } from './gustiwana';
+export { HUNTER } from './hunter';
+export { MOONEATER } from './mooneater';
 export { PHASEWARPER } from './phasewarper';
 export { SCAVENGER } from './scavenger';
 export { SKYBRINGER } from './skybringer';
 export { STARGAZER } from './stargazer';
 export { STORYWEAVER } from './storyweaver';
-export { UNDEAD } from './undead';
 
 // Every trait in the game. A new trait is a new module plus one entry here.
-export const TRAITS: Record<string, TraitDef> = Object.fromEntries([stargazer, undead, dragonAltar, skybringer, deadeye, phasewarper, storyweaver, scavenger].map((t) => [t.id, t]));
+export const TRAITS: Record<string, TraitDef> = Object.fromEntries([stargazer, hunter, dragonAltar, skybringer, deadeye, phasewarper, storyweaver, scavenger, gustiwana, mooneater, cultOfFire].map((t) => [t.id, t]));
 
 // Trait id -> active level (1 = first breakpoint). Inactive traits are absent.
 export type TraitLevels = Record<string, number>;
 
 const hasTrait = (u: Unit, traitId: string) => UNIT_BY_ID[u.defId].traits.includes(traitId);
 
-// Each distinct unit counts once, so duplicates don't stack a trait.
-export function traitCounts(board: (Unit | null)[]): Record<string, number> {
+// Each distinct unit counts once, so duplicates don't stack a trait. An orb adds +1 to its trait
+// while its unit type is fielded.
+export function traitCounts(board: (Unit | null)[], orb: Orb | null = null): Record<string, number> {
   const seen = new Set<string>();
   const counts: Record<string, number> = {};
   for (const u of board) {
@@ -39,6 +48,7 @@ export function traitCounts(board: (Unit | null)[]): Record<string, number> {
     seen.add(u.defId);
     for (const t of UNIT_BY_ID[u.defId].traits) counts[t] = (counts[t] ?? 0) + 1;
   }
+  if (orb && seen.has(orb.defId)) counts[orb.trait] = (counts[orb.trait] ?? 0) + 1;
   return counts;
 }
 
@@ -47,9 +57,9 @@ export function traitLevel(traitId: string, count: number): number {
   return TRAITS[traitId].breakpoints.filter((b) => count >= b).length;
 }
 
-export function activeTraits(board: (Unit | null)[]): TraitLevels {
+export function activeTraits(board: (Unit | null)[], orb: Orb | null = null): TraitLevels {
   const levels: TraitLevels = {};
-  for (const [id, n] of Object.entries(traitCounts(board))) {
+  for (const [id, n] of Object.entries(traitCounts(board, orb))) {
     const lvl = traitLevel(id, n);
     if (lvl > 0) levels[id] = lvl;
   }
@@ -62,15 +72,26 @@ export interface Field {
   cell: number;
   chosen: Record<string, string>; // trait id -> unit def id it picked for the game (GameState.chosen)
   stacks: Record<string, number>; // the owner's counters
+  items: { id: string; tier: number }[]; // the unit's active items and their working tiers
+  honorary: string[]; // traits it gets member bonuses for without being (or counting as) a member
   scale: number; // hp/atk multiplier, for the balance tool
 }
 
 // Everything the active traits do to one unit.
 export function unitMods(def: UnitDef, field: Partial<Field> = {}): StatMod[] {
-  const { levels = {}, cell = -1, chosen = {}, stacks = {} } = field;
-  return Object.entries(levels).flatMap(([id, level]) =>
-    TRAITS[id].mods({ level, member: def.traits.includes(id), cell, chosen: chosen[id] === def.id, stacks: stacks[id] ?? 0 }),
-  );
+  const { levels = {}, cell = -1, chosen = {}, stacks = {}, items = [], honorary = [] } = field;
+  return [
+    ...Object.entries(levels).flatMap(([id, level]) =>
+      TRAITS[id].mods({
+        level,
+        member: def.traits.includes(id) || honorary.includes(id),
+        cell,
+        chosen: chosen[id] === def.id,
+        stacks: stacks[id] ?? 0,
+      }),
+    ),
+    ...items.flatMap((it) => ITEMS[it.id].mods(it.tier)),
+  ];
 }
 
 // A unit's fighting stats with every active trait applied, exactly as combat uses them.
@@ -123,20 +144,31 @@ export function unitTriggers(levels: TraitLevels, def: UnitDef): { trait: string
     .flatMap(([id, level]) => (TRAITS[id].triggers?.(level) ?? []).map((trigger) => ({ trait: id, trigger })));
 }
 
-// Round-start economy of every active trait on this board.
-export function roundStartEffects(board: (Unit | null)[]): { trait: string; effect: RoundStart }[] {
-  return Object.entries(activeTraits(board)).flatMap(([id, level]) => {
+// A player's active traits: their board plus their orb.
+export const playerTraits = (p: Pick<Player, 'board' | 'orb'>) => activeTraits(p.board, p.orb);
+
+// Round-start economy of every active trait for this player.
+export function roundStartEffects(p: Pick<Player, 'board' | 'orb'>): { trait: string; effect: RoundStart }[] {
+  return Object.entries(playerTraits(p)).flatMap(([id, level]) => {
     const effect = TRAITS[id].roundStart?.(level);
     return effect ? [{ trait: id, effect }] : [];
   });
 }
 
+// Battle-start effects a unit brings from its own active traits.
+export function unitOpeners(levels: TraitLevels, def: UnitDef): { source: string; opener: Opener }[] {
+  return Object.entries(levels).flatMap(([id, level]) => {
+    const opener = def.traits.includes(id) ? TRAITS[id].opener?.(level) : undefined;
+    return opener ? [{ source: id, opener }] : [];
+  });
+}
+
 // Board swaps [from, to] that seat each tile trait's members on its tiles first,
 // then fill any tiles still empty with other units. Pure: the board isn't touched.
-export function tileSeating(board: (Unit | null)[]): [number, number][] {
+export function tileSeating(board: (Unit | null)[], orb: Orb | null = null): [number, number][] {
   const b = board.slice();
   const swaps: [number, number][] = [];
-  for (const [id, level] of Object.entries(activeTraits(board))) {
+  for (const [id, level] of Object.entries(activeTraits(board, orb))) {
     const tiles = TRAITS[id].tiles?.(level) ?? [];
     for (const membersOnly of [true, false]) {
       for (const to of tiles) {

@@ -5,8 +5,8 @@ import type { TraitDef } from './types';
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const STORYWEAVER = {
   eligibleTiers: [4], // who can be rolled as the game's protagonist
-  perStack: [0.015, 0.045], // protagonist damage per story stack
-  enhancedCast: 0.5, // placeholder enhanced skill until real abilities: +50% cast damage
+  perStack: [0.04, 0.1], // protagonist damage per story stack
+  enhancedCast: 1, // placeholder enhanced skill until real abilities: +50% cast damage
   stacksPerFight: 3, // enemy deaths that count, per fight
   maxStacks: 30,
 };

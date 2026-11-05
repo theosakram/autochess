@@ -1,7 +1,7 @@
 import { BASE_CRIT_DAMAGE, CAST_MULT, STAR_MULT } from './config';
 import type { Star, UnitDef } from './types';
 
-export type DamageType = 'physical' | 'magic';
+export type DamageType = 'physical' | 'magic' | 'pure'; // pure ignores armor and mr
 
 // What a unit fights with. Traits (and later items) change these only through
 // StatMods; the combat engine reads stats and never looks at trait ids.
@@ -17,9 +17,15 @@ export interface Stats {
   critChance: number; // 0..1, basic attacks only
   critDamage: number; // multiplier on a critting basic attack
   castMult: number; // skill damage = atk x castMult (placeholder skill until real abilities)
+  lifesteal: number; // share of basic-attack damage healed back
+  spellLifesteal: number; // share of all other damage dealt healed back
   range: number;
-  attackTicks: number;
+  attackTicks: number; // base ticks between attacks
+  attackSpeed: number; // multiplier on attack rate: 1.25 attacks 25% more often
 }
+
+// Ticks between attacks, after attack speed.
+export const attackInterval = (s: Stats) => Math.max(1, Math.round(s.attackTicks / s.attackSpeed));
 
 export type StatKey = keyof Stats;
 
@@ -45,8 +51,11 @@ export function baseStats(def: UnitDef, star: Star, scale = 1): Stats {
     critChance: 0,
     critDamage: BASE_CRIT_DAMAGE,
     castMult: CAST_MULT,
+    lifesteal: 0,
+    spellLifesteal: 0,
     range: def.range,
     attackTicks: def.attackTicks,
+    attackSpeed: 1,
   };
 }
 

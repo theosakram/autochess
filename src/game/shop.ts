@@ -1,5 +1,7 @@
 import { SHOP_ODDS } from './config';
+import { isItemCard, itemCard } from './items';
 import { nextFloat, nextInt } from './rng';
+import { playerTraits, TRAITS } from './traits';
 import type { GameState, Player } from './types';
 import { UNITS } from './units';
 
@@ -41,12 +43,24 @@ export function drawUnit(state: GameState, level: number): string | null {
 export function returnShop(state: GameState, p: Player): void {
   for (let i = 0; i < p.shop.length; i++) {
     const id = p.shop[i];
-    if (id) state.pool[id]++;
+    if (id && !isItemCard(id)) state.pool[id]++;
     p.shop[i] = null;
   }
 }
 
 export function refreshShop(state: GameState, p: Player): void {
   returnShop(state, p);
-  for (let i = 0; i < p.shop.length; i++) p.shop[i] = drawUnit(state, p.level);
+  for (let i = 0; i < p.shop.length; i++) p.shop[i] = upgradeCard(state, p) ?? drawUnit(state, p.level);
+}
+
+// While a trait with items is active, a slot may offer a free upgrade for one of its owned items.
+// Only rolls when there's something to upgrade, so other games replay exactly as before.
+function upgradeCard(state: GameState, p: Player): string | null {
+  for (const id of Object.keys(playerTraits(p))) {
+    const rule = TRAITS[id].items;
+    if (!rule) continue;
+    const upgradable = p.items.filter((it) => rule.pool.includes(it.id) && it.tier < rule.maxShopTier);
+    if (upgradable.length > 0 && nextFloat(state) < rule.shopChance) return itemCard(upgradable[nextInt(state, upgradable.length)].id);
+  }
+  return null;
 }
