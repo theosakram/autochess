@@ -10,11 +10,12 @@ export interface ItemPulse {
   damageType: DamageType;
 }
 
-// While the holder is fielded, every member of trait `to` on its side gains `share` x the holder's `fromStat`, as `stat`.
+// While the holder is fielded, every member of trait `to` on its side gains `share` x the holder's
+// highest of `from`, added to each of `stats`.
 export interface ItemAura {
   to: string;
-  stat: StatKey;
-  fromStat: StatKey;
+  from: StatKey[];
+  stats: StatKey[];
   share: number;
 }
 

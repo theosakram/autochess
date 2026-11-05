@@ -154,7 +154,7 @@ describe('item effects in combat', () => {
 });
 
 describe('Cult of Fire and the Pyre Offering', () => {
-  const cult = (p: Player) => field(p, [['kindler', 1, 0], ['ashbinder', 1, 15], ['wraith', 1, 3], ['footman', 1, 4]]);
+  const cult = (p: Player) => field(p, [['kindler', 1, 0], ['ashbinder', 1, 15], ['titan', 1, 3], ['footman', 1, 4]]);
 
   test('one Offering, granted when the cult activates', () => {
     const state = newGame();
@@ -168,45 +168,45 @@ describe('Cult of Fire and the Pyre Offering', () => {
   test('cultists cannot hold it, outsiders can', () => {
     const state = newGame();
     const p = state.players[0];
-    const [kindler, , wraith] = cult(p);
+    const [kindler, , titan] = cult(p);
     syncItems(state, p);
     const offering = p.items[0].uid;
     expect(applyAction(state, p.id, { type: 'equip', item: offering, unit: kindler })).toEqual({
       ok: false,
       error: "Cult of Fire units can't hold the Pyre Offering",
     });
-    expect(applyAction(state, p.id, { type: 'equip', item: offering, unit: wraith }).ok).toBe(true);
+    expect(applyAction(state, p.id, { type: 'equip', item: offering, unit: titan }).ok).toBe(true);
   });
 
   test("every cultist gains a share of the holder's attack; nobody else does", () => {
     const state = newGame();
     const p = state.players[0];
-    const [kindler, ashbinder, wraith, footman] = cult(p);
+    const [kindler, ashbinder, titan, footman] = cult(p);
     syncItems(state, p);
-    applyAction(state, p.id, { type: 'equip', item: p.items[0].uid, unit: wraith });
+    applyAction(state, p.id, { type: 'equip', item: p.items[0].uid, unit: titan });
     const levels = { cultoffire: 1 };
     const without = fieldStats({ ...p, items: [] }, levels);
     const withIt = fieldStats(p, levels);
-    const gain = Math.round(withIt.get(wraith)!.atk * OFFERING.share[0]);
+    const gain = Math.round(withIt.get(titan)!.atk * OFFERING.share[0]);
     expect(withIt.get(kindler)!.atk).toBe(without.get(kindler)!.atk + gain);
     expect(withIt.get(ashbinder)!.atk).toBe(without.get(ashbinder)!.atk + gain);
-    expect(withIt.get(wraith)!.atk).toBe(without.get(wraith)!.atk);
+    expect(withIt.get(titan)!.atk).toBe(without.get(titan)!.atk);
     expect(withIt.get(footman)!.atk).toBe(without.get(footman)!.atk);
   });
 
   test('the bearer gets the cult unit bonus but does not count toward the cult', () => {
     const state = newGame();
     const p = state.players[0];
-    const [, , wraith, footman] = cult(p);
+    const [, , titan, footman] = cult(p);
     syncItems(state, p);
     const countBefore = traitCounts(p.board).cultoffire;
-    applyAction(state, p.id, { type: 'equip', item: p.items[0].uid, unit: wraith });
+    applyAction(state, p.id, { type: 'equip', item: p.items[0].uid, unit: titan });
     expect(traitCounts(p.board).cultoffire).toBe(countBefore);
     const levels = { cultoffire: 1 };
     const stats = fieldStats(p, levels);
     const plain = fieldStats({ ...p, items: [] }, levels);
-    expect(stats.get(wraith)!.armor).toBe(plain.get(wraith)!.armor + CULT_OF_FIRE.defense[0]);
-    expect(stats.get(wraith)!.mr).toBe(plain.get(wraith)!.mr + CULT_OF_FIRE.defense[0]);
+    expect(stats.get(titan)!.armor).toBe(plain.get(titan)!.armor + CULT_OF_FIRE.defense[0]);
+    expect(stats.get(titan)!.mr).toBe(plain.get(titan)!.mr + CULT_OF_FIRE.defense[0]);
     expect(stats.get(footman)!.armor).toBe(plain.get(footman)!.armor);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction, type Action } from './actions';
 import { BASE_INCOME, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
-import { interest, levelUpCost } from './player';
+import { boardCount, interest, levelUpCost } from './player';
 import { runBot } from './bot';
 import { createGame, resolveCombat, startRound } from './game';
 import { copiesOf } from './merge';
@@ -45,11 +45,13 @@ function totalCopies(state: GameState): number {
     // Upgrade cards aren't units, so they hold no copies.
     n += p.shop.filter((id) => id && !isItemCard(id)).length;
     for (const u of [...p.bench, ...p.board]) if (u) n += copiesOf(u);
+    n += p.gifts?.length ?? 0;
   }
   return n;
 }
 
-const POOL_TOTAL = UNITS.reduce((n, u) => n + POOL_SIZE[u.tier - 1], 0);
+// Units that are only handed out (shop: false) have no pool.
+const POOL_TOTAL = UNITS.filter((u) => u.shop !== false).reduce((n, u) => n + POOL_SIZE[u.tier], 0);
 
 describe('game setup', () => {
   test('same seed gives same game', () => {
@@ -203,7 +205,7 @@ describe('merge', () => {
   test('full bench still allows a buy that completes a merge', () => {
     const state = newGame();
     const p = you(state);
-    const filler = ['footman', 'footman', 'archer', 'imp', 'skeleton', 'acolyte', 'knight', 'druid'];
+    const filler = ['footman', 'footman', 'archer', 'imp', 'wisp', 'galekin', 'knight', 'prajurit'];
     filler.forEach((defId, i) => (p.bench[i] = { uid: 1000 + i, defId, star: 1 }));
     buyCopies(state, 'footman', 1);
     expect(p.bench.filter((u) => u?.defId === 'footman').map((u) => u!.star)).toEqual([2]);
@@ -239,7 +241,8 @@ describe('invariants', () => {
         resolveCombat(state);
         startRound(state);
       }
-      for (const pl of state.players) expect(pl.board.filter(Boolean).length).toBeLessThanOrEqual(pl.level);
+      // Free-slot units (Plane Wanderers) don't count toward the limit.
+      for (const pl of state.players) expect(boardCount(pl)).toBeLessThanOrEqual(pl.level);
     }
     expect(totalCopies(state)).toBe(POOL_TOTAL);
     expect(Object.values(state.pool).every((n) => n >= 0)).toBe(true);
@@ -260,12 +263,12 @@ describe('bots', () => {
     p.board[tiles[0]] = { uid: 1, defId: 'footman', star: 1 };
     p.board[tiles[1]] = { uid: 2, defId: 'archer', star: 1 };
     p.board[1] = { uid: 3, defId: 'drakeling', star: 1 };
-    p.board[5] = { uid: 4, defId: 'scalebearer', star: 1 };
+    p.board[5] = { uid: 4, defId: 'wyrmfang', star: 1 };
     p.board[8] = { uid: 5, defId: 'imp', star: 1 };
     runBot(state, p);
     const onAltar = tiles.map((t) => p.board[t]?.defId);
     expect(onAltar).toContain('drakeling');
-    expect(onAltar).toContain('scalebearer');
+    expect(onAltar).toContain('wyrmfang');
     expect(onAltar.filter(Boolean).length).toBe(4);
   });
 });
@@ -280,7 +283,7 @@ describe('scavenger', () => {
   }
 
   test('level 2 takes the cheapest shop unit for free, after the refresh', () => {
-    const { state, p } = setup(['scrapper', 'penari']);
+    const { state, p } = setup(['wisp', 'penari']);
     const bonuses = startRound(state);
     const mine = bonuses.find((b) => b.playerId === p.id)!;
     expect(mine.trait).toBe('scavenger');
@@ -295,7 +298,7 @@ describe('scavenger', () => {
   });
 
   test('level 3 also pays 2 gold', () => {
-    const { state, p } = setup(['scrapper', 'penari', 'junkbaron']);
+    const { state, p } = setup(['wisp', 'penari', 'graverobber']);
     const gold = p.gold;
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
     expect(mine.gold).toBe(SCAVENGER.gold[1]);
@@ -305,7 +308,7 @@ describe('scavenger', () => {
   });
 
   test('skipped when the bench is full and the unit would not merge', () => {
-    const { state, p } = setup(['scrapper', 'penari']);
+    const { state, p } = setup(['wisp', 'penari']);
     p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: 600 + i, defId: 'titan', star: 1 }));
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
     expect(mine.looted).toBeNull();
@@ -356,11 +359,11 @@ describe('shop lock', () => {
     const state = newGame();
     const p = you(state);
     returnShop(state, p); // hand-built shop below, so the old one goes back to the pool first
-    p.shop = ['titan', null, null, null, null];
-    state.pool.titan--;
+    p.shop = ['wraithlord', null, null, null, null];
+    state.pool.wraithlord--;
     expect(applyAction(state, p.id, { type: 'toggleLock' }).ok).toBe(true);
     startRound(state);
-    expect(p.shop).toEqual(['titan', null, null, null, null]);
+    expect(p.shop).toEqual(['wraithlord', null, null, null, null]);
     expect(p.shopLocked).toBe(false);
     startRound(state);
     expect(p.shop.filter(Boolean)).toHaveLength(5);
@@ -370,7 +373,7 @@ describe('shop lock', () => {
   test('Scavenger loots from the kept shop: lock a lone 5-cost and get it next round', () => {
     const state = newGame();
     const p = you(state);
-    p.board[0] = { uid: 700, defId: 'scrapper', star: 1 };
+    p.board[0] = { uid: 700, defId: 'wisp', star: 1 };
     p.board[1] = { uid: 701, defId: 'penari', star: 1 };
     returnShop(state, p);
     p.shop = [null, null, 'titan', null, null];

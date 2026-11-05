@@ -24,7 +24,7 @@ export const storyweaver: TraitDef = {
     `Every enemy death adds a story, up to ${STORYWEAVER.stacksPerFight} per fight and ${STORYWEAVER.maxStacks} total.`,
   values: () => ({ amp: STORYWEAVER.perStack.map(pct) }),
   chosen: { tiers: STORYWEAVER.eligibleTiers },
-  stacks: { perFight: STORYWEAVER.stacksPerFight, max: STORYWEAVER.maxStacks },
+  stacks: { label: 'Stories', max: STORYWEAVER.maxStacks, perFight: (_, fight) => Math.min(STORYWEAVER.stacksPerFight, fight.kills) },
   mods: ({ level, chosen, stacks }) =>
     chosen
       ? [

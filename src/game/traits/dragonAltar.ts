@@ -14,7 +14,7 @@ export const DRAGON_ALTAR = {
     ALL_CELLS,
     ALL_CELLS,
   ],
-  bonus: [0.075, 0.15, 0.225, 1], // hp & attack for allies starting on an altar
+  bonus: [0.075, 0.15, 0.225, 1], // hp, attack and magic attack for allies starting on an altar
   memberMult: 3, // Dragon Altar units get this many times the bonus
 };
 
@@ -25,7 +25,7 @@ export const dragonAltar: TraitDef = {
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   tiles: (level) => DRAGON_ALTAR.tiles[level - 1],
-  desc: 'Altar tiles: {tiles}. Allies starting on an altar get +{bonus} HP & attack, Dragon Altar units +{member}.',
+  desc: 'Altar tiles: {tiles}. Allies starting on an altar get +{bonus} HP and both attacks, Dragon Altar units +{member}.',
   values: () => ({
     tiles: DRAGON_ALTAR.tiles.map((t) => (t.length === ALL_CELLS.length ? 'all' : String(t.length))),
     bonus: DRAGON_ALTAR.bonus.map(pct),
@@ -37,6 +37,7 @@ export const dragonAltar: TraitDef = {
     return [
       { stat: 'hp', pct: bonus },
       { stat: 'atk', pct: bonus },
+      { stat: 'ap', pct: bonus },
     ];
   },
 };

@@ -9,4 +9,4 @@ const state = createGame(Date.now(), [
   ...Array.from({ length: 7 }, (_, i) => ({ id: `bot${i + 1}`, name: `Bot ${i + 1}`, isBot: true })),
 ]);
 
-mountApp(document.querySelector<HTMLElement>('#app')!, state, PLAYER_ID);
+await mountApp(document.querySelector<HTMLElement>('#app')!, state, PLAYER_ID);

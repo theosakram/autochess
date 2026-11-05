@@ -16,11 +16,10 @@ export const offering: ItemDef = {
   tierFromTrait: true,
   forbidden: 'cultoffire',
   desc:
-    "Only for units outside the cult. Every Cult of Fire unit gains {share} of the holder's attack. " +
+    "Only for units outside the cult. Every Cult of Fire unit gains {share} of the holder's attack or magic attack, whichever is higher, as both. " +
     'The holder gets the Cult of Fire unit bonus, without counting toward the cult.',
   values: () => ({ share: OFFERING.share.map(pct) }),
   mods: () => [],
-  // "Attack or magic attack, whichever is higher": there's one attack stat until AP exists.
-  aura: (tier) => ({ to: 'cultoffire', stat: 'atk', fromStat: 'atk', share: OFFERING.share[tier - 1] }),
+  aura: (tier) => ({ to: 'cultoffire', from: ['atk', 'ap'], stats: ['atk', 'ap'], share: OFFERING.share[tier - 1] }),
   grantsMembership: { trait: 'cultoffire', icon: '♨️' },
 };

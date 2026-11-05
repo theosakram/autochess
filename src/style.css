@@ -11,6 +11,7 @@
   --tier-3: #3a84d6;
   --tier-4: #a457d6;
   --tier-5: #e0a63a;
+  --tier-7: #e0475e;
   font-family: system-ui, sans-serif;
   color: var(--text);
 }
@@ -76,10 +77,54 @@ kbd {
   align-items: start;
   gap: 16px;
 }
-.layout > .traits { grid-area: traits; }
-.layout > .meter { grid-area: meter; }
+/* Regions are wrapped in .slot elements (display: contents) so they can re-render separately. */
+.slot { display: contents; }
+.layout .traits { grid-area: traits; }
+.layout .meter { grid-area: meter; }
 .layout > main { grid-area: main; }
-.layout > .side { grid-area: side; }
+.layout .side { grid-area: side; }
+
+/* The Pixi canvas: board + bench. touch-action lets pointer drags work on touch screens. */
+.stage-wrap { position: relative; width: min(100%, 660px); align-self: center; }
+.stage { width: 100%; }
+/* The grave sits just right of the board, level with your half; on narrow screens, above it. */
+.graves { position: absolute; left: calc(100% + 10px); top: 52%; display: flex; flex-direction: column; gap: 8px; }
+.grave {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 76px;
+  padding: 8px 4px;
+  border: 1px solid #7a6a9a;
+  border-radius: 28px 28px 6px 6px;
+  background: linear-gradient(#3a3550, #262335);
+  color: var(--text);
+}
+.grave-icon { font-size: 22px; line-height: 1; }
+.side-shop {
+  width: 120px;
+  padding: 8px;
+  border: 1px solid #6f8fa6;
+  border-radius: 8px;
+  background: linear-gradient(#2c3a46, #232a33);
+  text-align: center;
+}
+.side-shop-head { border: none; background: none; padding: 0; font-weight: 700; color: var(--text); }
+.side-shop-coins { margin: 6px 0 2px; font-size: 12px; color: var(--muted); }
+.side-shop-coins b { font-size: 18px; color: var(--text); }
+.side-shop-empty { margin: 0; font-size: 11px; color: var(--muted); font-style: italic; }
+.grave-count { font-size: 20px; }
+.grave small { font-size: 10px; color: var(--muted); text-align: center; }
+.stack-rewards { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.stack-rewards .done { color: var(--accent); }
+@media (max-width: 1100px) {
+  .graves { position: static; flex-direction: row; justify-content: center; margin-bottom: 6px; }
+  .grave { flex-direction: row; width: auto; padding: 4px 12px; border-radius: 16px; gap: 8px; }
+  .side-shop { width: auto; display: flex; align-items: center; gap: 8px; padding: 4px 12px; }
+  .side-shop-coins, .side-shop-empty { margin: 0; }
+}
+.stage canvas { display: block; touch-action: none; }
 
 main {
   display: flex;
@@ -88,66 +133,9 @@ main {
 }
 
 /* Board, bench and shop share one width so the play area lines up. */
-.board,
-.bench,
 .shop {
   width: min(100%, 660px);
   align-self: center;
-}
-
-.board {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-  gap: 4px;
-  padding: 8px;
-  background: var(--panel);
-  border-radius: 8px;
-}
-
-.bench {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 4px;
-  padding: 8px;
-  background: var(--panel);
-  border-radius: 8px;
-}
-
-.cell {
-  aspect-ratio: 1;
-  background: var(--cell);
-  border-radius: 4px;
-  display: flex;
-}
-/* Checkerboard; plain even/odd works because the column count is odd. */
-.board .cell:nth-child(even) {
-  background: var(--cell-alt);
-}
-/* Trait tiles, one rule per trait. Declared after the checkerboard so they win. */
-.board .cell.tile-dragonaltar {
-  background: radial-gradient(circle, #e0a63a55 0%, #e0a63a22 60%, var(--cell) 100%);
-  box-shadow: inset 0 0 0 1px #e0a63a99;
-}
-
-
-.cell.enemy { opacity: 0.35; }
-
-.unit {
-  position: relative;
-  flex: 1;
-  margin: 3px;
-  border-radius: 4px;
-  border: 2px solid var(--tier-color);
-  background: color-mix(in srgb, var(--tier-color) 25%, var(--cell));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  font-size: 12px;
-  cursor: grab;
-  user-select: none;
 }
 .unit-star { color: var(--accent); font-size: 10px; }
 .unit-name, .shop-card .unit-name, .shop-card .traits {
@@ -156,22 +144,14 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.unit, .shop-card { min-width: 0; }
-/* Trait icons in the chip's top-left corner (below the combat hp/mana bars). */
-.unit-traits {
-  position: absolute;
-  top: 4px;
-  left: 3px;
-  font-size: 11px;
-  line-height: 1;
-  pointer-events: none;
-}
+.shop-card { min-width: 0; }
 
 .tier-1 { --tier-color: var(--tier-1); }
 .tier-2 { --tier-color: var(--tier-2); }
 .tier-3 { --tier-color: var(--tier-3); }
 .tier-4 { --tier-color: var(--tier-4); }
 .tier-5 { --tier-color: var(--tier-5); }
+.tier-7 { --tier-color: var(--tier-7); }
 
 .shop {
   padding: 8px;
@@ -205,24 +185,53 @@ main {
 }
 
 .shop-card {
-  height: 90px;
+  height: 112px;
+  padding: 0;
+  overflow: hidden;
   border-radius: 6px;
   border: 2px solid var(--tier-color, transparent);
-  background: color-mix(in srgb, var(--tier-color, var(--cell)) 18%, var(--cell));
+  background: color-mix(in srgb, var(--tier-color, var(--cell)) 14%, var(--cell));
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+  align-items: stretch;
+  text-align: left;
 }
 .shop-card.empty { background: var(--cell); }
+/* Cost strip in the tier colour. */
+.shop-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--tier-color, var(--accent));
+  color: #14161c;
+  font-size: 12px;
+}
+.shop-top .cost { font-size: 13px; color: #14161c; }
+.shop-top .owned, .shop-top .up { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.shop-top { min-width: 0; }
+.shop-card .unit-name {
+  padding: 4px 6px 2px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.shop-card .traits { display: flex; flex-direction: column; gap: 1px; padding: 0 6px 4px; margin-top: auto; white-space: normal; }
+.shop-trait { display: flex; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; font-size: 12px; color: #c9ccd6; white-space: nowrap; }
+.shop-trait .t-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shop-trait em { flex: none; }
+.shop-trait.none { color: var(--muted); font-style: italic; }
+.shop-trait.have { color: var(--text); font-weight: 600; }
+.shop-trait em { font-style: normal; color: var(--accent); font-weight: 700; }
 /* Buying this completes a merge. */
 .shop-card.upgrade { box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
-.shop-card.upgrade::after { content: '★★'; color: var(--accent); font-size: 11px; }
 .shop-card:disabled { opacity: 0.45; cursor: not-allowed; }
 .shop-card:not(:disabled):hover { filter: brightness(1.2); }
-.shop-card .traits { font-size: 11px; color: var(--muted); }
-.shop-card .cost { color: var(--accent); font-weight: 600; }
 
 .shop-buttons {
   display: flex;
@@ -268,8 +277,6 @@ main {
   flex-direction: column;
   gap: 12px;
 }
-
-.unit.selected { box-shadow: 0 0 0 2px var(--text); }
 
 .unit-detail {
   position: relative;
@@ -318,9 +325,6 @@ main {
   border: 1px solid #d65151;
   background: color-mix(in srgb, #d65151 15%, var(--cell));
 }
-/* While a unit is selected, empty cells are click targets for moving it. */
-.has-selection .cell[data-area]:empty { cursor: pointer; box-shadow: inset 0 0 0 1px #ffffff33; }
-.has-selection .cell[data-area]:empty:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 
 .opponents {
   padding: 8px 12px;
@@ -336,7 +340,20 @@ main {
   padding: 6px 0;
   border-bottom: 1px solid var(--cell);
 }
-.opponents li span:last-child { color: var(--muted); }
+.opponents .opp-info { color: var(--muted); }
+.opp-traits { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.opp-trait {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--cell));
+  font-size: 12px;
+  line-height: 1.3;
+}
+.opp-trait b { font-size: 11px; color: var(--accent); }
 .opponents li.out { opacity: 0.4; }
 
 .traits {
@@ -387,16 +404,19 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .bearer-facts { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .bearer-facts b { color: var(--text); }
 
+/* Near fullscreen: there's a lot to read. */
 .gallery {
   position: relative;
-  width: min(920px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+  box-sizing: border-box;
+  width: calc(100vw - 24px);
+  height: calc(100vh - 24px);
+  padding: 16px 24px;
   overflow-y: auto;
   text-align: left;
 }
 .gallery h2 { margin: 0 0 4px; }
 .gallery-section { margin: 16px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .gallery-card { padding: 12px; border-radius: 8px; background: var(--cell); }
 .gallery-card .trait-title { font-size: 15px; margin-bottom: 8px; }
 .gallery-card .trait-bps span { background: var(--panel); }
@@ -418,49 +438,89 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .trait-desc span { color: var(--text); }
 .trait-desc span.on { color: var(--accent); font-weight: 700; }
 .trait-desc i { font-style: normal; opacity: 0.5; }
-.trait-units { display: flex; flex-wrap: wrap; gap: 6px; }
+.trait-units { display: flex; flex-direction: column; gap: 4px; }
 .trait-units li {
-  padding: 3px 8px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
   border-radius: 4px;
-  border: 1px solid var(--tier-color);
+  border-left: 3px solid var(--tier-color);
+  background: color-mix(in srgb, var(--tier-color) 8%, transparent);
   font-size: 12px;
-  opacity: 0.5;
 }
-.trait-units li.owned { opacity: 1; background: color-mix(in srgb, var(--tier-color) 25%, var(--cell)); }
-.trait-units small { color: var(--accent); }
-.opponents li.current span:first-child { color: #d65151; font-weight: 600; }
+.trait-units li.owned { background: color-mix(in srgb, var(--tier-color) 30%, var(--cell)); font-weight: 700; }
+.trait-units .unit-cost { color: var(--tier-color); font-weight: 700; }
+.trait-units .unit-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unit-traits { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.dialog .trait-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--muted);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dialog .trait-chip:hover { border-color: var(--accent); }
+.dialog .bearer-chip { border-style: dashed; }
+.unit-tag { color: var(--muted); font-weight: 400; font-size: 10px; }
+/* Unit names in the gallery open their info popup. */
+.dialog .unit-link, .dialog button.grid-unit {
+  padding: 0 0 0 4px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dialog button.grid-unit { width: 100%; border-left: 3px solid var(--tier-color); }
+.dialog button.grid-unit.owned { background: color-mix(in srgb, var(--tier-color) 30%, transparent); }
+.dialog .unit-link:hover, .dialog button.grid-unit:hover { color: var(--accent); text-decoration: underline; }
+.unit-info .trait-title { color: var(--tier-color); }
+.unit-info-cost { padding: 1px 8px; border-radius: 4px; background: var(--tier-color); color: #14161c; font-size: 14px; }
+.info-traits { justify-content: flex-start; margin: 8px 0; }
+.unit-stats { width: 100%; border-collapse: collapse; font-size: 13px; }
+.unit-stats th, .unit-stats td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--cell); }
+.unit-stats tbody th { text-align: left; color: var(--muted); font-weight: 400; }
+.unit-stats thead th { color: var(--accent); }
+
+.gallery-tabs { display: flex; gap: 6px; margin: 8px 0 4px; }
+.dialog .gallery-tab { padding: 4px 14px; border-radius: 999px; border: 1px solid var(--muted); background: none; color: var(--muted); }
+.dialog .gallery-tab.on { border-color: var(--accent); background: var(--accent); color: #14161c; font-weight: 700; }
+.crossover-wrap { overflow-x: auto; margin-top: 12px; }
+.crossover { width: 100%; min-width: 900px; table-layout: fixed; border-collapse: separate; border-spacing: 3px; font-size: 13px; }
+.crossover col.role-col { width: 140px; }
+.crossover th, .crossover td { padding: 4px; border-radius: 4px; vertical-align: top; }
+.crossover td { background: var(--cell); }
+.crossover td:empty { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.crossover thead th { vertical-align: bottom; }
+.crossover tbody th { text-align: left; white-space: nowrap; }
+.dialog .grid-head { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 4px; border: none; background: none; color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; }
+.dialog .crossover tbody .grid-head { flex-direction: row; gap: 6px; }
+.grid-head span { font-size: 13px; }
+.grid-head:hover span { color: var(--accent); }
+.grid-none { color: var(--muted); font-style: italic; }
+.grid-unit {
+  display: block;
+  margin: 1px 0;
+  padding: 1px 4px;
+  border-left: 3px solid var(--tier-color);
+  border-radius: 2px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.grid-unit.owned { font-weight: 700; background: color-mix(in srgb, var(--tier-color) 30%, transparent); }
+.grid-legend { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.grid-legend .grid-unit { display: inline-block; }
+.opponents li.current .opp-name { color: #d65151; font-weight: 600; }
 
 .hud .vs b { color: #d65151; }
-
-/* Combat playback. Fighters sit on a layer matching the board's padding box. */
-.fighters {
-  position: absolute;
-  inset: 8px;
-  pointer-events: none;
-}
-
-.fighter {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: calc((100% - (var(--cols) - 1) * 4px) / var(--cols));
-  aspect-ratio: 1;
-  padding: 3px;
-  border-radius: 4px;
-  border: 2px solid var(--tier-color);
-  background: color-mix(in srgb, var(--tier-color) 25%, var(--cell));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  font-size: 12px;
-  transform: translate(calc(var(--x) * (100% + 4px)), calc(var(--y) * (100% + 4px)));
-  transition-property: transform, opacity;
-  transition-timing-function: linear;
-}
-.fighter.foe { box-shadow: inset 0 0 0 1px #d65151; }
-.unit-items { position: absolute; bottom: 2px; left: 3px; font-size: 10px; line-height: 1; pointer-events: none; }
 
 .armory {
   width: min(100%, 660px);
@@ -474,7 +534,6 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   border-radius: 8px;
   border: 2px dashed transparent;
 }
-.dragging-item .armory { border-color: var(--muted); }
 .item-chip {
   display: flex;
   align-items: center;
@@ -488,14 +547,21 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   user-select: none;
 }
 .item-chip .item-icon { font-size: 16px; }
+.item-chip { touch-action: none; }
+/* The copy of an item chip that follows the pointer while dragging. */
+.drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0.9;
+  box-shadow: 0 4px 14px #000a;
+}
 .item-chip b { color: var(--accent); }
 .item-chip small { color: var(--muted); }
 .item-chip.equipped { border-color: var(--accent); }
 .item-chip.inactive { opacity: 0.45; }
 .item-chip.selected { box-shadow: 0 0 0 2px var(--accent); cursor: pointer; }
-/* While an item is picked up, every unit is a click target for equipping it. */
-.has-item-selection .cell[data-area] .unit { outline: 2px dashed var(--accent); outline-offset: -2px; cursor: pointer; }
-.dragging-item .cell[data-area] .unit { outline: 1px dashed var(--accent); }
 
 .shop-card.item-card {
   border: 2px dashed var(--accent);
@@ -513,19 +579,6 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .trait-items li.owned { opacity: 1; }
 .trait-items li small { color: var(--muted); }
 .trait-items .trait-desc { margin-top: 2px; }
-
-.fighter.stunned { filter: grayscale(0.7) brightness(0.8); }
-.fighter.stunned::after { content: '💫'; position: absolute; top: -14px; right: -4px; font-size: 14px; }
-.effect-keris { --effect-color: #ff6b9a; }
-.effect-offering { --effect-color: #ff8a3d; }
-.effect-phantomexecution { --effect-color: #b48cff; }
-.effect-phantom { --effect-color: #7a5cff; }
-.effect-chaosassault { --effect-color: #e05cff; }
-.effect-mooneater { --effect-color: #9db4ff; }
-.fighter.buffed { box-shadow: 0 0 0 2px var(--effect-color), 0 0 10px var(--effect-color); }
-
-.orb-badge { position: absolute; top: 2px; right: 3px; font-size: 11px; line-height: 1; }
-.chosen-badge + .orb-badge { right: 17px; }
 .orb-line { margin: 6px 0 0; font-size: 12px; color: #c77dff; }
 .orb-use {
   width: 100%;
@@ -551,102 +604,8 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 }
 .orb-option:hover { border-color: #c77dff; }
 .orb-option small { color: var(--muted); }
-
-.chosen-badge { position: absolute; top: 2px; right: 3px; font-size: 12px; line-height: 1; }
 .trait-stacks { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 .trait-stacks b { color: var(--accent); }
-.fighter.on-tile { outline: 2px solid #e0a63a; outline-offset: 1px; }
-
-.fighter .hp {
-  position: absolute;
-  top: -6px;
-  left: 2px;
-  right: 2px;
-  height: 4px;
-  background: #00000080;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.fighter .hp-fill {
-  width: 100%;
-  height: 100%;
-  background: #3fae5a;
-  transition: width 0.15s;
-}
-.fighter.foe .hp-fill { background: #d65151; }
-
-.fighter .mana {
-  position: absolute;
-  top: -1px;
-  left: 2px;
-  right: 2px;
-  height: 3px;
-  background: #00000080;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.fighter .mana-fill {
-  height: 100%;
-  background: #4a8ff0;
-  transition: width 0.15s;
-}
-
-.fighter.casting { animation: cast 0.4s ease-out; }
-@keyframes cast {
-  50% { box-shadow: 0 0 14px 4px #4a8ff0; filter: brightness(1.5); }
-}
-.dmg.spell { color: #8fb8ff; font-size: 16px; }
-.dmg.crit { color: #ff3b3b; font-size: 19px; font-weight: 900; text-shadow: 0 1px 2px #000, 0 0 6px #ff3b3b80; }
-.dmg.crit::after { content: '!'; }
-
-/* Trait pulse hits. Each trait sets --effect-color; the animation is shared. */
-.effect-skybringer { --effect-color: #ffe066; }
-.effect-phasewarper { --effect-color: #c77dff; }
-.dmg.heal { color: #3fae5a; font-size: 15px; }
-.fighter.struck { animation: struck 0.35s ease-out; }
-@keyframes struck {
-  40% { box-shadow: 0 0 16px 5px var(--effect-color); filter: brightness(1.8); }
-}
-.dmg[class*='effect-'] { color: var(--effect-color); font-size: 15px; }
-
-.fighter.attacking { animation: attack 0.25s ease-out; }
-@keyframes attack {
-  50% { filter: brightness(1.8); }
-}
-
-.fighter.dead {
-  opacity: 0;
-  transition-duration: 0.4s;
-}
-
-.dmg {
-  position: absolute;
-  top: 0;
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  text-shadow: 0 1px 2px #000;
-  animation: dmg 0.6s ease-out forwards;
-}
-@keyframes dmg {
-  to { transform: translateY(-18px); opacity: 0; }
-}
-
-.banner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 12px 28px;
-  border-radius: 8px;
-  font-size: 24px;
-  font-weight: 700;
-  background: #000000c0;
-  white-space: pre;
-}
-.banner.win { color: #3fae5a; }
-.banner.loss { color: #d65151; }
-.banner.draw { color: var(--muted); }
 
 .overlay {
   position: fixed;
@@ -705,6 +664,8 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   /* Synergies become a row above the board. */
   .traits { flex-direction: row; flex-wrap: wrap; }
   .trait-tile { min-width: 60px; }
-  .unit { font-size: 9px; }
-  .shop-card { height: 70px; font-size: 12px; }
+  .shop-card { height: 100px; }
+  .shop-card .unit-name { font-size: 12px; }
+  .shop-trait { font-size: 11px; }
 }
+.gallery .gallery-card, .gallery .crossover td, .gallery .trait-desc, .trait-units li { text-align: left; }

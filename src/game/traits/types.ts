@@ -8,6 +8,7 @@ export interface UnitContext {
   cell: number; // board index the unit starts on
   chosen: boolean; // this unit is the trait's chosen one for the game (see TraitDef.chosen)
   stacks: number; // the owner's counter for this trait (see TraitDef.stacks)
+  leader: boolean; // this unit is the trait's leader on its board (see TraitDef.leader)
 }
 
 // Timed damage from the trait itself (not from a unit), hitting every enemy.
@@ -33,6 +34,12 @@ export interface Trigger {
   mods: StatMod[]; // for the rest of the fight
 }
 
+// What a side did in one fight, as counting traits see it.
+export interface FightTally {
+  kills: number; // enemies that died
+  memberSkills: number; // skills (real or placeholder) cast by this trait's own units
+}
+
 // A trait is pure data plus hooks. The engine asks every active trait for each
 // unit's StatMods; it never branches on a trait id.
 export interface TraitDef {
@@ -54,6 +61,13 @@ export interface TraitDef {
   // At game start, one member of these tiers is picked at random as the chosen unit, for every player, all game.
   chosen?: { tiers: number[] };
   roundStart?(level: number): RoundStart;
+  // A member reached a new star by merging, while the trait is active: hand out a free unit
+  // (one of `gift`, at random, from the pool) and/or unlock a locked unit for this player's shop.
+  onPromote?(level: number, def: import('../types').UnitDef, star: import('../types').Star): { gift?: string[]; unlock?: string } | null;
+  // Members fight this many stars higher (stats only), on top of their real star.
+  starBonus?(level: number, def: import('../types').UnitDef): number;
+  // A shop panel beside the board, open while any member is fielded. Its wares are designed later.
+  sideShop?: { title: string };
   // Exclusive items this trait hands out (see items/) and lets the shop upgrade.
   items?: {
     pool: string[];
@@ -62,6 +76,19 @@ export interface TraitDef {
     maxShopTier: number;
     topLevel?: number; // from this level, every item works at its max tier
   };
-  // A counter the player keeps across fights: +1 per enemy death while active, capped per fight and overall.
-  stacks?: { perFight: number; max: number };
+  // While active, the fielded member carrying the most items leads the trait (ties: higher star,
+  // then higher tier, then first on the board). Its mods see `leader: true`.
+  leader?: { title: string; icon: string };
+  // A counter the player keeps all game. It shows up the first time the trait is active and only
+  // grows while it's active: after each fight, and at the start of each round.
+  stacks?: {
+    label: string; // what the counter is called, e.g. 'Stories'
+    max: number;
+    perFight?(level: number, fight: FightTally): number;
+    perRound?(level: number, deployed: number): number; // deployed = units on the board at round start
+    // Each reached in order, once per game: the player gets their reward unit at `star`, or their copy is raised to it.
+    rewards?: { at: number; star: 1 | 2 | 3 }[];
+    // The reward unit: one of these, rolled per player when the counter first appears, then fixed all game.
+    rewardUnits?: string[];
+  };
 }

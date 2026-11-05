@@ -1,94 +1,19 @@
-import { BASE_INCOME, BOARD_COLS, BOARD_ROWS, REROLL_COST, TICKS_PER_SECOND } from '../game/config';
-import type { Fight } from '../game/game';
-import { boardToGrid, GRID_H, GRID_W, gridIndex, viewPoint } from '../game/grid';
-import { auraGrants, effectiveTier, fieldStats, heldBy, type AuraGrant } from '../game/inventory';
+import { BASE_INCOME, REROLL_COST, TICKS_PER_SECOND } from '../game/config';
+import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, isItemCard, ITEMS, type ItemDef } from '../game/items';
 import { orbOptions } from '../game/orb';
 import { SKILLS } from '../game/skills';
 import { copiesOf, findCopies } from '../game/merge';
-import { boardCount, interest, levelUpCost, xpToNext } from '../game/player';
+import { boardCount, freeSlotCount, interest, levelUpCost, xpToNext } from '../game/player';
 import { attackInterval, type StatKey, type StatMod, type Stats } from '../game/stats';
-import { activeTraits, playerTraits, TRAITS, traitCounts, traitLevel, traitTiles, unitStats } from '../game/traits';
-import type { GameState, Item, Loc, Orb, Player, Unit } from '../game/types';
+import { playerTraits, TRAITS, traitCounts, traitLevel, unitStats } from '../game/traits';
+import type { GameState, Item, Player, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS } from '../game/units';
 
 // Pure HTML builders. No state, no DOM access: app.ts decides what to show.
 
 export const traitNames = (ids: string[], sep = ', ') => ids.map((id) => TRAITS[id].name).join(sep);
-const traitLabels = (ids: string[]) => ids.map((id) => `${TRAITS[id].icon} ${TRAITS[id].name}`).join(' · ');
-
-// Inside of a unit chip, shared by board, bench and combat: trait icons, item icons, name, stars.
-export function unitBodyHtml(defId: string, star: number, crowned = false, itemIds: string[] = [], orbTrait: string | null = null): string {
-  const def = UNIT_BY_ID[defId];
-  const bearer = itemIds.flatMap((id) => {
-    const grant = ITEMS[id].grantsMembership;
-    return grant ? [`<span title="${ITEMS[id].name} bearer: gets ${TRAITS[grant.trait].name} bonuses, doesn't count">${grant.icon}</span>`] : [];
-  });
-  return `<span class="unit-traits">${def.traits.map((id) => TRAITS[id].icon).join('')}${bearer.join('')}</span>
-    ${crowned ? '<span class="chosen-badge" title="Protagonist">👑</span>' : ''}
-    ${orbTrait ? `<span class="orb-badge" title="Magic Orb: +1 ${TRAITS[orbTrait].name}">🔮</span>` : ''}
-    ${itemIds.length ? `<span class="unit-items">${itemIds.map((id) => ITEMS[id].icon).join('')}</span>` : ''}
-    <span class="unit-name">${def.name}</span>
-    <span class="unit-star">${'★'.repeat(star)}</span>`;
-}
-
-const tileClass = (tiles: Map<number, string>, i: number) => (tiles.has(i) ? ` tile tile-${tiles.get(i)}` : '');
-
-export function unitHtml(
-  u: Unit,
-  loc: Loc,
-  selected = false,
-  chosen: Record<string, string> = {},
-  items: Item[] = [],
-  orb: Orb | null = null,
-): string {
-  const def = UNIT_BY_ID[u.defId];
-  const traits = traitNames(def.traits);
-  return `<div class="unit tier-${def.tier}${selected ? ' selected' : ''}" draggable="true" data-uid="${u.uid}" data-area="${loc.area}" data-index="${loc.index}"
-    title="${def.name}${traits ? ` (${traits})` : ''}">
-    ${unitBodyHtml(
-      u.defId,
-      u.star,
-      isChosen(chosen, u.defId),
-      items.filter((i) => i.holder === u.uid).map((i) => i.id),
-      orb?.defId === u.defId ? orb.trait : null,
-    )}
-  </div>`;
-}
-
 const isChosen = (chosen: Record<string, string>, defId: string) => Object.values(chosen).includes(defId);
-
-export function slotsHtml(
-  slots: (Unit | null)[],
-  area: Loc['area'],
-  selectedUid: number | null,
-  chosen: Record<string, string>,
-  items: Item[],
-  orb: Orb | null,
-): string {
-  const tiles = area === 'board' ? traitTiles(activeTraits(slots, orb)) : new Map<number, string>();
-  return slots
-    .map(
-      (u, index) =>
-        `<div class="cell${tileClass(tiles, index)}" data-area="${area}" data-index="${index}">${u ? unitHtml(u, { area, index }, u.uid === selectedUid, chosen, items, orb) : ''}</div>`,
-    )
-    .join('');
-}
-
-// Opponent's half during prep. Never a drop target.
-export const enemyHalfHtml = () => '<div class="cell enemy"></div>'.repeat(BOARD_COLS * BOARD_ROWS);
-
-// Full combat grid with both sides' trait tiles, drawn from the viewer's side.
-export function combatCellsHtml(fight: Fight, viewerId: string): string {
-  const flip = fight.home !== viewerId;
-  const tiles = new Map<number, string>();
-  for (const side of [0, 1] as const) {
-    for (const [cell, traitId] of traitTiles(fight.result.traits[side])) {
-      tiles.set(gridIndex(viewPoint(boardToGrid(side, cell), flip)), traitId);
-    }
-  }
-  return Array.from({ length: GRID_W * GRID_H }, (_, i) => `<div class="cell${tileClass(tiles, i)}"></div>`).join('');
-}
 
 // Traits with at least one unit on the board, active first: icon plus count/next breakpoint.
 export function traitsPanelHtml(p: Player): string {
@@ -118,7 +43,18 @@ export function traitsPanelHtml(p: Player): string {
       </button>`;
     })
     .join('');
-  return `<aside class="traits">${tiles + bearers || '<p class="traits-empty">No synergies yet</p>'}</aside>`;
+  // Units that carry a trait's bonuses themselves (e.g. the Plane Wanderer) get one too; it opens their card.
+  const honoraryUnits = p.board
+    .flatMap((u) => (u && UNIT_BY_ID[u.defId].honorary ? [u] : []))
+    .map((u) => {
+      const h = UNIT_BY_ID[u.defId].honorary!;
+      return `<button class="trait-tile bearer${levels[h.trait] ? ' active' : ''}" data-select-unit="${u.uid}" title="${UNIT_BY_ID[u.defId].name}: ${TRAITS[h.trait].name} bonus, doesn't count">
+        <span class="trait-icon">${h.icon}</span>
+        <span class="trait-count">1/1</span>
+      </button>`;
+    })
+    .join('');
+  return `<aside class="traits">${tiles + bearers + honoraryUnits || '<p class="traits-empty">No synergies yet</p>'}</aside>`;
 }
 
 // Fills a trait's or item's {placeholders} with every level's value; `current` (1-based) is highlighted.
@@ -129,13 +65,13 @@ function descHtml(src: { desc: string; values(): Record<string, string[]> }, cur
   );
 }
 
-const STAT_NAMES: Partial<Record<StatKey, string>> = { atk: 'attack', hp: 'HP', armor: 'armor', mr: 'magic resist' };
+const STAT_NAMES: Partial<Record<StatKey, string>> = { atk: 'attack', ap: 'magic attack', hp: 'HP', armor: 'armor', mr: 'magic resist' };
 const statName = (s: StatKey) => STAT_NAMES[s] ?? s;
 const modText = (m: StatMod) => (m.add ? `+${m.add} ${statName(m.stat)}` : `+${Math.round((m.pct ?? 0) * 100)}% ${statName(m.stat)}`);
 
 // "every Cult of Fire unit +122 attack (50% of 243)"
 const auraText = (g: AuraGrant) =>
-  `every ${TRAITS[g.to].name} unit +${g.amount} ${statName(g.stat)} (${Math.round(g.share * 100)}% of ${g.base})`;
+  `every ${TRAITS[g.to].name} unit +${g.amount} ${g.stats.map(statName).join(' and ')} (${Math.round(g.share * 100)}% of ${g.base} ${statName(g.from)})`;
 
 // Plain text for one tier of an item, for tooltips.
 const itemText = (def: ItemDef, tier: number) => {
@@ -171,24 +107,101 @@ function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string
   const lvl = traitLevel(traitId, n);
   const owned = new Set(board.flatMap((u) => (u ? [u.defId] : [])));
   const bps = t.breakpoints.map((b, i) => `<span class="${i < lvl ? 'on' : ''}${i === lvl - 1 ? ' current' : ''}">${b}</span>`).join('');
-  const units = UNITS.filter((u) => u.traits.includes(traitId))
-    .sort((a, b) => a.tier - b.tier)
-    .map((u) => `<li class="tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}">${u.name} <small>${u.tier}g</small></li>`)
-    .join('');
+  const row = (u: UnitDef) => {
+    const mine = Object.values(p.rewardUnit ?? {}).includes(u.id);
+    const chips = [
+      ...u.traits.filter((id) => id !== traitId).map((id) => traitChipHtml(id)),
+      // A bearer unit (e.g. a Plane Wanderer) links to the trait it carries, from its other cards.
+      u.honorary && u.honorary.trait !== traitId ? bearerChipHtml(u.honorary) : '',
+    ].join('');
+    return `<li class="tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}">
+        <span class="unit-cost">${u.tier}g</span>
+        <span class="unit-name"><button class="unit-link" data-unit-info="${u.id}">${u.name}</button>${u.shop === false ? ` <small class="unit-tag">${mine ? 'yours' : 'not in shop'}</small>` : ''}</span>
+        <span class="unit-traits">${chips}</span>
+      </li>`;
+  };
+  const byCost = (a: UnitDef, b: UnitDef) => a.tier - b.tier || a.name.localeCompare(b.name);
+  const units = UNITS.filter((u) => u.traits.includes(traitId)).sort(byCost).map(row).join('');
+  const bearers = UNITS.filter((u) => u.honorary?.trait === traitId).sort(byCost).map(row).join('');
   return `<${heading} class="trait-title"><span class="trait-icon">${t.icon}</span> ${t.name} <small>${t.kind} · ${n} on board</small></${heading}>
     <div class="trait-bps">${bps}</div>
     <p class="trait-desc">${descHtml(t, lvl)}</p>
     ${chosen[traitId] ? `<p class="trait-stacks">👑 This game: <b>${UNIT_BY_ID[chosen[traitId]].name}</b></p>` : ''}
+    ${t.leader ? leaderLineHtml(traitId, p) : ''}
     ${p.orb?.trait === traitId ? `<p class="trait-stacks">🔮 Orb: <b>${UNIT_BY_ID[p.orb.defId].name}</b> counts +1</p>` : ''}
-    ${t.stacks ? `<p class="trait-stacks">Stacks: <b>${p.stacks[traitId] ?? 0}</b> / ${t.stacks.max}</p>` : ''}
+    ${t.stacks ? stacksHtml(traitId, p) : ''}
+    ${unlockHtml(traitId, p)}
     ${t.items ? traitItemsHtml(t.items.pool, p) : ''}
     <h4>Units</h4>
-    <ul class="trait-units">${units}</ul>`;
+    <ul class="trait-units">${units}</ul>
+    ${bearers ? `<h4>Bearers <small>get the bonus, don't count</small></h4><ul class="trait-units">${bearers}</ul>` : ''}`;
+}
+
+// Locked units of this trait the player has unlocked, and free units waiting for bench room.
+function unlockHtml(traitId: string, p: Player): string {
+  const unlocked = UNITS.filter((u) => u.locked && u.traits.includes(traitId) && p.unlocked?.includes(u.id));
+  const waiting = (p.gifts ?? []).filter((id) => UNIT_BY_ID[id].traits.includes(traitId));
+  return [
+    ...unlocked.map((u) => `<p class="trait-stacks">🔓 <b>${u.name}</b> is in your shop now</p>`),
+    waiting.length ? `<p class="trait-stacks">🎁 Waiting for bench room: <b>${waiting.map((id) => UNIT_BY_ID[id].name).join(', ')}</b></p>` : '',
+  ].join('');
+}
+
+// A counting trait's number, and its rewards: done, or how far off.
+function stacksHtml(traitId: string, p: Player): string {
+  const rule = TRAITS[traitId].stacks!;
+  const n = p.stacks[traitId] ?? 0;
+  const claimed = p.rewards?.[traitId] ?? 0;
+  const unit = p.rewardUnit?.[traitId];
+  const name = unit ? UNIT_BY_ID[unit].name : 'rolled when it first appears';
+  const rewards = (rule.rewards ?? [])
+    .map((r, i) => `<li class="${i < claimed ? 'done' : ''}">${r.at}: ${name} ${'★'.repeat(r.star)}${i < claimed ? ' ✓' : ''}</li>`)
+    .join('');
+  return `<p class="trait-stacks">${rule.label}: <b>${n}</b> / ${rule.max}</p>${rewards ? `<ul class="stack-rewards">${rewards}</ul>` : ''}`;
+}
+
+// Trait shops beside the board, open while any member is fielded. Wares come later.
+export function sideShopsHtml(p: Player): string {
+  return Object.values(TRAITS)
+    .filter((t) => t.sideShop && p.board.some((u) => u && UNIT_BY_ID[u.defId].traits.includes(t.id)))
+    .map(
+      (t) => `<section class="side-shop">
+        <button class="side-shop-head" data-trait="${t.id}">${t.icon} ${t.sideShop!.title}</button>
+        <p class="side-shop-coins"><b>${p.stacks[t.id] ?? 0}</b> ${t.stacks?.label ?? ''}</p>
+        <p class="side-shop-empty">Wares coming soon</p>
+      </section>`,
+    )
+    .join('');
+}
+
+// The grave beside the board: every counting trait with rewards, once it has shown up this game.
+export function graveHtml(p: Player): string {
+  return Object.entries(p.stacks)
+    .filter(([id]) => TRAITS[id].stacks?.rewards)
+    .map(([id, n]) => {
+      const rule = TRAITS[id].stacks!;
+      const next = rule.rewards![p.rewards?.[id] ?? 0];
+      return `<button class="grave" data-trait="${id}" title="${TRAITS[id].name}: ${rule.label.toLowerCase()}">
+        <span class="grave-icon">${TRAITS[id].icon}</span>
+        <b class="grave-count">${n}</b>
+        <small>${next ? `next ${next.at}: ${'★'.repeat(next.star)}` : 'complete'}</small>
+      </button>`;
+    })
+    .join('');
+}
+
+// Who leads a trait on the player's board right now.
+function leaderLineHtml(traitId: string, p: Player): string {
+  const leader = TRAITS[traitId].leader!;
+  const uid = fieldLeaders(p, playerTraits(p))[traitId];
+  const u = uid === undefined ? null : p.board.find((x) => x?.uid === uid);
+  return `<p class="trait-stacks">${leader.icon} ${leader.title}: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}` : 'none yet'}</b></p>`;
 }
 
 // Modal shell: backdrop and × both fire `closeAction`.
-const modalHtml = (closeAction: string, className: string, body: string) =>
-  `<div class="overlay" data-action="${closeAction}"><div class="dialog modal ${className}">
+// `scrollKey` names the dialog's scroll position so re-renders keep it (see app.ts); defaults to the close action.
+const modalHtml = (closeAction: string, className: string, body: string, scrollKey = closeAction) =>
+  `<div class="overlay" data-action="${closeAction}"><div class="dialog modal ${className}" data-keep-scroll="${scrollKey}">
     <button class="close" data-action="${closeAction}" aria-label="Close">×</button>
     ${body}
   </div></div>`;
@@ -197,19 +210,70 @@ export function traitDetailHtml(traitId: string, p: Player, chosen: Record<strin
   return modalHtml('closeTrait', 'trait-popup', traitCardHtml(traitId, p, chosen, 'h2'));
 }
 
-// Every trait in the game, factions then roles.
-export function galleryHtml(p: Player, chosen: Record<string, string>): string {
-  const section = (kind: 'faction' | 'role', title: string) => {
-    const cards = Object.values(TRAITS)
-      .filter((t) => t.kind === kind)
-      .map((t) => `<article class="gallery-card">${traitCardHtml(t.id, p, chosen, 'h3')}</article>`)
+// Like a trait chip, for a unit that carries a trait's bonus without being a member.
+const bearerChipHtml = (h: { trait: string; icon: string }) =>
+  `<button class="trait-chip bearer-chip" data-trait="${h.trait}" title="Gets the ${TRAITS[h.trait].name} bonus, doesn't count">${h.icon} ${TRAITS[h.trait].name} bearer</button>`;
+
+// A small button naming a trait; clicking it opens that trait's popup.
+const traitChipHtml = (id: string) =>
+  `<button class="trait-chip" data-trait="${id}" title="${TRAITS[id].name}">${TRAITS[id].icon} ${TRAITS[id].name}</button>`;
+
+export type GalleryTab = 'cards' | 'grid';
+
+// Every trait in the game: as cards (factions then roles), or as a role x faction grid
+// showing which units sit at each crossing.
+export function galleryHtml(p: Player, chosen: Record<string, string>, tab: GalleryTab = 'cards'): string {
+  const tabs = (['cards', 'grid'] as const)
+    .map((t) => `<button class="gallery-tab${t === tab ? ' on' : ''}" data-action="galleryTab" data-tab="${t}">${t === 'cards' ? 'Synergies' : 'Crossovers'}</button>`)
+    .join('');
+  const body = tab === 'grid' ? crossoverGridHtml(p) : gallerySection(p, chosen, 'faction', 'Factions') + gallerySection(p, chosen, 'role', 'Roles');
+  // Each tab keeps its own scroll position.
+  return modalHtml('closeGallery', 'gallery', `<h2>📖 Synergies</h2><nav class="gallery-tabs">${tabs}</nav>${body}`, `gallery-${tab}`);
+}
+
+function gallerySection(p: Player, chosen: Record<string, string>, kind: 'faction' | 'role', title: string): string {
+  const cards = Object.values(TRAITS)
+    .filter((t) => t.kind === kind)
+    .map((t) => `<article class="gallery-card">${traitCardHtml(t.id, p, chosen, 'h3')}</article>`)
+    .join('');
+  return `<h3 class="gallery-section">${title}</h3><div class="gallery-grid">${cards}</div>`;
+}
+
+// Roles down the side, factions across the top, plus a "none" row and column. A unit with
+// two roles shows up in both rows.
+function crossoverGridHtml(p: Player): string {
+  const owned = new Set(p.board.flatMap((u) => (u ? [u.defId] : [])));
+  const ids = (kind: 'faction' | 'role') => Object.values(TRAITS).filter((t) => t.kind === kind).map((t) => t.id);
+  const factions = [...ids('faction'), null];
+  const roles = [...ids('role'), null];
+  // A bearer sits in the column of the trait it carries (e.g. Plane Wanderers under Necromancer).
+  const traitsOf = (u: UnitDef) => [...u.traits, ...(u.honorary ? [u.honorary.trait] : [])];
+  const has = (traits: string[], id: string | null, kind: 'faction' | 'role') =>
+    id === null ? !traits.some((t) => TRAITS[t].kind === kind) : traits.includes(id);
+  const head = (id: string | null) =>
+    id === null ? '<span class="grid-none">none</span>' : `<button class="grid-head" data-trait="${id}" title="${TRAITS[id].name}">${TRAITS[id].icon}<span>${TRAITS[id].name}</span></button>`;
+  const cell = (role: string | null, faction: string | null) =>
+    UNITS.filter((u) => has(traitsOf(u), role, 'role') && has(traitsOf(u), faction, 'faction'))
+      .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name))
+      .map((u) => {
+        const bearer = u.honorary && u.honorary.trait === faction ? `${u.honorary.icon} ` : '';
+        const note = bearer ? ` · ${TRAITS[u.honorary!.trait].name} bearer, not in shop` : '';
+        return `<button class="grid-unit tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}" data-unit-info="${u.id}" title="${u.tier}g${note}">${bearer}${u.name}</button>`;
+      })
       .join('');
-    return `<h3 class="gallery-section">${title}</h3><div class="gallery-grid">${cards}</div>`;
-  };
-  return modalHtml('closeGallery', 'gallery', `<h2>📖 Synergies</h2>${section('faction', 'Factions')}${section('role', 'Roles')}`);
+  const rows = roles
+    .map((r) => `<tr><th scope="row">${head(r)}</th>${factions.map((f) => `<td>${cell(r, f)}</td>`).join('')}</tr>`)
+    .join('');
+  return `<div class="crossover-wrap" data-keep-scroll="crossover"><table class="crossover">
+    <colgroup><col class="role-col">${factions.map(() => '<col>').join('')}</colgroup>
+    <thead><tr><th></th>${factions.map((f) => `<th scope="col">${head(f)}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <p class="grid-legend">Colour = cost (${[1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-unit tier-${t}">${t}g</span>`).join(' ')}) · bold = on your board · 🧭 = Plane Wanderer (Necromancer reward, not in shop) · click a trait or unit to open it</p>`;
 }
 
 export function shopHtml(p: Player, locked: boolean, chosen: Record<string, string>): string {
+  const counts = traitCounts(p.board, p.orb);
   const cards = p.shop
     .map((id, slot) => {
       if (!id) return `<div class="shop-card empty"></div>`;
@@ -217,17 +281,27 @@ export function shopHtml(p: Player, locked: boolean, chosen: Record<string, stri
         const item = ITEMS[cardItem(id)];
         const tier = p.items.find((it) => it.id === item.id)?.tier ?? 0;
         return `<button class="shop-card item-card" data-slot="${slot}" ${locked ? 'disabled' : ''} title="${item.name} tier ${tier + 1}: ${itemText(item, tier + 1)}">
+          <span class="shop-top"><b class="cost">Free</b><span class="owned">upgrade</span></span>
           <span class="unit-name">${item.icon} ${item.name}</span>
-          <span class="traits">Tier ${tier} → ${tier + 1}</span>
-          <span class="cost">Free</span>
+          <span class="traits"><span class="shop-trait">Tier ${tier} → ${tier + 1}</span></span>
         </button>`;
       }
       const def = UNIT_BY_ID[id];
-      const upgrade = findCopies(p, id, 1).length >= 2 ? ' upgrade' : '';
-      return `<button class="shop-card tier-${def.tier}${upgrade}" data-slot="${slot}" ${locked || p.gold < def.tier ? 'disabled' : ''}>
+      const upgrade = findCopies(p, id, 1).length >= 2;
+      const owned = [...p.board, ...p.bench].reduce((n, u) => n + (u?.defId === id ? copiesOf(u) : 0), 0);
+      // Traits you already field: what buying (and fielding) this one would bring the count to.
+      const fielded = p.board.some((u) => u?.defId === id);
+      const traits = def.traits
+        .map((t) => {
+          const n = counts[t] ?? 0;
+          const gain = n > 0 && !fielded ? `<em>${n}→${n + 1}</em>` : '';
+          return `<span class="shop-trait${gain ? ' have' : ''}"><span class="t-name">${TRAITS[t].icon} ${TRAITS[t].name}</span>${gain}</span>`;
+        })
+        .join('');
+      return `<button class="shop-card tier-${def.tier}${upgrade ? ' upgrade' : ''}" data-slot="${slot}" ${locked || p.gold < def.tier ? 'disabled' : ''}>
+        <span class="shop-top"><b class="cost">${def.tier}g</b>${upgrade ? '<span class="up" title="Buying this makes a 2-star">★★</span>' : owned ? `<span class="owned">own ${owned}</span>` : ''}</span>
         <span class="unit-name">${isChosen(chosen, id) ? '👑 ' : ''}${def.name}</span>
-        <span class="traits">${traitLabels(def.traits)}</span>
-        <span class="cost">${def.tier}g</span>
+        <span class="traits">${traits || '<span class="shop-trait none">no traits</span>'}</span>
       </button>`;
     })
     .join('');
@@ -267,11 +341,11 @@ export function armoryHtml(p: Player, selectedItem: number | null = null): strin
       const holder = units.find((u) => u?.uid === it.holder);
       const grant = grants.get(it.uid);
       const state = tier ? `tier ${tier}` : `inactive: needs ${TRAITS[def.trait].name}`;
-      return `<div class="item-chip${tier ? '' : ' inactive'}${holder ? ' equipped' : ''}${it.uid === selectedItem ? ' selected' : ''}" draggable="true" data-item="${it.uid}"
+      return `<div class="item-chip${tier ? '' : ' inactive'}${holder ? ' equipped' : ''}${it.uid === selectedItem ? ' selected' : ''}" data-item="${it.uid}"
         title="${def.name} (${state}). ${itemText(def, tier || it.tier)}${grant ? ` Now: ${auraText(grant)}.` : ''}">
         <span class="item-icon">${def.icon}</span><b>T${tier || it.tier}</b>
         ${holder ? `<small>${UNIT_BY_ID[holder.defId].name}</small>` : ''}
-        ${grant ? `<small class="aura-line">+${grant.amount} ${statName(grant.stat)}</small>` : ''}
+        ${grant ? `<small class="aura-line">+${grant.amount}</small>` : ''}
       </div>`;
     })
     .join('');
@@ -291,7 +365,7 @@ export function hudHtml(state: GameState, p: Player, hp: number, opponentName: s
     ${stat('❤️', 'HP', `<b>${hp}</b>`)}
     ${stat('💰', `Gold (+${income} next round)`, `<b>${p.gold}</b>`)}
     ${stat('🏅', need === null ? `Level ${p.level} (max)` : `Level ${p.level}, ${p.xp}/${need} XP`, `<b>${p.level}</b> ${xp}`)}
-    ${stat('♟️', 'Units on board / max', `<b>${boardCount(p)}/${p.level}</b>`)}
+    ${stat('♟️', 'Units on board / max', `<b>${boardCount(p)}/${p.level}${freeSlotCount(p) ? ` +${freeSlotCount(p)}` : ''}</b>`)}
     ${p.orbs.length ? stat('🔮', 'Magic Orb ready: click a unit, then Use Magic Orb', `<b>${p.orbs.length}</b>`) : ''}
     ${opponentName ? `<span class="hud-stat vs" title="Fighting">⚔️ <b>${opponentName}</b></span>` : ''}
     <button class="hud-book" data-action="openGallery" title="All factions and roles">📖</button>
@@ -326,7 +400,12 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
   });
   const traits = [
     ...def.traits.map((id) => `<button class="chip" data-trait="${id}">${TRAITS[id].icon} ${TRAITS[id].name}</button>`),
-    ...honorary.map((g) => `<button class="chip" data-trait="${g.trait}" title="Gets the bonuses, doesn't count">${g.icon} ${TRAITS[g.trait].name} bearer</button>`),
+    ...[...honorary, ...(def.honorary ? [def.honorary] : [])].map(
+      (g) => `<button class="chip" data-trait="${g.trait}" title="Gets the bonuses, doesn't count">${g.icon} ${TRAITS[g.trait].name} bearer</button>`,
+    ),
+    ...(area === 'board' ? leadsOf(p, levels, uid) : []).map(
+      (id) => `<button class="chip" data-trait="${id}">${TRAITS[id].leader!.icon} ${TRAITS[id].leader!.title}</button>`,
+    ),
   ].join('');
 
   return `<section class="unit-detail tier-${def.tier}">
@@ -339,6 +418,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
     <dl>
       ${row('HP', 'hp')}
       ${row('Attack', 'atk')}
+      ${row('Magic attack', 'ap')}
       <dt>Attack speed</dt><dd>${perSec(attackInterval(s))}/s ${
         attackInterval(s) !== attackInterval(base) ? `<em>+${fmt((s.attackSpeed - base.attackSpeed) * 100)}%</em>` : ''
       }</dd>
@@ -350,6 +430,10 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       ${optional('Damage amp', 'damageAmp', (n) => `${fmt(n * 100)}%`)}
       ${optional('Armor shred', 'armorShred')}
       ${optional('Crit chance', 'critChance', (n) => `${fmt(n * 100)}%`)}
+      ${optional('Skill damage', 'skillAmp', (n) => `${fmt(n * 100)}%`)}
+      ${optional('Basic attack dmg', 'basicAmp', (n) => `${fmt(n * 100)}%`)}
+      ${optional('Hit-again chance', 'hitAgain', (n) => `${fmt(n * 100)}%`)}
+      ${optional('Starting shield', 'startShield', (n) => `${fmt(n * 100)}% HP`)}
       ${s.critChance ? row('Crit damage', 'critDamage', (n) => `${fmt(n * 100)}%`) : ''}
       ${optional('Lifesteal', 'lifesteal', (n) => `${fmt(n * 100)}%`)}
       ${optional('Spell lifesteal', 'spellLifesteal', (n) => `${fmt(n * 100)}%`)}
@@ -392,11 +476,49 @@ export function orbChoiceHtml(p: Player, uid: number): string {
   );
 }
 
+// Gallery popup for any unit type: what it is, its numbers at every star, and its skill.
+export function unitInfoHtml(defId: string, p: Player): string {
+  const def = UNIT_BY_ID[defId];
+  const stars = ([1, 2, 3] as const).map((star) => unitStats(def, star));
+  const fmt = (n: number) => String(+n.toFixed(2));
+  const row = (label: string, value: (s: Stats) => string) => `<tr><th>${label}</th>${stars.map((s) => `<td>${value(s)}</td>`).join('')}</tr>`;
+  const chips = [...def.traits.map((id) => traitChipHtml(id)), def.honorary ? bearerChipHtml(def.honorary) : ''].join('');
+  const position = `${def.range <= 1 ? 'Frontline · melee' : `Backline · range ${def.range}`} · ${def.attackType ?? 'physical'} attacks`;
+  const reward = Object.values(p.rewardUnit ?? {}).includes(def.id);
+  const where =
+    def.shop === false ? (reward ? 'Your grave reward · not in the shop' : 'Not in the shop: a trait reward') : def.locked ? 'In your shop only once unlocked' : 'In the shop';
+  const skill = def.skill
+    ? `<h4>Skill: ${SKILLS[def.skill].name}</h4><p class="skill trait-desc">${descHtml(SKILLS[def.skill], 0)}</p>`
+    : `<h4>Skill <small>placeholder</small></h4>
+      <p class="skill trait-desc">At full mana, the next attack deals ${Math.round(stars[0].castMult * 100)}% magic attack
+      (${stars.map((s) => `<span>${Math.round(s.ap * s.castMult)}</span>`).join('<i> / </i>')}) as magic damage.</p>`;
+  return modalHtml(
+    'closeUnitInfo',
+    'trait-popup unit-info',
+    `<h2 class="trait-title tier-${def.tier}"><span class="unit-info-cost">${def.tier}g</span> ${def.name}</h2>
+    <p class="meta">${position} · ${where}</p>
+    <div class="unit-traits info-traits">${chips || '<span class="unit-tag">no traits</span>'}</div>
+    <table class="unit-stats">
+      <thead><tr><th></th><th>★</th><th>★★</th><th>★★★</th></tr></thead>
+      <tbody>
+        ${row('HP', (s) => fmt(s.hp))}
+        ${row('Attack', (s) => fmt(s.atk))}
+        ${row('Magic attack', (s) => fmt(s.ap))}
+        ${row('Armor', (s) => fmt(s.armor))}
+        ${row('Magic resist', (s) => fmt(s.mr))}
+        ${row('Attack speed', (s) => `${(TICKS_PER_SECOND / attackInterval(s)).toFixed(2)}/s`)}
+        ${row('Mana', (s) => fmt(s.maxMana))}
+      </tbody>
+    </table>
+    ${skill}`,
+  );
+}
+
 // The unit's skill, its current star's numbers highlighted; or the placeholder cast.
 function skillHtml(skillId: string | undefined, star: number, s: Stats): string {
   if (!skillId) {
     return `<h4>Skill <small>placeholder</small></h4>
-      <p class="skill">At full mana, the next attack deals ${Math.round(s.castMult * 100)}% attack (${Math.round(s.atk * s.castMult)}) as magic damage.</p>`;
+      <p class="skill">At full mana, the next attack deals ${Math.round(s.castMult * 100)}% magic attack (${Math.round(s.ap * s.castMult * (1 + s.skillAmp))}) as magic damage.</p>`;
   }
   const skill = SKILLS[skillId];
   return `<h4>Skill: ${skill.name}</h4><p class="skill trait-desc">${descHtml(skill, star)}</p>`;
@@ -423,7 +545,7 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
   const holder = [...p.board, ...p.bench].find((u) => u?.uid === it.holder);
   const aura = auraGrants(p, levels, chosen).get(itemUid);
   const bonus = level
-    ? trait.mods({ level, member: true, cell: -1, chosen: false, stacks: 0 }).map(modText).join(', ')
+    ? trait.mods({ level, member: true, cell: -1, chosen: false, stacks: 0, leader: false }).map(modText).join(', ')
     : `nothing until ${trait.name} is active`;
   const who = holder ? `${UNIT_BY_ID[holder.defId].name} ${'★'.repeat(holder.star)}` : 'nobody';
   return modalHtml(
@@ -440,6 +562,17 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
   );
 }
 
+// A player's active synergies, strongest first: icon and the breakpoint reached. Each opens its trait.
+function synergyChipsHtml(p: Player): string {
+  const counts = traitCounts(p.board, p.orb);
+  const chips = Object.entries(playerTraits(p))
+    .map(([id, lvl]) => ({ t: TRAITS[id], lvl, n: counts[id] ?? 0 }))
+    .sort((a, b) => b.lvl - a.lvl || b.n - a.n || a.t.name.localeCompare(b.t.name))
+    .map(({ t, lvl, n }) => `<button class="opp-trait" data-trait="${t.id}" title="${t.name} ${n} (level ${t.breakpoints[lvl - 1]})">${t.icon}<b>${t.breakpoints[lvl - 1]}</b></button>`)
+    .join('');
+  return chips ? `<span class="opp-traits">${chips}</span>` : '';
+}
+
 export function playersHtml(others: Player[], shownHp: (p: Player) => number, opponentId: string | null): string {
   const rows = others
     .slice()
@@ -448,7 +581,7 @@ export function playersHtml(others: Player[], shownHp: (p: Player) => number, op
       const hp = shownHp(o);
       const cls = [hp <= 0 ? 'out' : '', o.id === opponentId ? 'current' : ''].join(' ');
       const info = hp <= 0 ? `#${o.place}` : `${hp} HP · Lv ${o.level} · ${boardCount(o)} units`;
-      return `<li class="${cls}"><span>${o.name}</span><span>${info}</span></li>`;
+      return `<li class="${cls}"><span class="opp-name">${o.name}</span><span class="opp-info">${info}</span>${hp > 0 ? synergyChipsHtml(o) : ''}</li>`;
     })
     .join('');
   return `<aside class="opponents"><h3>Players</h3><ul>${rows}</ul></aside>`;

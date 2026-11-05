@@ -7,7 +7,8 @@ export type DamageType = 'physical' | 'magic' | 'pure'; // pure ignores armor an
 // StatMods; the combat engine reads stats and never looks at trait ids.
 export interface Stats {
   hp: number;
-  atk: number;
+  atk: number; // physical attack
+  ap: number; // magic attack
   armor: number;
   mr: number;
   maxMana: number;
@@ -16,7 +17,11 @@ export interface Stats {
   damageAmp: number; // all damage this unit deals is multiplied by 1 + damageAmp
   critChance: number; // 0..1, basic attacks only
   critDamage: number; // multiplier on a critting basic attack
-  castMult: number; // skill damage = atk x castMult (placeholder skill until real abilities)
+  basicAmp: number; // basic attacks (and enhanced ones) deal x (1 + basicAmp)
+  hitAgain: number; // chance a basic attack strikes again right away (the extra hit can't repeat)
+  startShield: number; // shield at the start of combat, as a fraction of max hp; lasts the whole fight
+  castMult: number; // placeholder skill damage = ap x castMult, for units without a real skill
+  skillAmp: number; // skill damage (real skills and the placeholder cast) x (1 + skillAmp)
   lifesteal: number; // share of basic-attack damage healed back
   spellLifesteal: number; // share of all other damage dealt healed back
   range: number;
@@ -36,12 +41,13 @@ export interface StatMod {
   pct?: number;
 }
 
-// `scale` multiplies hp and atk on top of stars; used by the balance tool.
-export function baseStats(def: UnitDef, star: Star, scale = 1): Stats {
+// `scale` multiplies hp, atk and ap on top of stars; used by the balance tool.
+export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
   const mult = STAR_MULT[star - 1] * scale;
   return {
     hp: def.hp * mult,
     atk: def.atk * mult,
+    ap: def.ap * mult,
     armor: def.armor,
     mr: def.mr,
     maxMana: def.mana,
@@ -50,7 +56,11 @@ export function baseStats(def: UnitDef, star: Star, scale = 1): Stats {
     damageAmp: 0,
     critChance: 0,
     critDamage: BASE_CRIT_DAMAGE,
+    basicAmp: 0,
+    hitAgain: 0,
+    startShield: 0,
     castMult: CAST_MULT,
+    skillAmp: 0,
     lifesteal: 0,
     spellLifesteal: 0,
     range: def.range,
@@ -69,5 +79,6 @@ export function applyMods(base: Stats, mods: StatMod[]): Stats {
   for (const [stat, p] of Object.entries(pct) as [StatKey, number][]) out[stat] *= 1 + p;
   out.hp = Math.round(out.hp);
   out.atk = Math.round(out.atk);
+  out.ap = Math.round(out.ap);
   return out;
 }

@@ -1,5 +1,5 @@
 import { runBot } from './bot';
-import { enemyDeaths, simulateCombat, type CombatResult } from './combat';
+import { enemyDeaths, memberSkills, simulateCombat, type CombatResult } from './combat';
 import {
   BASE_DAMAGE,
   BASE_INCOME,
@@ -18,10 +18,10 @@ import { addXp, interest, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop } from './shop';
 import { claimShopSlot, canClaim } from './actions';
-import { syncItems } from './inventory';
+import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
 import { isItemCard } from './items';
-import { gainStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
+import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
 import type { GameState, Player } from './types';
 import { UNITS } from './units';
@@ -43,7 +43,7 @@ export interface Fight {
 
 export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
   const pool: Record<string, number> = {};
-  for (const u of UNITS) pool[u.id] = POOL_SIZE[u.tier - 1];
+  for (const u of UNITS) if (u.shop !== false) pool[u.id] = POOL_SIZE[u.tier];
 
   const state: GameState = {
     round: 0,
@@ -105,10 +105,12 @@ export function startRound(state: GameState): RoundBonus[] {
     if (p.shopLocked) p.shopLocked = false;
     else refreshShop(state, p);
   }
+  // Units deployed at the start of the round feed counting traits (before bots rearrange).
+  for (const p of alive) roundStacks(p);
   const bonuses = alive.flatMap((p) =>
     roundStartEffects(p).map(({ trait, effect }) => ({ playerId: p.id, trait, ...payOut(state, p, effect) })),
   );
-  for (const p of alive) syncItems(state, p);
+  for (const p of alive) syncPlayer(state, p);
   for (const p of alive) {
     if (p.isBot) runBot(state, p);
   }
@@ -155,8 +157,9 @@ export function resolveCombat(state: GameState): Fight[] {
     if (result.winner === 1) home.hp -= damage;
     else if (result.winner === 0 && !ghost) away.hp -= damage;
     // A ghost is a copy, so its owner gains nothing from the fight.
-    gainStacks(home, result.traits[0], enemyDeaths(result, 0));
-    if (!ghost) gainStacks(away, result.traits[1], enemyDeaths(result, 1));
+    const tally = (side: 0 | 1) => (traitId: string) => ({ kills: enemyDeaths(result, side), memberSkills: memberSkills(result, side, traitId) });
+    gainStacks(home, result.traits[0], tally(0));
+    if (!ghost) gainStacks(away, result.traits[1], tally(1));
     fights.push({ home: home.id, away: away.id, ghost, result, damage });
   }
 
@@ -180,9 +183,11 @@ function releaseUnits(state: GameState, p: Player): void {
   for (const slots of [p.bench, p.board]) {
     slots.forEach((u, i) => {
       if (!u) return;
-      state.pool[u.defId] += copiesOf(u);
+      if (u.defId in state.pool) state.pool[u.defId] += copiesOf(u);
       slots[i] = null;
     });
   }
+  for (const id of p.gifts ?? []) state.pool[id]++;
+  p.gifts = [];
   returnShop(state, p);
 }

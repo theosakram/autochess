@@ -1,0 +1,3 @@
+[test]
+# Neutral filler units used throughout the tests (not part of the game).
+preload = ["./src/game/testUnits.ts"]

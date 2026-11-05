@@ -1,4 +1,4 @@
-export type Tier = 1 | 2 | 3 | 4 | 5;
+export type Tier = 1 | 2 | 3 | 4 | 5 | 7; // 7: the one 7-gold unit
 export type Star = 1 | 2 | 3;
 
 export interface UnitDef {
@@ -6,15 +6,22 @@ export interface UnitDef {
   name: string;
   tier: Tier; // also the gold cost
   traits: string[]; // trait ids, see traits.ts
-  // 1★ combat stats; higher stars scale hp and atk by STAR_MULT.
+  // 1★ combat stats; higher stars scale hp, atk and ap by STAR_MULT.
   hp: number;
-  atk: number;
+  atk: number; // physical attack: physical basic attacks, "attack"-scaled effects
+  ap: number; // magic attack: magic basic attacks and magic skill damage
   armor: number; // reduces physical damage
   mr: number; // magic resist, reduces magic damage
   mana: number; // max mana; casts when full
   range: number; // in cells, Chebyshev distance
   attackTicks: number; // ticks between attacks
   skill?: string; // skill id (see skills/); without one the unit uses the placeholder cast
+  shop?: false; // false: never in the shop or the pool; only handed out (e.g. by a trait reward)
+  locked?: true; // in a player's shop only once something unlocks it for them (Player.unlocked)
+  shopTier?: Tier; // the shop odds column it's rolled under, if not its own tier
+  freeSlot?: true; // doesn't count toward the board limit (level)
+  // Gets this trait's member bonuses without being a member or counting toward it (like an item bearer).
+  honorary?: { trait: string; icon: string };
   attackType?: 'physical' | 'magic'; // damage type of basic attacks; physical if unset
 }
 
@@ -50,7 +57,12 @@ export interface Player {
   shop: (string | null)[]; // unit def ids, already taken out of the pool
   shopLocked: boolean; // skip the next free refresh, then unlock
   place: number | null; // finishing position, set once eliminated (or on winning)
-  stacks: Record<string, number>; // trait id -> counter kept across fights (e.g. Storyweaver stories)
+  stacks: Record<string, number>; // trait id -> counter kept all game (e.g. Storyweaver stories)
+  rewards?: Record<string, number>; // trait id -> how many of its stack rewards were handed out
+  rewardUnit?: Record<string, string>; // trait id -> the reward unit rolled for this player (see stacks.rewardUnits)
+  promotions?: { defId: string; star: Star }[]; // merges since the last sync, for traits that react to them
+  gifts?: string[]; // free units already taken from the pool, waiting for bench room
+  unlocked?: string[]; // locked unit ids this player's shop may now offer
   items: Item[];
   orbs: number[]; // unused Magic Orbs (each one's seed)
   orb: Orb | null; // the one in use

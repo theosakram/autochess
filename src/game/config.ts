@@ -24,7 +24,8 @@ export const TICKS_PER_SECOND = 10;
 export const MAX_COMBAT_TICKS = 45 * TICKS_PER_SECOND;
 export const MOVE_TICKS = 4; // ticks to cross one cell
 // hp/atk multiplier, indexed by star - 1.
-export const STAR_MULT = [1, 1.8, 3.24];
+// A 4th entry for units a trait makes fight one star above 3.
+export const STAR_MULT = [1, 1.8, 3.24, 5.832];
 export const MANA_PER_ATTACK = 10;
 export const MANA_PER_HIT_TAKEN = 5;
 // Placeholder spell until units get real abilities: CAST_MULT x atk as magic damage.
@@ -35,7 +36,7 @@ export const BASE_CRIT_DAMAGE = 1.5;
 export const BASE_DAMAGE = 2;
 
 // Copies of each unit in the shared pool, indexed by tier - 1.
-export const POOL_SIZE = [29, 22, 18, 12, 10];
+export const POOL_SIZE: Record<number, number> = { 1: 29, 2: 22, 3: 18, 4: 12, 5: 10, 7: 6 }; // copies per unit, by tier
 
 // XP (= gold, at GOLD_PER_XP 1) needed to go from level n to n + 1, indexed by n - 1.
 // Players start at level 3, so the first two entries only matter for tests.

@@ -2,7 +2,7 @@ import { MAX_ITEMS_PER_UNIT } from './config';
 import { ITEMS } from './items';
 import { nextInt } from './rng';
 import { applyMods, type StatKey, type Stats } from './stats';
-import { playerTraits, TRAITS, unitStats, type TraitLevels } from './traits';
+import { playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
 import type { GameState, Item, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -64,15 +64,23 @@ export function honoraryTraits(items: { id: string }[]): string[] {
   });
 }
 
-// Fight stats of every fielded unit, keyed by uid: traits and items first, then item auras,
-// which read their holder's finished stats. Combat and the unit card both use this.
+// Trait id -> uid of its leader on this board. Every carried item counts, working or not.
+export const fieldLeaders = (p: Player, levels: TraitLevels) => traitLeaders(p.board, levels, (uid) => heldBy(p, uid).length);
+
+// The traits a unit leads, by uid.
+export function leadsOf(p: Player, levels: TraitLevels, uid: number): string[] {
+  const leaders = fieldLeaders(p, levels);
+  return Object.keys(leaders).filter((id) => leaders[id] === uid);
+}
+
 // What an item aura is handing out right now.
 export interface AuraGrant {
   to: string; // trait whose units receive it
-  stat: StatKey;
-  amount: number; // added to each receiver
+  stats: StatKey[];
+  amount: number; // added to each of `stats` on each receiver
   share: number;
   base: number; // the holder's stat it's a share of
+  from: StatKey; // which one that was
   receivers: number;
 }
 
@@ -82,11 +90,14 @@ export interface AuraGrant {
 function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, string>, scale: number) {
   const stats = new Map<number, Stats>();
   const auras = new Map<number, AuraGrant>();
+  const leaders = fieldLeaders(p, levels);
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
-    const honorary = honoraryTraits(items);
-    stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary }));
+    const own = UNIT_BY_ID[u.defId].honorary;
+    const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
+    const leads = Object.keys(leaders).filter((id) => leaders[id] === u.uid);
+    stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads }));
   });
   for (const holder of p.board) {
     if (!holder) continue;
@@ -94,11 +105,13 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
       const tier = effectiveTier(it, levels);
       const aura = tier ? ITEMS[it.id].aura?.(tier) : undefined;
       if (!aura) continue;
-      const base = stats.get(holder.uid)![aura.fromStat];
+      const held = stats.get(holder.uid)!;
+      const from = aura.from.reduce((best, k) => (held[k] > held[best] ? k : best));
+      const base = held[from];
       const amount = Math.round(base * aura.share);
       const receivers = p.board.filter((u) => u && u.uid !== holder.uid && UNIT_BY_ID[u.defId].traits.includes(aura.to)) as Unit[];
-      for (const u of receivers) stats.set(u.uid, applyMods(stats.get(u.uid)!, [{ stat: aura.stat, add: amount }]));
-      auras.set(it.uid, { to: aura.to, stat: aura.stat, amount, share: aura.share, base, receivers: receivers.length });
+      for (const u of receivers) stats.set(u.uid, applyMods(stats.get(u.uid)!, aura.stats.map((stat) => ({ stat, add: amount }))));
+      auras.set(it.uid, { to: aura.to, stats: aura.stats, amount, share: aura.share, base, from, receivers: receivers.length });
     }
   }
   return { stats, auras };

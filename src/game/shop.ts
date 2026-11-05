@@ -16,8 +16,8 @@ function pickTier(state: GameState, level: number): number {
 }
 
 // Weighted by remaining copies, so contested units get rarer for everyone.
-function drawFromTier(state: GameState, tier: number): string | null {
-  const defs = UNITS.filter((u) => u.tier === tier);
+function drawFromTier(state: GameState, tier: number, p?: Player): string | null {
+  const defs = UNITS.filter((u) => (u.shopTier ?? u.tier) === tier && u.shop !== false && (!u.locked || !!p?.unlocked?.includes(u.id)));
   const total = defs.reduce((n, d) => n + state.pool[d.id], 0);
   if (total === 0) return null;
   let r = nextInt(state, total);
@@ -31,10 +31,11 @@ function drawFromTier(state: GameState, tier: number): string | null {
   return null;
 }
 
-export function drawUnit(state: GameState, level: number): string | null {
+// `p`, when given, lets locked units it has unlocked show up.
+export function drawUnit(state: GameState, level: number, p?: Player): string | null {
   // A drained tier falls back to cheaper ones rather than leaving the slot empty.
   for (let t = pickTier(state, level); t >= 1; t--) {
-    const id = drawFromTier(state, t);
+    const id = drawFromTier(state, t, p);
     if (id) return id;
   }
   return null;
@@ -43,14 +44,14 @@ export function drawUnit(state: GameState, level: number): string | null {
 export function returnShop(state: GameState, p: Player): void {
   for (let i = 0; i < p.shop.length; i++) {
     const id = p.shop[i];
-    if (id && !isItemCard(id)) state.pool[id]++;
+    if (id && !isItemCard(id) && id in state.pool) state.pool[id]++;
     p.shop[i] = null;
   }
 }
 
 export function refreshShop(state: GameState, p: Player): void {
   returnShop(state, p);
-  for (let i = 0; i < p.shop.length; i++) p.shop[i] = upgradeCard(state, p) ?? drawUnit(state, p.level);
+  for (let i = 0; i < p.shop.length; i++) p.shop[i] = upgradeCard(state, p) ?? drawUnit(state, p.level, p);
 }
 
 // While a trait with items is active, a slot may offer a free upgrade for one of its owned items.

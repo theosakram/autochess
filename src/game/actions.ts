@@ -1,8 +1,9 @@
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { equipBlock, syncItems } from './inventory';
+import { equipBlock } from './inventory';
+import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
-import { absorb, copiesOf, findCopies, mergeUnits, slotsOf } from './merge';
+import { absorb, copiesOf, findCopies, mergeUnits, promote, slotsOf } from './merge';
 import { addXp, boardCount, isAlive, levelUpCost } from './player';
 import { refreshShop } from './shop';
 import { TRAITS } from './traits';
@@ -50,7 +51,7 @@ export function claimShopSlot(state: GameState, p: Player, slot: number): void {
     // Absorbed straight into the pair it completes.
     const [keep, other] = findCopies(p, defId, 1);
     const keeper = slotsOf(p, keep.area)[keep.index]!;
-    keeper.star = 2;
+    promote(p, keeper, 2);
     absorb(p, keeper, other);
   }
   mergeUnits(p, defId);
@@ -61,7 +62,7 @@ export function applyAction(state: GameState, playerId: string, action: Action):
   if (!p) return fail('Unknown player');
   if (!isAlive(p)) return fail('You are eliminated');
   const res = perform(state, p, action);
-  if (res.ok) syncItems(state, p);
+  if (res.ok) syncPlayer(state, p);
   return res;
 }
 
@@ -109,7 +110,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!unit) return fail('No unit there');
       const copies = copiesOf(unit);
       slots[action.from.index] = null;
-      state.pool[unit.defId] += copies;
+      if (unit.defId in state.pool) state.pool[unit.defId] += copies;
       p.gold += UNIT_BY_ID[unit.defId].tier * copies;
       return OK;
     }

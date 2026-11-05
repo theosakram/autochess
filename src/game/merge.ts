@@ -32,6 +32,12 @@ export function absorb(p: Player, keeper: Unit, loc: Loc): void {
   slotsOf(p, loc.area)[loc.index] = null;
 }
 
+// Raises a unit's star by merging, and logs it for traits that react to merges (see syncPlayer).
+export function promote(p: Player, keeper: Unit, star: Star): void {
+  keeper.star = star;
+  (p.promotions ??= []).push({ defId: keeper.defId, star });
+}
+
 // Combine every set of three same-star copies, cascading 1★ -> 2★ -> 3★.
 export function mergeUnits(p: Player, defId: string): void {
   for (let star = 1; star < MAX_STAR; star++) {
@@ -40,7 +46,7 @@ export function mergeUnits(p: Player, defId: string): void {
       const [keep, ...rest] = copies;
       const keeper = slotsOf(p, keep.area)[keep.index]!;
       for (const loc of rest.slice(0, 2)) absorb(p, keeper, loc);
-      keeper.star = (star + 1) as Star;
+      promote(p, keeper, (star + 1) as Star);
       copies = findCopies(p, defId, star as Star);
     }
   }
