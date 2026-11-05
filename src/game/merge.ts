@@ -2,6 +2,9 @@ import type { Loc, Player, Star, Unit } from './types';
 
 const MAX_STAR = 3;
 
+// 1★ copies a unit is made of; what goes back to the pool when it leaves play.
+export const copiesOf = (u: Unit) => 3 ** (u.star - 1);
+
 export function slotsOf(p: Player, area: Loc['area']): (Unit | null)[] {
   return area === 'bench' ? p.bench : p.board;
 }

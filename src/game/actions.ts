@@ -1,6 +1,6 @@
 import { MAX_LEVEL, REROLL_COST, SHOP_SIZE, XP_COST, XP_PER_BUY } from './config';
-import { findCopies, mergeUnits, slotsOf } from './merge';
-import { addXp, boardCount } from './player';
+import { copiesOf, findCopies, mergeUnits, slotsOf } from './merge';
+import { addXp, boardCount, isAlive } from './player';
 import { refreshShop } from './shop';
 import type { GameState, Loc, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
@@ -20,14 +20,37 @@ const OK: Result = { ok: true };
 const fail = (error: string): Result => ({ ok: false, error });
 
 function slotsAt(p: Player, loc: Loc): (Unit | null)[] | null {
-  const slots = loc.area === 'bench' ? p.bench : loc.area === 'board' ? p.board : null;
-  if (!slots || !Number.isInteger(loc.index) || loc.index < 0 || loc.index >= slots.length) return null;
+  if (loc.area !== 'bench' && loc.area !== 'board') return null;
+  const slots = slotsOf(p, loc.area);
+  if (!Number.isInteger(loc.index) || loc.index < 0 || loc.index >= slots.length) return null;
   return slots;
+}
+
+// A full bench is fine if this copy completes a merge.
+export function canClaim(p: Player, defId: string): boolean {
+  return p.bench.includes(null) || findCopies(p, defId, 1).length >= 2;
+}
+
+// Moves a shop unit onto the bench (no payment) and merges. Check canClaim first.
+export function claimShopSlot(state: GameState, p: Player, slot: number): void {
+  const defId = p.shop[slot]!;
+  p.shop[slot] = null;
+  const free = p.bench.indexOf(null);
+  if (free >= 0) {
+    p.bench[free] = { uid: state.nextUid++, defId, star: 1 };
+  } else {
+    // Absorbed straight into the pair it completes.
+    const [keep, other] = findCopies(p, defId, 1);
+    slotsOf(p, keep.area)[keep.index]!.star = 2;
+    slotsOf(p, other.area)[other.index] = null;
+  }
+  mergeUnits(p, defId);
 }
 
 export function applyAction(state: GameState, playerId: string, action: Action): Result {
   const p = state.players.find((pl) => pl.id === playerId);
   if (!p) return fail('Unknown player');
+  if (!isAlive(p)) return fail('You are eliminated');
 
   switch (action.type) {
     case 'reroll': {
@@ -52,21 +75,9 @@ export function applyAction(state: GameState, playerId: string, action: Action):
       if (!defId) return fail('Nothing to buy there');
       const cost = UNIT_BY_ID[defId].tier;
       if (p.gold < cost) return fail('Not enough gold');
-      const free = p.bench.indexOf(null);
-      const pair = findCopies(p, defId, 1);
-      // A full bench is fine if this copy completes a merge.
-      if (free < 0 && pair.length < 2) return fail('Bench is full');
+      if (!canClaim(p, defId)) return fail('Bench is full');
       p.gold -= cost;
-      p.shop[slot] = null;
-      if (free >= 0) {
-        p.bench[free] = { uid: state.nextUid++, defId, star: 1 };
-      } else {
-        // Bought copy is absorbed straight into the pair.
-        const [keep, other] = pair;
-        slotsOf(p, keep.area)[keep.index]!.star = 2;
-        slotsOf(p, other.area)[other.index] = null;
-      }
-      mergeUnits(p, defId);
+      claimShopSlot(state, p, slot);
       return OK;
     }
 
@@ -75,7 +86,7 @@ export function applyAction(state: GameState, playerId: string, action: Action):
       if (!slots) return fail('Bad location');
       const unit = slots[action.from.index];
       if (!unit) return fail('No unit there');
-      const copies = 3 ** (unit.star - 1);
+      const copies = copiesOf(unit);
       slots[action.from.index] = null;
       state.pool[unit.defId] += copies;
       p.gold += UNIT_BY_ID[unit.defId].tier * copies;

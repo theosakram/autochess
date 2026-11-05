@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction, type Action } from './actions';
-import { BENCH_SIZE, BOARD_COLS, BOARD_ROWS, POOL_SIZE, REROLL_COST } from './config';
-import { createGame, startRound } from './game';
+import { BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, POOL_SIZE, REROLL_COST, START_LEVEL } from './config';
+import { runBot } from './bot';
+import { createGame, resolveCombat, startRound } from './game';
+import { copiesOf } from './merge';
+import { DRAGON_ALTAR, SCAVENGER } from './traits';
 import { nextInt } from './rng';
 import type { GameState } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -12,8 +15,20 @@ const SEEDS = [
   { id: 'bot2', name: 'Bot 2', isBot: true },
 ];
 
-function newGame(seed = 42): GameState {
-  return createGame(seed, SEEDS);
+// Most tests want an empty start, so starter units go back to the pool.
+function newGame(seed = 42, keepStarters = false): GameState {
+  const state = createGame(seed, SEEDS);
+  if (!keepStarters) {
+    for (const p of state.players) {
+      for (const slots of [p.bench, p.board]) {
+        slots.forEach((u, i) => {
+          if (u) state.pool[u.defId] += copiesOf(u);
+          slots[i] = null;
+        });
+      }
+    }
+  }
+  return state;
 }
 
 function you(state: GameState) {
@@ -25,7 +40,7 @@ function totalCopies(state: GameState): number {
   let n = Object.values(state.pool).reduce((a, b) => a + b, 0);
   for (const p of state.players) {
     n += p.shop.filter(Boolean).length;
-    for (const u of [...p.bench, ...p.board]) if (u) n += 3 ** (u.star - 1);
+    for (const u of [...p.bench, ...p.board]) if (u) n += copiesOf(u);
   }
   return n;
 }
@@ -37,10 +52,21 @@ describe('game setup', () => {
     expect(JSON.stringify(newGame(7))).toBe(JSON.stringify(newGame(7)));
   });
 
-  test('round 1 gives 5 gold and a full level-1 shop', () => {
-    const p = you(newGame());
+  test('players start at level 3 with free units on the bench, taken from the pool', () => {
+    const state = newGame(42, true);
+    const p = you(state);
+    expect(p.level).toBe(START_LEVEL);
     expect(p.gold).toBe(5);
-    expect(p.shop.every((id) => id && UNIT_BY_ID[id].tier === 1)).toBe(true);
+    expect(p.board.every((u) => u === null)).toBe(true);
+    const starters = p.bench.filter((u) => u !== null);
+    expect(starters.reduce((n, u) => n + copiesOf(u), 0)).toBe(FREE_UNITS);
+    expect(starters.every((u) => UNIT_BY_ID[u.defId].tier <= 2)).toBe(true);
+    expect(totalCopies(state)).toBe(POOL_TOTAL);
+  });
+
+  test('bots field their free units', () => {
+    const bot = newGame(42, true).players[1];
+    expect(bot.board.filter(Boolean).length).toBe(START_LEVEL);
   });
 });
 
@@ -100,6 +126,7 @@ describe('board', () => {
   test('board is capped at player level', () => {
     const state = newGame();
     const p = you(state);
+    p.level = 1;
     p.bench[0] = { uid: 900, defId: 'footman', star: 1 };
     p.bench[1] = { uid: 901, defId: 'archer', star: 1 };
     const move = (i: number, to: number): Action => ({
@@ -171,7 +198,7 @@ describe('merge', () => {
   test('full bench still allows a buy that completes a merge', () => {
     const state = newGame();
     const p = you(state);
-    const filler = ['footman', 'footman', 'archer', 'imp', 'grunt', 'acolyte', 'knight', 'druid'];
+    const filler = ['footman', 'footman', 'archer', 'imp', 'skeleton', 'acolyte', 'knight', 'druid'];
     filler.forEach((defId, i) => (p.bench[i] = { uid: 1000 + i, defId, star: 1 }));
     buyCopies(state, 'footman', 1);
     expect(p.bench.filter((u) => u?.defId === 'footman').map((u) => u!.star)).toEqual([2]);
@@ -203,10 +230,85 @@ describe('invariants', () => {
         { type: 'move', from: loc(), to: loc() },
       ];
       applyAction(state, p.id, actions[nextInt(fuzz, actions.length)]);
-      if (i % 50 === 0) startRound(state);
+      if (i % 50 === 0) {
+        resolveCombat(state);
+        startRound(state);
+      }
       for (const pl of state.players) expect(pl.board.filter(Boolean).length).toBeLessThanOrEqual(pl.level);
     }
     expect(totalCopies(state)).toBe(POOL_TOTAL);
     expect(Object.values(state.pool).every((n) => n >= 0)).toBe(true);
+  });
+});
+
+describe('bots', () => {
+  test('bots seat Dragon Altar units on altar tiles', () => {
+    const state = createGame(1, [{ id: 'bot', name: 'Bot', isBot: true }]);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    p.shop.fill(null);
+    p.level = 5;
+    p.gold = 0;
+    // Neutral units sit on the altar cells, Dragon Altar units elsewhere.
+    const tiles = DRAGON_ALTAR.tiles[0];
+    p.board[tiles[0]] = { uid: 1, defId: 'footman', star: 1 };
+    p.board[tiles[1]] = { uid: 2, defId: 'archer', star: 1 };
+    p.board[1] = { uid: 3, defId: 'drakeling', star: 1 };
+    p.board[5] = { uid: 4, defId: 'scalebearer', star: 1 };
+    p.board[8] = { uid: 5, defId: 'imp', star: 1 };
+    runBot(state, p);
+    const onAltar = tiles.map((t) => p.board[t]?.defId);
+    expect(onAltar).toContain('drakeling');
+    expect(onAltar).toContain('scalebearer');
+    expect(onAltar.filter(Boolean).length).toBe(4);
+  });
+});
+
+describe('scavenger', () => {
+  // Empty start with these units fielded; the next startRound pays out.
+  function setup(units: string[]) {
+    const state = newGame();
+    const p = you(state);
+    units.forEach((defId, i) => (p.board[i] = { uid: 500 + i, defId, star: 1 }));
+    return { state, p };
+  }
+
+  test('level 2 takes the cheapest shop unit for free, after the refresh', () => {
+    const { state, p } = setup(['scrapper', 'magpie']);
+    const bonuses = startRound(state);
+    const mine = bonuses.find((b) => b.playerId === p.id)!;
+    expect(mine.trait).toBe('scavenger');
+    expect(mine.gold).toBe(SCAVENGER.gold[0]);
+    // The looted unit was the cheapest left in the refreshed shop and is now on the bench.
+    const looted = mine.looted!;
+    const cheapestLeft = Math.min(...p.shop.flatMap((id) => (id ? [UNIT_BY_ID[id].tier] : [99])));
+    expect(UNIT_BY_ID[looted].tier).toBeLessThanOrEqual(cheapestLeft);
+    expect(p.bench.some((u) => u?.defId === looted)).toBe(true);
+    expect(p.shop.filter(Boolean)).toHaveLength(4);
+    expect(totalCopies(state)).toBe(POOL_TOTAL + 2); // the two hand-placed Scavengers aren't from the pool
+  });
+
+  test('level 3 also pays 2 gold', () => {
+    const { state, p } = setup(['scrapper', 'magpie', 'junkbaron']);
+    const gold = p.gold;
+    const mine = startRound(state).find((b) => b.playerId === p.id)!;
+    expect(mine.gold).toBe(SCAVENGER.gold[1]);
+    expect(mine.looted).not.toBeNull();
+    // +2 on top of normal income and interest
+    expect(p.gold).toBe(gold + 5 + Math.min(5, Math.floor(gold / 10)) + SCAVENGER.gold[1]);
+  });
+
+  test('skipped when the bench is full and the unit would not merge', () => {
+    const { state, p } = setup(['scrapper', 'magpie']);
+    p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: 600 + i, defId: 'titan', star: 1 }));
+    const mine = startRound(state).find((b) => b.playerId === p.id)!;
+    expect(mine.looted).toBeNull();
+    expect(p.shop.filter(Boolean)).toHaveLength(5);
+  });
+
+  test('no Scavenger active, no payout', () => {
+    const state = newGame();
+    expect(startRound(state).filter((b) => b.playerId === you(state).id)).toHaveLength(0);
   });
 });

@@ -24,7 +24,7 @@ body {
 }
 
 #app {
-  max-width: 1100px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 16px;
 }
@@ -54,10 +54,20 @@ kbd {
   color: var(--muted);
 }
 .hud b { color: var(--text); }
+.hud-book {
+  margin-left: auto;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+}
+.hud-book:hover { filter: brightness(1.3); transform: scale(1.1); }
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: 76px 1fr 220px;
+  align-items: start;
   gap: 16px;
 }
 
@@ -74,6 +84,7 @@ main {
 }
 
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(var(--cols), 1fr);
   gap: 4px;
@@ -97,22 +108,21 @@ main {
   border-radius: 4px;
   display: flex;
 }
-.board .cell:nth-child(16n + 2),
-.board .cell:nth-child(16n + 4),
-.board .cell:nth-child(16n + 6),
-.board .cell:nth-child(16n + 8),
-.board .cell:nth-child(16n + 9),
-.board .cell:nth-child(16n + 11),
-.board .cell:nth-child(16n + 13),
-.board .cell:nth-child(16n + 15) {
+/* Checkerboard; plain even/odd works because the column count is odd. */
+.board .cell:nth-child(even) {
   background: var(--cell-alt);
 }
+/* Trait tiles, one rule per trait. Declared after the checkerboard so they win. */
+.board .cell.tile-dragonaltar {
+  background: radial-gradient(circle, #e0a63a55 0%, #e0a63a22 60%, var(--cell) 100%);
+  box-shadow: inset 0 0 0 1px #e0a63a99;
+}
+
 
 .cell.enemy { opacity: 0.35; }
-/* Divider between the enemy half and yours. */
-.board .cell:nth-child(n + 25):nth-child(-n + 32) { margin-bottom: 6px; }
 
 .unit {
+  position: relative;
   flex: 1;
   margin: 3px;
   border-radius: 4px;
@@ -128,6 +138,15 @@ main {
   user-select: none;
 }
 .unit-star { color: var(--accent); font-size: 10px; }
+/* Trait icons in the chip's top-left corner (below the combat hp/mana bars). */
+.unit-traits {
+  position: absolute;
+  top: 4px;
+  left: 3px;
+  font-size: 11px;
+  line-height: 1;
+  pointer-events: none;
+}
 
 .tier-1 { --tier-color: var(--tier-1); }
 .tier-2 { --tier-color: var(--tier-2); }
@@ -193,6 +212,54 @@ main {
 .shop-buttons button:hover { background: var(--cell-alt); }
 .shop-buttons .primary { border-color: var(--accent); }
 
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.unit.selected { box-shadow: 0 0 0 2px var(--text); }
+
+.unit-detail {
+  position: relative;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  border-top: 3px solid var(--tier-color);
+  font-size: 13px;
+}
+.unit-detail h3 { margin: 0; font-size: 15px; }
+.unit-detail h4 { margin: 10px 0 2px; font-size: 13px; }
+.unit-detail h4 small, .unit-detail .meta { color: var(--muted); font-weight: 400; }
+.unit-detail .meta { margin: 2px 0 0; font-size: 12px; }
+.unit-detail .close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: none;
+  background: none;
+  font-size: 20px;
+  color: var(--muted);
+}
+.unit-detail .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.unit-detail .chip {
+  padding: 2px 6px;
+  border: 1px solid #3a3f4d;
+  border-radius: 4px;
+  background: var(--cell);
+  font-size: 12px;
+}
+.unit-detail dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 8px 0 0;
+}
+.unit-detail dt { color: var(--muted); }
+.unit-detail dd { margin: 0; text-align: right; font-weight: 600; }
+.unit-detail dd em { color: #3fae5a; font-style: normal; font-size: 11px; font-weight: 400; }
+.unit-detail .skill { margin: 0; color: var(--muted); }
+
 .opponents {
   padding: 8px 12px;
   background: var(--panel);
@@ -208,6 +275,243 @@ main {
   border-bottom: 1px solid var(--cell);
 }
 .opponents li span:last-child { color: var(--muted); }
+.opponents li.out { opacity: 0.4; }
+
+.traits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.traits-empty { color: var(--muted); font-size: 11px; text-align: center; margin: 8px 0; }
+
+.trait-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: var(--panel);
+  opacity: 0.6;
+}
+.trait-tile:hover { filter: brightness(1.25); }
+.trait-tile.active { opacity: 1; border-color: var(--accent); }
+.trait-icon { font-size: 26px; line-height: 1; }
+.trait-count { font-size: 12px; font-weight: 700; color: var(--muted); }
+.trait-tile.active .trait-count { color: var(--accent); }
+
+.trait-popup {
+  position: relative;
+  width: min(420px, calc(100vw - 32px));
+  text-align: left;
+}
+.trait-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.trait-title small { color: var(--muted); font-size: 13px; font-weight: 400; }
+.modal h4 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); }
+.modal .close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  font-size: 22px;
+  color: var(--muted);
+}
+.trait-units { list-style: none; margin: 0; padding: 0; }
+
+.gallery {
+  position: relative;
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  text-align: left;
+}
+.gallery h2 { margin: 0 0 4px; }
+.gallery-section { margin: 16px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.gallery-card { padding: 12px; border-radius: 8px; background: var(--cell); }
+.gallery-card .trait-title { font-size: 15px; margin-bottom: 8px; }
+.gallery-card .trait-bps span { background: var(--panel); }
+.gallery-card .trait-bps span.current { background: var(--accent); }
+.trait-bps { display: flex; gap: 6px; margin-bottom: 10px; }
+.trait-bps span {
+  min-width: 28px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--cell);
+  color: var(--muted);
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.trait-bps span.on { color: var(--text); }
+.trait-bps span.current { background: var(--accent); color: #14161c; }
+.trait-desc { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.trait-desc span { color: var(--text); }
+.trait-desc span.on { color: var(--accent); font-weight: 700; }
+.trait-desc i { font-style: normal; opacity: 0.5; }
+.trait-units { display: flex; flex-wrap: wrap; gap: 6px; }
+.trait-units li {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--tier-color);
+  font-size: 12px;
+  opacity: 0.5;
+}
+.trait-units li.owned { opacity: 1; background: color-mix(in srgb, var(--tier-color) 25%, var(--cell)); }
+.trait-units small { color: var(--accent); }
+.opponents li.current span:first-child { color: #d65151; font-weight: 600; }
+
+.hud .vs b { color: #d65151; }
+
+/* Combat playback. Fighters sit on a layer matching the board's padding box. */
+.fighters {
+  position: absolute;
+  inset: 8px;
+  pointer-events: none;
+}
+
+.fighter {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc((100% - (var(--cols) - 1) * 4px) / var(--cols));
+  aspect-ratio: 1;
+  padding: 3px;
+  border-radius: 4px;
+  border: 2px solid var(--tier-color);
+  background: color-mix(in srgb, var(--tier-color) 25%, var(--cell));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
+  transform: translate(calc(var(--x) * (100% + 4px)), calc(var(--y) * (100% + 4px)));
+  transition-property: transform, opacity;
+  transition-timing-function: linear;
+}
+.fighter.foe { box-shadow: inset 0 0 0 1px #d65151; }
+.chosen-badge { position: absolute; top: 2px; right: 3px; font-size: 12px; line-height: 1; }
+.trait-stacks { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.trait-stacks b { color: var(--accent); }
+.fighter.on-tile { outline: 2px solid #e0a63a; outline-offset: 1px; }
+
+.fighter .hp {
+  position: absolute;
+  top: -6px;
+  left: 2px;
+  right: 2px;
+  height: 4px;
+  background: #00000080;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.fighter .hp-fill {
+  width: 100%;
+  height: 100%;
+  background: #3fae5a;
+  transition: width 0.15s;
+}
+.fighter.foe .hp-fill { background: #d65151; }
+
+.fighter .mana {
+  position: absolute;
+  top: -1px;
+  left: 2px;
+  right: 2px;
+  height: 3px;
+  background: #00000080;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.fighter .mana-fill {
+  height: 100%;
+  background: #4a8ff0;
+  transition: width 0.15s;
+}
+
+.fighter.casting { animation: cast 0.4s ease-out; }
+@keyframes cast {
+  50% { box-shadow: 0 0 14px 4px #4a8ff0; filter: brightness(1.5); }
+}
+.dmg.spell { color: #8fb8ff; font-size: 16px; }
+.dmg.crit { color: #ff3b3b; font-size: 19px; font-weight: 900; text-shadow: 0 1px 2px #000, 0 0 6px #ff3b3b80; }
+.dmg.crit::after { content: '!'; }
+
+/* Trait pulse hits. Each trait sets --effect-color; the animation is shared. */
+.effect-skybringer { --effect-color: #ffe066; }
+.effect-phasewarper { --effect-color: #c77dff; }
+.dmg.heal { color: #3fae5a; font-size: 15px; }
+.fighter.struck { animation: struck 0.35s ease-out; }
+@keyframes struck {
+  40% { box-shadow: 0 0 16px 5px var(--effect-color); filter: brightness(1.8); }
+}
+.dmg[class*='effect-'] { color: var(--effect-color); font-size: 15px; }
+
+.fighter.attacking { animation: attack 0.25s ease-out; }
+@keyframes attack {
+  50% { filter: brightness(1.8); }
+}
+
+.fighter.dead {
+  opacity: 0;
+  transition-duration: 0.4s;
+}
+
+.dmg {
+  position: absolute;
+  top: 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  text-shadow: 0 1px 2px #000;
+  animation: dmg 0.6s ease-out forwards;
+}
+@keyframes dmg {
+  to { transform: translateY(-18px); opacity: 0; }
+}
+
+.banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 12px 28px;
+  border-radius: 8px;
+  font-size: 24px;
+  font-weight: 700;
+  background: #000000c0;
+  white-space: pre;
+}
+.banner.win { color: #3fae5a; }
+.banner.loss { color: #d65151; }
+.banner.draw { color: var(--muted); }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #000000a0;
+}
+.dialog {
+  padding: 24px 32px;
+  background: var(--panel);
+  border-radius: 10px;
+  text-align: center;
+}
+.dialog h2 { margin-top: 0; }
+.dialog button {
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--cell);
+}
+
+.shop-buttons button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .toast {
   position: fixed;
@@ -222,9 +526,19 @@ main {
   pointer-events: none;
 }
 .toast.show { opacity: 1; }
+.toast.info { background: #3a6ea5; }
+
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 76px 1fr; }
+  .side { grid-column: 1 / -1; }
+}
 
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
+  /* Synergies become a row above the board. */
+  .traits { flex-direction: row; flex-wrap: wrap; }
+  .trait-tile { min-width: 60px; }
+  .side { order: 2; }
   .unit { font-size: 9px; }
   .shop-card { height: 70px; font-size: 12px; }
 }

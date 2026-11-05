@@ -29,7 +29,7 @@ function drawFromTier(state: GameState, tier: number): string | null {
   return null;
 }
 
-function drawUnit(state: GameState, level: number): string | null {
+export function drawUnit(state: GameState, level: number): string | null {
   // A drained tier falls back to cheaper ones rather than leaving the slot empty.
   for (let t = pickTier(state, level); t >= 1; t--) {
     const id = drawFromTier(state, t);

@@ -9,3 +9,12 @@ export function nextFloat(s: { rng: number }): number {
 export function nextInt(s: { rng: number }, n: number): number {
   return Math.floor(nextFloat(s) * n);
 }
+
+export function shuffle<T>(s: { rng: number }, items: T[]): T[] {
+  const a = items.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = nextInt(s, i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}

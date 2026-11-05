@@ -1,6 +1,10 @@
 import { MAX_LEVEL, XP_TO_LEVEL } from './config';
 import type { Player } from './types';
 
+export function isAlive(p: Player): boolean {
+  return p.hp > 0;
+}
+
 export function boardCount(p: Player): number {
   return p.board.filter(Boolean).length;
 }
