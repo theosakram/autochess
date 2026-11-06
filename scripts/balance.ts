@@ -119,7 +119,7 @@ export function makePlayer(id: string, defIds: string[], stacks: Record<string, 
   formation(defIds).forEach((cell, i) => (board[cell] = { uid: i + 1, defId: defIds[i], star: STAR }));
   const owned = items.map((it, i) => ({ uid: 100 + i, id: it.id, tier: it.tier, holder: defIds.indexOf(it.on) + 1 }));
   for (const [from, to] of tileSeating(board)) [board[from], board[to]] = [board[to], board[from]];
-  return { id, name: id, isBot: true, hp: 100, gold: 0, level: 9, xp: 0, bench: Array(BENCH_SIZE).fill(null), board, shop: [], shopLocked: false, place: null, stacks, items: owned, orbs: [], orb: null };
+  return { id, name: id, isBot: true, hp: 100, gold: 0, level: 9, xp: 0, bench: Array(BENCH_SIZE).fill(null), board, shop: [], shopLocked: false, place: null, stacks, items: owned, orbs: [], orb: null, commander: null };
 }
 
 // Plays `p` (traits on, x1 stats) against its copy (traits off, x mult stats).
@@ -166,8 +166,9 @@ function main(): void {
     let castUnits = 0;
     run(p, 1, RUNS, (r, side) => {
       ticks += r.ticks;
-      // Placeholder casts and real skills alike.
-      casts += r.events.filter((e) => (e.type === 'cast' || e.type === 'skill') && r.fighters[e.id].side === side).length;
+      // Placeholder casts and real skills alike, by the units that started the fight (summons, which
+      // arrive mid-fight and aren't in r.fighters, aren't counted: this is casts per fielded unit).
+      casts += r.events.filter((e) => (e.type === 'cast' || e.type === 'skill') && r.fighters[e.id]?.side === side).length;
       castUnits += r.fighters.filter((f) => f.side === side).length;
     });
     const w = Object.keys(levels).length ? worth(p) : 0;

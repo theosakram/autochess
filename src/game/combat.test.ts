@@ -182,9 +182,9 @@ describe('dragon altar', () => {
     field(b, [['footman', 1, 3]]);
     const { fighters } = simulateCombat({ rng: 1 }, a, b);
     const [drake, scale, foot] = ['drakeling', 'wyrmfang', 'footman'].map((id) => fighters.find((f) => f.defId === id && f.side === 0)!);
-    const bonus = DRAGON_ALTAR.bonus[0];
+    const bonus = DRAGON_ALTAR.allyBonus[0];
     expect(drake.onTile).toBe(true);
-    expect(drake.maxHp).toBe(Math.round(UNIT_BY_ID.drakeling.hp * (1 + bonus * DRAGON_ALTAR.memberMult)));
+    expect(drake.maxHp).toBe(Math.round(UNIT_BY_ID.drakeling.hp * (1 + DRAGON_ALTAR.memberBonus[0])));
     expect(scale.onTile).toBe(false);
     expect(scale.maxHp).toBe(UNIT_BY_ID.wyrmfang.hp);
     expect(foot.maxHp).toBe(Math.round(UNIT_BY_ID.footman.hp * (1 + bonus)));
@@ -250,7 +250,7 @@ describe('magic damage and skybringer', () => {
     const state = newGame();
     const [a, b] = state.players;
     // Everyone sturdy enough to live past the third strike at 9s.
-    field(a, [['tempestknight', 3, 0], ['thunderlord', 1, 6]]);
+    field(a, [['tempestknight', 1, 0], ['thunderlord', 1, 6]]);
     field(b, [['titan', 3, 0], ['paladin', 3, 6]]);
     const r = simulateCombat({ rng: 1 }, a, b);
     const zaps = r.events.filter((e): e is Extract<CombatEvent, { type: 'effect' }> => e.type === 'effect' && e.effect === 'skybringer');
@@ -365,7 +365,7 @@ describe('storyweaver', () => {
     const hero = unitStats(UNIT_BY_ID.taleshield, 1, field);
     const extra = unitStats(UNIT_BY_ID.mythweaver, 1, field);
     expect(hero.damageAmp).toBeCloseTo(STORYWEAVER.perStack[1] * 10);
-    expect(hero.skillAmp).toBeCloseTo(STORYWEAVER.enhancedCast);
+    expect(hero.skillAmp).toBeCloseTo(STORYWEAVER.enhancedCast[1]); // levels: { storyweaver: 2 } is the second breakpoint
     expect(extra.damageAmp).toBe(0);
     expect(extra.skillAmp).toBe(0);
   });
@@ -500,7 +500,7 @@ describe('physical and magic attack', () => {
 
   test('every unit has both stats, and magic attackers lean on magic attack', () => {
     // Summons take their damage from whoever summoned them.
-    for (const u of Object.values(UNIT_BY_ID).filter((u) => !u.summon)) {
+    for (const u of Object.values(UNIT_BY_ID).filter((u) => !u.summon && !u.piece)) {
       expect(u.atk).toBeGreaterThan(0);
       expect(u.ap).toBeGreaterThan(0);
       if (u.attackType === 'magic') expect(u.ap).toBeGreaterThan(u.atk);
@@ -537,20 +537,20 @@ describe('weapon master', () => {
     expect(units.map((u) => u.traits.filter((t) => t !== 'weaponmaster'))).toEqual([['cultoffire'], ['astral'], ['gustiwana', 'dauntless'], ['dragonaltar'], ['skybringer'], ['necromancer']]);
   });
 
-  test('allies gain hybrid lifesteal; Weapon Masters more, plus attack', () => {
+  test('Weapon Masters gain hybrid lifesteal and attack; other allies nothing', () => {
     const plain = (id: string) => unitStats(UNIT_BY_ID[id], 1);
     for (const level of [1, 2, 3]) {
       const i = level - 1;
       const ally = unitStats(UNIT_BY_ID.footman, 1, { levels: { weaponmaster: level } });
       const master = unitStats(UNIT_BY_ID.revenant, 1, { levels: { weaponmaster: level } });
-      expect([ally.lifesteal, ally.spellLifesteal]).toEqual([WEAPON_MASTER.lifesteal[i], WEAPON_MASTER.lifesteal[i]]);
-      expect(ally.atk).toBe(plain('footman').atk);
-      const steal = WEAPON_MASTER.lifesteal[i] + WEAPON_MASTER.masterLifesteal[i];
-      expect(master.lifesteal).toBeCloseTo(steal);
-      expect(master.spellLifesteal).toBeCloseTo(steal);
-      expect(master.atk).toBe(Math.round(plain('revenant').atk * (1 + WEAPON_MASTER.masterAttack[i])));
+      expect([ally.lifesteal, ally.spellLifesteal, ally.atk]).toEqual([0, 0, plain('footman').atk]);
+      expect(master.lifesteal).toBeCloseTo(WEAPON_MASTER.lifesteal[i]);
+      expect(master.spellLifesteal).toBeCloseTo(WEAPON_MASTER.lifesteal[i]);
+      expect(master.atk).toBe(Math.round(plain('revenant').atk * (1 + WEAPON_MASTER.attack[i])));
       expect(master.ap).toBe(plain('revenant').ap);
     }
+    // Each breakpoint is a clear step up.
+    for (const arr of [WEAPON_MASTER.lifesteal, WEAPON_MASTER.attack]) expect(arr[0] < arr[1] && arr[1] < arr[2]).toBe(true);
   });
 });
 

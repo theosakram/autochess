@@ -21,6 +21,10 @@ export interface UnitDef {
   shopTier?: Tier; // the shop odds column it's rolled under, if not its own tier
   freeSlot?: true; // doesn't count toward the board limit (level)
   summon?: true; // only exists inside a fight, summoned by a skill: never owned, shown or sold
+  // A commander's board piece (e.g. Lukas's Divine Beast): placed like a unit, but takes no slot, never
+  // fights, counts, sells or holds anything. See commanders/.
+  piece?: true;
+  monster?: true; // only fights in monster rounds (see monsters.ts): never owned, shown or sold
   // Gets this trait's member bonuses without being a member or counting toward it (like an item bearer).
   honorary?: { trait: string; icon: string };
   attackType?: 'physical' | 'magic'; // damage type of basic attacks; physical if unset
@@ -78,6 +82,12 @@ export interface Player {
   items: Item[];
   orbs: number[]; // unused Magic Orbs (each one's seed)
   orb: Orb | null; // the one in use
+  commander: string | null; // commander id, picked at the start of the game (see commanders/)
+  commanderCard?: string | null; // the commander card picked (a commander id)
+  cardOffer?: string[]; // commander cards on offer, waiting for a pick
+  itemOffer?: string[]; // basic items on offer (round 2), waiting for a pick
+  // Heroes marked by commander powers (Kagura's umbrella and dance), by mark kind. See commanders/.
+  marks?: Partial<Record<'ward' | 'boost' | 'halo' | 'halo2', { uid: number; defId: string } | null>>;
 }
 
 // Plain data only, so the whole state can be serialized and sent over the wire later.

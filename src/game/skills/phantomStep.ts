@@ -5,7 +5,7 @@ import type { SkillDef } from './types';
 
 // Phantom Blade (3g Fighter). Per star, index 0 = 1★.
 export const PHANTOM_STEP = {
-  atk: [1.2, 1.4, 3], // of attack, physical
+  atk: [4, 5, 13], // of attack, physical
   stun: [1, 1.25, 1.75], // seconds
   shield: [0.2, 0.25, 0.4], // of its max hp
   seconds: 4,

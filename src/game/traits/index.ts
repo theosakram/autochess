@@ -26,7 +26,7 @@ import { weaponMaster } from './weaponMaster';
 import { storyweaver } from './storyweaver';
 import type { FightTally, Pulse, RoundStart, TraitDef, Trigger } from './types';
 
-export type { FightTally, Pulse, RoundStart, TraitDef, Trigger, UnitContext } from './types';
+export type { StackReward, FightTally, Pulse, RoundStart, TraitDef, Trigger, UnitContext } from './types';
 export { ASTRAL } from './astral';
 export { CULT_OF_FIRE } from './cultOfFire';
 export { DAUNTLESS } from './dauntless';
@@ -113,6 +113,8 @@ export function unitMods(def: UnitDef, field: Partial<Field> = {}): StatMod[] {
       }),
     ),
     ...items.flatMap((it) => ITEMS[it.id].mods(it.tier)),
+    // Unique attributes count once per item type.
+    ...[...new Map(items.map((it) => [it.id, it.tier])).entries()].flatMap(([id, tier]) => ITEMS[id].unique?.(tier) ?? []),
     ...extra,
   ];
 }
@@ -175,7 +177,7 @@ export function gainStacks(p: Player, levels: TraitLevels, tally: (traitId: stri
 
 // At round start: every active counting trait gains its per-round amount, from the units deployed now.
 export function roundStacks(p: Player): void {
-  const deployed = p.board.filter(Boolean).length;
+  const deployed = p.board.filter((u) => u && !UNIT_BY_ID[u.defId].piece).length;
   for (const [id, level] of Object.entries(playerTraits(p))) addStacks(p, id, TRAITS[id].stacks?.perRound?.(level, deployed) ?? 0);
 }
 
@@ -243,8 +245,9 @@ export function tileSeating(board: (Unit | null)[], orb: Orb | null = null, more
     for (const membersOnly of [true, false]) {
       for (const to of tiles) {
         const here = b[to];
-        if (here && (hasTrait(here, id) || !membersOnly)) continue;
-        const from = b.findIndex((u, i) => u && !tiles.includes(i) && (!membersOnly || hasTrait(u, id)));
+        // Commander pieces stay where their owner put them.
+        if (here && (hasTrait(here, id) || !membersOnly || UNIT_BY_ID[here.defId].piece)) continue;
+        const from = b.findIndex((u, i) => u && !UNIT_BY_ID[u.defId].piece && !tiles.includes(i) && (!membersOnly || hasTrait(u, id)));
         if (from < 0) break;
         [b[from], b[to]] = [b[to], b[from]];
         swaps.push([from, to]);

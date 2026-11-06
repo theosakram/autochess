@@ -134,8 +134,8 @@ describe('unit info popup', () => {
   test("stats at every star, and the skill with each star's numbers", () => {
     const html = unitInfoHtml('soulreaper', p);
     expect(html).toContain('Soul Orbit');
-    expect(html).toContain('45%');
-    expect(html).toContain('100%');
+    expect(html).toContain('36%');
+    expect(html).toContain('85%');
     for (const hp of [900, 1620, 2916]) expect(html).toContain(`<td>${hp}</td>`);
     expect(html).toContain('data-trait="spectre"');
     expect(unitInfoHtml('wanderingblade', p)).toContain('Not in the shop');

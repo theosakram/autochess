@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Soulreaper (3g Hunter). Per star, index 0 = 1★.
 export const SOUL_ORBIT = {
-  ap: [0.45, 0.5, 1], // of magic attack per orb hit, as magic damage
+  ap: [0.36, 0.4, 0.85], // of magic attack per orb hit, as magic damage
   orbs: 5,
   seconds: 4, // how long they orbit
   step: 0.5, // seconds per cell the orbs move

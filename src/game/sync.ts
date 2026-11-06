@@ -1,13 +1,18 @@
+import { syncBeast, syncMarks } from './commanders';
 import { syncItems } from './inventory';
+import { EQUIPMENT } from './items';
 import { mergeUnits } from './merge';
 import { openMistShop, syncMistOrbs } from './mistShop';
 import { nextInt } from './rng';
 import { playerTraits, TRAITS } from './traits';
 import type { GameState, Player } from './types';
+import type { StackReward } from './traits/types';
 import { UNIT_BY_ID } from './units';
 
 // Run after anything that changes a player's units, and at round start: items, counters, rewards.
 export function syncPlayer(state: GameState, p: Player): void {
+  syncBeast(state, p);
+  syncMarks(p);
   syncItems(state, p);
   // A counter appears (at 0) the first time its trait is active, and stays for the rest of the game.
   const levels = playerTraits(p);
@@ -75,12 +80,23 @@ export function claimRewards(state: GameState, p: Player): void {
     p.rewards ??= {};
     let claimed = p.rewards[id] ?? 0;
     const unit = rewardUnit(state, p, id);
-    while (unit && claimed < rewards.length && stacks >= rewards[claimed].at && grant(state, p, { unit, star: rewards[claimed].star })) claimed++;
+    // In order; a unit reward waits for bench room (and holds up the ones after it).
+    while (claimed < rewards.length && stacks >= rewards[claimed].at && payReward(state, p, rewards[claimed], unit)) claimed++;
     if (claimed) p.rewards[id] = claimed;
   }
 }
 
 // Raises the player's best copy of the unit to `star`, or gives a new one on the bench.
+// Pays one milestone reward; false if it can't be paid yet (a unit with no room for it).
+function payReward(state: GameState, p: Player, r: StackReward, unit: string | undefined): boolean {
+  if ('star' in r) return !!unit && grant(state, p, { unit, star: r.star });
+  if ('gold' in r) p.gold += r.gold;
+  else if ('equipment' in r) {
+    for (let k = 0; k < r.equipment; k++) p.items.push({ uid: state.nextUid++, id: EQUIPMENT[nextInt(state, EQUIPMENT.length)], tier: 1, holder: null });
+  } else for (let k = 0; k < r.orbs; k++) p.orbs.push(nextInt(state, 2 ** 30));
+  return true;
+}
+
 function grant(state: GameState, p: Player, r: { unit: string; star: 1 | 2 | 3 }): boolean {
   const owned = [...p.board, ...p.bench].filter((u) => u?.defId === r.unit).sort((a, b) => b!.star - a!.star)[0];
   if (owned) {

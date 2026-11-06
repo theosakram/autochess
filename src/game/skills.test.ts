@@ -3,7 +3,7 @@ import { simulateCombat } from './combat';
 import { createGame } from './game';
 import { dist, type Point } from './grid';
 import { JIMAT } from './items';
-import { ahead3x3, aheadStrip, beyond, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, volleyShot, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { ahead3x3, aheadStrip, beyond, facingStrip, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, volleyShot, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -242,9 +242,10 @@ describe('Starfall Aegis', () => {
     expect(b.log.hits).toEqual([1, 2, 3].map((target) => ({ target, raw: b.caster.stats.ap * STARFALL_AEGIS.ap[0], effect: 'starfall', basic: false })));
   });
 
-  test('3 stars: 75% max hp shield, 400% magic attack', () => {
+  test('the shield grows to 75% max hp at 3 stars; strikes grow with the star', () => {
+    // Strike values were lowered in the cross-trait cost-curve pass (from the original 95% / 100% / 400%).
     expect(STARFALL_AEGIS.shield).toEqual([0.1, 0.2, 0.75]);
-    expect(STARFALL_AEGIS.ap).toEqual([0.95, 1, 4]);
+    expect(STARFALL_AEGIS.ap[2]).toBeGreaterThan(STARFALL_AEGIS.ap[1]);
   });
 
   test('in combat: strikes land 5 ticks apart, 10 per cast, and the shield soaks damage first', () => {
@@ -518,7 +519,9 @@ describe('Rampage', () => {
     expect(burns.length).toBeGreaterThan(0);
     expect(r.events.some((e) => e.type === 'ground')).toBe(true);
     // Busy: no basic attacks from it until its last dash step is over.
-    const lastStep = Math.max(...r.events.filter((e) => (e.type === 'dash' && e.id === me) || (e.type === 'effect' && e.effect === 'rampage')).map((e) => e.t));
+    // (Only the first rampage: it can cast again later.)
+    const next = r.events.find((e) => e.type === 'skill' && e.id === me && e.t > cast.t)?.t ?? Infinity;
+    const lastStep = Math.max(...r.events.filter((e) => e.t < next && ((e.type === 'dash' && e.id === me) || (e.type === 'effect' && e.effect === 'rampage'))).map((e) => e.t));
     expect(r.events.some((e) => e.type === 'attack' && e.id === me && e.t > cast.t && e.t < lastStep)).toBe(false);
     // Still targetable: it takes hits during the rampage.
     expect(r.events.some((e) => e.type === 'attack' && e.target === me && e.t > cast.t && e.t < lastStep)).toBe(true);
@@ -1217,7 +1220,7 @@ describe("Tale's End", () => {
     const raw = b.caster.stats.atk * TALES_END.atk[1] + b.caster.maxHp * TALES_END.hp[1];
     expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
     expect(b.log.hits.every((h) => h.raw === raw && h.effect === 'talesend')).toBe(true);
-    expect(raw).toBeGreaterThan(700); // hits like a truck at 2 stars
+    expect(raw).toBeGreaterThan(500); // hits like a truck at 2 stars: a 4g carry's hit, to everyone around it
     expect(b.log.stuns).toEqual([]);
     expect(b.log.shields).toEqual([]);
   });
@@ -1820,6 +1823,16 @@ describe('Storm Fists', () => {
     expect(b.log.hits.every((h) => h.basic && h.raw === b.caster.stats.atk * STORM_FISTS.power[0])).toBe(true);
   });
 
+  test('it punches toward its target: a target to the side turns the strip sideways', () => {
+    // Caster at (3,5); its target at (5,5) is to the right: the strip runs right, rows 4-5 (6 is off the board).
+    const b = fakeBattle([{ x: 5, y: 5 }, { x: 6, y: 4 }, { x: 3, y: 3 }]);
+    b.caster.stats = unitStats(UNIT_BY_ID.thunderlord, 1);
+    b.cast('stormfists');
+    const by = (id: number) => b.log.hits.filter((h) => h.target === id).length;
+    expect([by(1), by(2), by(3)]).toEqual([1, 1, 0]);
+    expect(facingStrip({ x: 3, y: 5 }, { x: 5, y: 5 })).toHaveLength(6); // 3 columns x 2 rows on the board
+  });
+
   test('in combat: it counters ranged attackers too, from across the board', () => {
     const state = createGame(26, [
       { id: 'a', name: 'A', isBot: false },
@@ -1944,8 +1957,8 @@ describe('Crater Fall', () => {
 });
 
 describe('Fate Thread', () => {
-  test('passive: links 2 / 3 / all enemies by star', () => {
-    for (const [star, expected] of [[1, 2], [2, 3], [3, 5]] as const) {
+  test('passive: links 2 / 3 / 4 enemies by star', () => {
+    for (const [star, expected] of [[1, 2], [2, 3], [3, 4]] as const) {
       const b = fakeBattle([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 }]);
       b.caster.star = star;
       b.atStart('fatethread');
@@ -1981,7 +1994,7 @@ describe('Fate Thread', () => {
     const r = simulateCombat({ rng: 1 }, a, b);
     const link = r.events.find((e) => e.type === 'link');
     if (link?.type !== 'link') throw new Error('no link');
-    expect(link.ids).toHaveLength(3); // 3 stars: every enemy
+    expect(link.ids).toHaveLength(3); // 3 stars links up to 4: here, all 3 enemies
     const knight = r.fighters.find((f) => f.defId === 'knight')!.id;
     const hit = r.events.findIndex((e) => e.type === 'attack' && e.id === knight && link.ids.includes(e.target));
     const first = r.events[hit];
@@ -2018,7 +2031,8 @@ describe("Stalker's Mark", () => {
       p.bench.fill(null);
       p.items = [];
     }
-    a.board[3] = { uid: 1, defId: 'wanderinghunter', star: 3 };
+    // Sturdy enough that its hits leave them low rather than one-shot them.
+    a.board[3] = { uid: 1, defId: 'wanderinghunter', star: 2 };
     b.board[3] = { uid: 2, defId: 'knight', star: 2 };
     b.board[4] = { uid: 3, defId: 'knight', star: 2 };
     const r = simulateCombat({ rng: 1 }, a, b);
@@ -2029,7 +2043,7 @@ describe("Stalker's Mark", () => {
       if (e.type !== 'effect') continue;
       expect(e.by).toBe(me);
       const victim = r.fighters.find((f) => f.id === e.target)!;
-      expect(e.damage).toBeLessThan(victim.maxHp * STALKERS_MARK.execute[2]);
+      expect(e.damage).toBeLessThan(victim.maxHp * STALKERS_MARK.execute[1]);
       expect(r.events.some((x) => x.type === 'death' && x.id === e.target && x.t === e.t)).toBe(true);
     }
   });

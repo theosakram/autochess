@@ -7,7 +7,7 @@ import type { SkillDef, SkillFighter } from './types';
 export const STALKERS_MARK = {
   execute: [0.08, 0.1, 0.15], // passive: of max hp
   back: 0.5, // seconds away before it strikes
-  atk: [2.5, 3, 7], // of attack, physical
+  atk: [6, 9, 21], // of attack, physical
 };
 
 export const stalkersMark: SkillDef = {

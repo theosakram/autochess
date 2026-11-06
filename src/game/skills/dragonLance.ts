@@ -3,7 +3,7 @@ import type { SkillDef } from './types';
 
 // Wyrmcaller (3g Deadeye): a plain single-target nuke. Per star, index 0 = 1★.
 export const DRAGON_LANCE = {
-  atk: [3.8, 4.5, 9.5], // of attack, physical
+  atk: [7.5, 9.5, 21], // of attack, physical
 };
 
 export const dragonLance: SkillDef = {

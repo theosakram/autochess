@@ -42,6 +42,10 @@ export interface FightTally {
 
 // A trait is pure data plus hooks. The engine asks every active trait for each
 // unit's StatMods; it never branches on a trait id.
+// One milestone of a counting trait (e.g. the Necromancer grave), claimed once when the counter reaches
+// `at`: its reward unit at a star, gold, random equipment, or Magic Orbs.
+export type StackReward = { at: number } & ({ star: 1 | 2 | 3 } | { gold: number } | { equipment: number } | { orbs: number });
+
 export interface TraitDef {
   id: string;
   name: string;
@@ -87,7 +91,7 @@ export interface TraitDef {
     perFight?(level: number, fight: FightTally): number;
     perRound?(level: number, deployed: number): number; // deployed = units on the board at round start
     // Each reached in order, once per game: the player gets their reward unit at `star`, or their copy is raised to it.
-    rewards?: { at: number; star: 1 | 2 | 3 }[];
+    rewards?: StackReward[]; // in order of `at`; each is claimed once
     // The reward unit: one of these, rolled per player when the counter first appears, then fixed all game.
     rewardUnits?: string[];
     fullAt?: number; // at this level the counter jumps to its max at once

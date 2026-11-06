@@ -1,4 +1,6 @@
-import { BASE_INCOME, REROLL_COST, TICKS_PER_SECOND } from '../game/config';
+import { rewardText } from '../game/traits/format';
+import { autoHalo, beastOf, cardFace, COMMANDERS, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
+import { BASE_INCOME, isMonsterRound, REROLL_COST, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, isItemCard, ITEMS, type ItemDef } from '../game/items';
 import { MIST_WARES, mistCoins, orbBlock } from '../game/mistShop';
@@ -156,7 +158,7 @@ function stacksHtml(traitId: string, p: Player): string {
   const unit = p.rewardUnit?.[traitId];
   const name = unit ? UNIT_BY_ID[unit].name : 'rolled when it first appears';
   const rewards = (rule.rewards ?? [])
-    .map((r, i) => `<li class="${i < claimed ? 'done' : ''}">${r.at}: ${name} ${'★'.repeat(r.star)}${i < claimed ? ' ✓' : ''}</li>`)
+    .map((r, i) => `<li class="${i < claimed ? 'done' : ''}">${r.at}: ${rewardText(r, name)}${i < claimed ? ' ✓' : ''}</li>`)
     .join('');
   return `<p class="trait-stacks">${rule.label}: <b>${n}</b> / ${rule.max}</p>${rewards ? `<ul class="stack-rewards">${rewards}</ul>` : ''}`;
 }
@@ -225,7 +227,7 @@ export function graveHtml(p: Player): string {
       return `<button class="grave" data-trait="${id}" title="${TRAITS[id].name}: ${rule.label.toLowerCase()}">
         <span class="grave-icon">${TRAITS[id].icon}</span>
         <b class="grave-count">${n}</b>
-        <small>${next ? `next ${next.at}: ${'★'.repeat(next.star)}` : 'complete'}</small>
+        <small>${next ? `next ${next.at}: ${'star' in next ? '★'.repeat(next.star) : rewardText(next, '')}` : 'complete'}</small>
         ${reward ? `<span class="grave-unit" data-unit-info="${reward.id}" title="Your reward unit: click to see it">${reward.honorary?.icon ?? '🎁'} ${reward.name}</span>` : ''}
       </button>`;
     })
@@ -411,10 +413,10 @@ export function armoryHtml(p: Player, selectedItem: number | null = null): strin
       const tier = effectiveTier(it, levels);
       const holder = units.find((u) => u?.uid === it.holder);
       const grant = grants.get(it.uid);
-      const state = tier ? `tier ${tier}` : `inactive: needs ${TRAITS[def.trait].name}`;
+      const state = !def.trait ? 'equipment' : tier ? `tier ${tier}` : `inactive: needs ${TRAITS[def.trait].name}`;
       return `<div class="item-chip${tier ? '' : ' inactive'}${holder ? ' equipped' : ''}${it.uid === selectedItem ? ' selected' : ''}" data-item="${it.uid}"
         title="${def.name} (${state}). ${itemText(def, tier || it.tier)}${grant ? ` Now: ${auraText(grant)}.` : ''}">
-        <span class="item-icon">${def.icon}</span><b>T${tier || it.tier}</b>
+        <span class="item-icon">${def.icon}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}
         ${holder ? `<small>${UNIT_BY_ID[holder.defId].name}</small>` : ''}
         ${grant ? `<small class="aura-line">+${grant.amount}</small>` : ''}
       </div>`;
@@ -432,7 +434,7 @@ export function hudHtml(state: GameState, p: Player, hp: number, opponentName: s
       : `<span class="xp-bar"><span style="width:${(p.xp / need) * 100}%"></span></span><small>${p.xp}/${need}</small>`;
   const stat = (icon: string, title: string, value: string) => `<span class="hud-stat" title="${title}">${icon} ${value}</span>`;
   return `<header class="hud">
-    ${stat('⏳', `Round ${state.round}`, `<b>${state.round}</b>`)}
+    ${stat('⏳', isMonsterRound(state.round) ? `Round ${state.round}: monster round (everyone fights monsters for equipment)` : `Round ${state.round}`, `<b>${state.round}</b>${isMonsterRound(state.round) ? ' 👹' : ''}`)}
     ${stat('❤️', 'HP', `<b>${hp}</b>`)}
     ${stat('💰', `Gold (+${income} next round)`, `<b>${p.gold}</b>`)}
     ${stat('🏅', need === null ? `Level ${p.level} (max)` : `Level ${p.level}, ${p.xp}/${need} XP`, `<b>${p.level}</b> ${xp}`)}
@@ -450,6 +452,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
   const cell = slots.findIndex((u) => u?.uid === uid);
   const u = slots[cell]!;
   const def = UNIT_BY_ID[u.defId];
+  if (def.piece) return pieceDetailHtml(p, def);
   const base = unitStats(def, u.star);
   // Bench units don't fight, so only fielded ones get trait and item bonuses.
   const levels = area === 'board' ? playerTraits(p) : {};
@@ -484,6 +487,16 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
     <h3>${isChosen(chosen, def.id) ? '👑 ' : ''}${def.name} <span class="unit-star">${'★'.repeat(u.star)}</span></h3>
     <p class="meta">${def.tier}g · ${position}${area === 'bench' ? ' · on bench' : ''}</p>
     ${traits ? `<div class="chips">${traits}</div>` : ''}
+    ${markKinds(p)
+      .map((k) =>
+        markedUid(p, k) === uid
+          ? `<p class="orb-line">${MARKS[k].icon} ${MARKS[k].name}</p>`
+          : (k === 'halo' || k === 'halo2') && autoHalo(p) === uid
+          ? ''
+          : `<button class="orb-use" data-action="mark" data-kind="${k}" data-unit="${uid}">${MARKS[k].icon} ${MARKS[k].action}</button>`,
+      )
+      .join('')}
+    ${autoHalo(p) === uid ? `<p class="orb-line">${MARKS.halo.icon} Protected: the hero with the most items</p>` : ''}
     ${p.orb?.defId === def.id ? `<p class="orb-line">🔮 Orb: +1 ${TRAITS[p.orb.trait].icon} ${TRAITS[p.orb.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
     ${p.orbs.length ? `<button class="orb-use" data-action="openOrb" data-unit="${uid}">🔮 Use Magic Orb</button>` : ''}
     ${(p.mistOrbs ?? [])
@@ -516,6 +529,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       ${optional('Damage amp', 'damageAmp', (n) => `${fmt(n * 100)}%`)}
       ${optional('Damage taken', 'damageTaken', (n) => `${fmt(n * 100)}%`)}
       ${optional('Armor shred', 'armorShred')}
+      ${optional('Magic pen', 'magicPen', (n) => `${fmt(n * 100)}%`)}
       ${optional('Crit chance', 'critChance', (n) => `${fmt(n * 100)}%`)}
       ${optional('Skill damage', 'skillAmp', (n) => `${fmt(n * 100)}%`)}
       ${optional('Basic attack dmg', 'basicAmp', (n) => `${fmt(n * 100)}%`)}
@@ -660,6 +674,117 @@ function synergyChipsHtml(p: Player): string {
   return chips ? `<span class="opp-traits">${chips}</span>` : '';
 }
 
+// --- Commanders ---
+
+// The pick at the start of the game. It can't be dismissed: every player needs a commander.
+export function commanderPickHtml(): string {
+  const cards = Object.values(COMMANDERS)
+    .map(
+      (c) => `<button class="commander-option" data-action="pickCommander" data-commander="${c.id}">
+        <span class="commander-portrait">${c.icon}</span>
+        <b>${c.name}</b><small>${c.title}</small>
+        <span class="commander-text">${c.desc}</span>
+        <span class="commander-card-line">Card: ${c.card.icon} <b>${c.card.name}</b></span>
+      </button>`,
+    )
+    .join('');
+  return `<div class="overlay"><div class="dialog modal commander-pick">
+    <h2 class="trait-title">Choose your commander</h2>
+    <p class="meta">Your commander is you: it holds your HP, and its power works for you all game.</p>
+    <div class="commander-options">${cards}</div>
+  </div></div>`;
+}
+
+// The commander card pick (round 2). Each card shows what it does for this player.
+export function cardOfferHtml(p: Player): string {
+  const cards = (p.cardOffer ?? [])
+    .map((id) => {
+      const c = COMMANDERS[id];
+      const face = cardFace(p, id);
+      return `<button class="commander-option${face.self ? ' own' : ''}" data-action="pickCard" data-card="${id}">
+        <span class="commander-portrait">${c.card.icon}</span>
+        <b>${c.card.name}</b><small>${c.icon} ${c.name}'s card${face.self ? ' · yours: the upgrade' : ` · gives you ${c.name}'s power`}</small>
+        <span class="commander-text">${face.desc}</span>
+      </button>`;
+    })
+    .join('');
+  return `<div class="overlay"><div class="dialog modal commander-pick">
+    <h2 class="trait-title">Choose a commander card</h2>
+    <p class="meta">Your own commander's card upgrades its power; another commander's card lends you that commander's power. Unpicked when the fight starts: the first one.</p>
+    <div class="commander-options">${cards}</div>
+  </div></div>`;
+}
+
+// The basic item pick (round 2): a few random basic items, take one.
+export function itemOfferHtml(p: Player): string {
+  const cards = (p.itemOffer ?? [])
+    .map((id) => {
+      const def = ITEMS[id];
+      return `<button class="commander-option" data-action="pickItem" data-item-id="${id}">
+        <span class="commander-portrait">${def.icon}</span>
+        <b>${def.name}</b><small>${def.kind}</small>
+        <span class="commander-text">${itemText(def, 1)}</span>
+      </button>`;
+    })
+    .join('');
+  return `<div class="overlay"><div class="dialog modal commander-pick">
+    <h2 class="trait-title">Choose a basic item</h2>
+    <p class="meta">It goes to your items: equip it on any hero. Unpicked when the fight starts: the first one.</p>
+    <div class="commander-options">${cards}</div>
+  </div></div>`;
+}
+
+// You, beside the board: your commander, your HP, its power and its card.
+export function commanderPanelHtml(p: Player, hp: number): string {
+  if (!p.commander) return '';
+  const c = COMMANDERS[p.commander];
+  const card = p.commanderCard ? COMMANDERS[p.commanderCard] : null;
+  const share = Math.max(0, Math.min(1, hp / START_HP));
+  return `<section class="commander-panel">
+    <div class="commander-head">
+      <span class="commander-portrait">${c.icon}</span>
+      <div><b>${c.name}</b><small>${c.title}</small></div>
+      <span class="commander-hp" title="Your HP">❤️ ${hp}</span>
+    </div>
+    <div class="commander-hpbar"><span style="width:${share * 100}%"></span></div>
+    <p class="commander-text">${c.desc}</p>
+    ${markKinds(p).map((k) => markLineHtml(p, k)).join('')}
+    ${powersOf(p).protect ? autoHaloLineHtml(p) : ''}
+    ${card ? `<p class="commander-text"><b>${card.card.icon} ${card.card.name}</b>: ${cardFace(p, p.commanderCard!).desc}</p>` : p.cardOffer ? '<p class="meta">A commander card is waiting for your pick.</p>' : ''}
+  </section>`;
+}
+
+// Who holds a commander mark (Kagura's umbrella or dance), or a nudge to place it.
+function markLineHtml(p: Player, kind: MarkKind): string {
+  const m = MARKS[kind];
+  const uid = markedUid(p, kind);
+  const u = uid === null ? null : [...p.board, ...p.bench].find((x) => x?.uid === uid);
+  return u
+    ? `<p class="commander-text">${m.icon} ${m.name}: <b>${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}</b></p>`
+    : `<p class="commander-text">${m.icon} ${m.name}: nobody yet. Open a unit to place it.</p>`;
+}
+
+// Angela's automatic halo: the fielded hero with the most items.
+function autoHaloLineHtml(p: Player): string {
+  const uid = autoHalo(p);
+  const u = uid === null ? null : p.board.find((x) => x?.uid === uid);
+  return `<p class="commander-text">${MARKS.halo.icon} Most items: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}` : 'nobody fielded'}</b></p>`;
+}
+
+// A commander's board piece (the Divine Beast): what it does and where it may stand.
+function pieceDetailHtml(p: Player, def: UnitDef): string {
+  const beast = beastOf(p);
+  const where = beast?.frontRow ? 'Any row: from the front row it fires the 3 tiles ahead instead.' : 'The back two rows only.';
+  return `<section class="unit-detail tier-${def.tier}">
+    <button class="close" data-action="closeUnit" aria-label="Close">×</button>
+    <h3>${def.name}</h3>
+    <p class="meta">Commander piece · takes no slot · can't be sold · fires once when a fight starts</p>
+    <p class="commander-text">${p.commander ? COMMANDERS[p.commander].desc : ''}</p>
+    ${p.commanderCard ? `<p class="commander-text">${cardFace(p, p.commanderCard).desc}</p>` : ''}
+    <p class="meta">Stands on: ${where}</p>
+  </section>`;
+}
+
 export function playersHtml(others: Player[], shownHp: (p: Player) => number, opponentId: string | null): string {
   const rows = others
     .slice()
@@ -668,7 +793,8 @@ export function playersHtml(others: Player[], shownHp: (p: Player) => number, op
       const hp = shownHp(o);
       const cls = [hp <= 0 ? 'out' : '', o.id === opponentId ? 'current' : ''].join(' ');
       const info = hp <= 0 ? `#${o.place}` : `${hp} HP · Lv ${o.level} · ${boardCount(o)} units`;
-      return `<li class="${cls}"><span class="opp-name">${o.name}</span><span class="opp-info">${info}</span>${hp > 0 ? synergyChipsHtml(o) : ''}</li>`;
+      const commander = o.commander ? `<span title="${COMMANDERS[o.commander].name}">${COMMANDERS[o.commander].icon}</span> ` : '';
+      return `<li class="${cls}"><span class="opp-name">${commander}<span>${o.name}</span></span><span class="opp-info">${info}</span>${hp > 0 ? synergyChipsHtml(o) : ''}</li>`;
     })
     .join('');
   return `<aside class="opponents"><h3>Players</h3><ul>${rows}</ul></aside>`;

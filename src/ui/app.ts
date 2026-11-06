@@ -1,3 +1,5 @@
+import { ITEMS } from '../game/items';
+import type { MarkKind } from '../game/commanders';
 import { applyAction, type Action } from '../game/actions';
 import type { CombatEvent } from '../game/combat';
 import { isGameOver, resolveCombat, startRound, type Fight } from '../game/game';
@@ -21,6 +23,10 @@ import {
   orbChoiceHtml,
   playersHtml,
   shopBarHtml,
+  commanderPickHtml,
+  cardOfferHtml,
+  itemOfferHtml,
+  commanderPanelHtml,
   shopPopupHtml,
   traitDetailHtml,
   traitsPanelHtml,
@@ -146,7 +152,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
 
   function render(): void {
     const p = me();
-    const opponent = combat && state.players.find((o) => o.id === combat!.opponentId);
+    const opponent = combat && (combat.fight.monster ? { name: '👹 Monsters' } : state.players.find((o) => o.id === combat!.opponentId));
     const over = !isAlive(p) || isGameOver(state);
     if (selectedUid !== null && !unitLoc(selectedUid)) selectedUid = null;
     if (selectedItem !== null && !p.items.some((i) => i.uid === selectedItem)) selectedItem = null;
@@ -158,6 +164,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     slot('shop').innerHTML = shopBarHtml(p, combat !== null);
     slot('grave').innerHTML = `<div class="graves">${graveHtml(p)}${sideShopsHtml(p)}</div>`;
     slot('side').innerHTML = `<div class="side">
+      ${commanderPanelHtml(p, shownHp(p))}
       ${selectedUid !== null ? unitDetailHtml(p, selectedUid, state.chosen) : ''}
       ${playersHtml(
         state.players.filter((o) => o.id !== playerId),
@@ -177,6 +184,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
       orbFor !== null && p.orbs.length ? orbChoiceHtml(p, orbFor) : '',
       mistPick !== null && p.mistShop ? mistChoiceHtml(p, mistPick) : '',
+      !p.commander ? commanderPickHtml() : '',
+      p.commander && p.cardOffer?.length && !combat ? cardOfferHtml(p) : '',
+      // One pick at a time: the basic item after the commander card.
+      p.commander && !p.cardOffer?.length && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
       over ? gameOverHtml(p, state.players.length) : '',
     ].join('');
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) {
@@ -188,7 +199,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   }
 
   function endTurn(): void {
-    if (combat || !isAlive(me()) || isGameOver(state)) return;
+    if (combat || !isAlive(me()) || isGameOver(state) || !me().commander) return;
     hpBefore = new Map(state.players.map((p) => [p.id, p.hp]));
     const fights = resolveCombat(state);
     const fight = fights.find((f) => f.home === playerId || (f.away === playerId && !f.ghost));
@@ -210,6 +221,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   }
 
   function nextRound(): void {
+    const drops = combat?.fight.drops ?? [];
     if (meter) meter.live = false;
     combat = null;
     hpBefore = null;
@@ -217,6 +229,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const bonuses = isAlive(me()) && !isGameOver(state) ? startRound(state) : [];
     render();
     if (me().orbs.length > orbsBefore) toast('🔮 You got a Magic Orb! Click a unit to use it.', 'info');
+    if (drops.length) toast(`👹 Monster loot: ${drops.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name}`).join(', ')}. Equip from your items.`, 'info');
     const mine = bonuses
       .filter((b) => b.playerId === playerId)
       .map((b) => {
@@ -330,6 +343,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'skip') skip();
       else if (a === 'newGame') location.reload();
       else if (a === 'reroll' || a === 'levelUp' || a === 'toggleLock') dispatch({ type: a });
+      else if (a === 'pickCommander') dispatch({ type: 'pickCommander', commander: btn.dataset.commander! });
+      else if (a === 'pickCard') dispatch({ type: 'pickCard', card: btn.dataset.card! });
+      else if (a === 'pickItem') dispatch({ type: 'pickItem', item: btn.dataset.itemId! });
+      else if (a === 'mark') dispatch({ type: 'mark', kind: btn.dataset.kind as MarkKind, unit: Number(btn.dataset.unit) });
       else if (a === 'openShop' || a === 'closeShop') {
         shopOpen = a === 'openShop';
         render();
@@ -344,7 +361,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   });
 
   window.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
+    // Nothing else until a commander is picked.
+    if (e.repeat || !me().commander) return;
     if (e.key === 'Escape' && openUnitInfo) {
       openUnitInfo = null;
       return render();

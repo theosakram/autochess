@@ -206,9 +206,9 @@ describe('Cult of Fire and the Pyre Offering', () => {
     const levels = { cultoffire: 1 };
     const stats = fieldStats(p, levels);
     const plain = fieldStats({ ...p, items: [] }, levels);
-    expect(stats.get(titan)!.armor).toBe(plain.get(titan)!.armor + CULT_OF_FIRE.defense[0]);
-    expect(stats.get(titan)!.mr).toBe(plain.get(titan)!.mr + CULT_OF_FIRE.defense[0]);
-    expect(stats.get(footman)!.armor).toBe(plain.get(footman)!.armor);
+    // The bearer burns its targets like a cultist; a plain ally doesn't.
+    expect(stats.get(titan)!.burnOnHit).toBeCloseTo(plain.get(titan)!.burnOnHit + CULT_OF_FIRE.burn[0]);
+    expect(stats.get(footman)!.burnOnHit).toBe(0);
   });
 
   test('works at the cult level as its tier, and not at all when the cult is inactive', () => {

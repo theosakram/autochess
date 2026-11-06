@@ -2,8 +2,8 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const HUNTER = {
-  allyShred: [20, 30, 45], // armor and mr every ally's basic attack removes
-  hunterBonus: [50, 60, 90], // extra on top for Hunters
+  allyShred: [10, 25, 45], // armor and mr every ally's basic attack removes
+  hunterBonus: [20, 45, 90], // extra on top for Hunters
 };
 
 export const hunter: TraitDef = {

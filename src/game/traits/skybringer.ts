@@ -4,7 +4,7 @@ import type { TraitDef } from './types';
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const SKYBRINGER = {
   damageAmp: [0.1, 0.2, 0.3, 1], // Skybringers only, all damage they deal
-  lightning: [0.1, 0.225, 0.375, 0.75], // of each enemy's max hp per strike, magic
+  lightning: [0.08, 0.225, 0.26, 0.75], // of each enemy's max hp per strike, magic
   every: 3, // seconds between strikes
   strikes: 3,
 };

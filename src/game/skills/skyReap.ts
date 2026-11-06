@@ -5,9 +5,9 @@ import type { SkillDef } from './types';
 export const SKY_REAP = {
   normal: 2, // plain attacks before one that hits twice: hit, hit, hit-hit
   frenzied: 1, // while the active lasts: hit, hit-hit
-  attackSpeed: [0.4, 0.5, 0.9], // active
+  attackSpeed: [0.65, 1, 1.4], // active
   lifesteal: [0.4, 0.5, 0.8], // active
-  seconds: 5,
+  seconds: 6,
 };
 
 export const skyReap: SkillDef = {

@@ -5,7 +5,7 @@ import type { SkillDef } from './types';
 
 // Rara Jonggrang (3g Mooneater): she becomes a wave. Per star, index 0 = 1★.
 export const TIDAL_SURGE = {
-  ap: [1.5, 1.8, 3.6], // of magic attack, magic, to each enemy on the path, per pass (out and back)
+  ap: [1.5, 1.8, 5.5], // of magic attack, magic, to each enemy on the path, per pass (out and back)
   back: 0.3, // seconds before the wave pulls back
 };
 

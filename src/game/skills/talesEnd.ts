@@ -4,13 +4,13 @@ import type { SkillDef } from './types';
 
 // Taleshield (4g Storyweaver): a defender that hits like a truck. Per star, index 0 = 1★.
 export const TALES_END = {
-  atk: [3, 3.6, 8], // of attack...
-  hp: [0.15, 0.15, 0.25], // ...plus this share of its max hp, physical, to every enemy around it
+  atk: [2, 2.4, 5.5], // of attack...
+  hp: [0.1, 0.1, 0.18], // ...plus this share of its max hp, physical, to every enemy around it
   radius: 1,
   // As the Storyweaver protagonist:
   protagonistRadius: 2,
-  stun: 1.5, // seconds
-  shield: 0.3, // of its max hp
+  stun: 1, // seconds
+  shield: 0.2, // of its max hp
   shieldSeconds: 4,
 };
 

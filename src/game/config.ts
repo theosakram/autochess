@@ -17,6 +17,22 @@ export const START_LEVEL = 3;
 export const MAX_ITEMS_PER_UNIT = 3;
 // Rounds that hand every player a Magic Orb.
 export const ORB_ROUNDS = [5, 12, 19];
+
+// The round every player picks a commander card, out of this many.
+export const COMMANDER_CARD_ROUND = 2;
+export const CARD_OFFER_SIZE = 4;
+
+// The round every player picks a basic item, out of this many random ones.
+export const BASIC_ITEM_ROUND = 2;
+export const BASIC_ITEM_OFFER = 3;
+
+// The game's stage: 1 for rounds 1-10, 2 for 11-20, and so on.
+export const stageOf = (round: number) => Math.ceil(round / 10);
+
+// Monster rounds: round 7, 17, 27, ... everyone fights monsters instead of each other. Win or lose, each
+// player gets EQUIPMENT_DROPS random equipment; a loss still costs hp. See monsters.ts.
+export const isMonsterRound = (round: number) => round % 10 === 7;
+export const EQUIPMENT_DROPS = 2;
 // Units every player gets before round 1, drawn from the pool at START_LEVEL shop odds.
 export const FREE_UNITS = 3;
 

@@ -1,10 +1,11 @@
-import { MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
+import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type WardPower } from './commanders';
+import { BOARD_COLS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side, type Point } from './grid';
 import { activeItems, fieldStats, heldBy, leadsOf } from './inventory';
-import { ITEMS } from './items';
+import { EQUIPMENT, ITEMS, type HealingSpring, type LowHpFury, type StackingPassive } from './items';
 import { nextFloat, nextInt, shuffle } from './rng';
 import { SKILLS, type SkillApi } from './skills';
-import { applyMods, attackInterval, type DamageType, type Stats, type StatKey, baseStats } from './stats';
+import { applyMods, attackInterval, BURN_SECONDS, type DamageType, type Stats, type StatKey, baseStats } from './stats';
 import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -50,7 +51,7 @@ export type CombatEvent =
   | { t: number; type: 'effect'; effect: string; by?: number; target: number; damage: number; hp: number; crit?: true }
   | { t: number; type: 'heal'; id: number; amount: number; hp: number }
   // `until` is the tick the stun wears off.
-  | { t: number; type: 'stun'; id: number; by: number; until: number }
+  | { t: number; type: 'stun'; id: number; by: number; until: number; effect?: string } // effect: how it looks (e.g. 'sheep')
   // Units `ids` are linked by `by`: they share damage (see SkillApi.link).
   | { t: number; type: 'link'; ids: number[]; by: number }
   // Unit `id` must go after `by` until `until`.
@@ -77,7 +78,9 @@ export type CombatEvent =
   | { t: number; type: 'buff'; id: number; by: number; effect: string; until?: number } // until: timed buffs only
   // A member's trait trigger fired: it may have warped to (x, y) and healed `heal`.
   | { t: number; type: 'trigger'; trait: string; id: number; x: number; y: number; hp: number; heal: number }
-  | { t: number; type: 'death'; id: number };
+  | { t: number; type: 'death'; id: number }
+  // A commander piece (the Divine Beast) shows up where it stands on `side`'s board, fires, and is gone.
+  | { t: number; type: 'piece'; defId: string; side: Side; x: number; y: number };
 
 export interface CombatResult {
   fighters: Fighter[]; // starting positions
@@ -106,6 +109,23 @@ interface SimFighter extends Fighter {
   pulses: { item: string; every: number; atkPct: number; type: DamageType }[]; // every in ticks
   openers: { source: string; width: number; depth: number; stunTicks: number; columnAttackSpeed: number }[];
   stunnedUntil: number;
+  ward: WardPower | null; // Kagura's umbrella, until it opens (see checkWard)
+  refund: number; // Angela's protection: share of max mana regained after each cast
+  castMana: number; // flat mana regained after each cast (Purple Buff)
+  sheep: { opening: number; onHit: number; cooldown: number } | null; // Sheep Stick
+  sheepReady: number; // tick its next on-hit sheep is ready
+  ccImmuneUntil: number; // no stuns, taunts or enemy displacement before this tick (Purify)
+  spring: HealingSpring | null; // Revitalize, until it's used up (see checkSpring)
+  fury: LowHpFury | null; // Blade of Despair: more damage when hitting low-hp targets
+  engulf: number; // Demon Hunter Sword: basic attacks add this share of the target's max hp
+  lifebane: { cut: number; seconds: number } | null; // Sea Halberd: its damage cuts the target's healing
+  antiHeal: { cut: number; until: number }; // healing it receives is cut by this, until then
+  hexes: { effect: string; mods: { stat: StatKey; add: number }[]; seconds: number }[]; // its skill damage puts these on targets
+  scorch: { effect: string; share: number; min: number; seconds: number; cut: number } | null; // Glowing Wand
+  freeze: { below: number; seconds: number; heal: number } | null; // Winter Crown, until it's used
+  frozen: { until: number; healPerTick: number }; // frozen now: no acting, no damage, untargetable
+  // Item passives that stack as it deals damage (see ItemDef.stacking), one per effect.
+  stacking: { def: StackingPassive; n: number; until: number }[];
   taunt: { by: number; until: number } | null; // must go after this unit for now
   buffs: { effect: string; mods: { stat: StatKey; add: number }[]; until: number }[]; // timed, from skills
   busyUntil: number; // a skill is using it (e.g. a rampage): no attacking or walking before this tick
@@ -135,11 +155,28 @@ export function defenseMult(defense: number): number {
   return defense >= 0 ? 100 / (100 + defense) : 2 - 100 / (100 - defense);
 }
 
+// Items like the Thief Tool copy random equipment for one fight: a copy of the player whose holders also
+// hold those (different, random, never the copier itself). The player's own items stay untouched.
+function withCopies(rng: { rng: number }, p: Player): Player {
+  const extra: Player['items'] = [];
+  for (const it of p.items) {
+    const n = it.holder === null ? 0 : (ITEMS[it.id].copies ?? 0);
+    if (!n || !p.board.some((u) => u?.uid === it.holder)) continue;
+    const pool = EQUIPMENT.filter((id) => !ITEMS[id].copies);
+    for (let k = 0; k < n && pool.length; k++) {
+      const [id] = pool.splice(nextInt(rng, pool.length), 1);
+      extra.push({ uid: -1 - extra.length - it.uid * 10, id, tier: 1, holder: it.holder });
+    }
+  }
+  return extra.length ? { ...p, items: [...p.items, ...extra] } : p;
+}
+
 function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chosen: Record<string, string>, out: SimFighter[]): void {
   const tiles = traitTiles(levels);
   const allStats = fieldStats(p, levels, chosen, scale);
   p.board.forEach((u, cell) => {
-    if (!u) return;
+    // Commander pieces never fight (see fireBeasts).
+    if (!u || UNIT_BY_ID[u.defId].piece) return;
     const def = UNIT_BY_ID[u.defId];
     const items = activeItems(heldBy(p, u.uid), levels);
     const stats = allStats.get(u.uid)!;
@@ -151,7 +188,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       ...boardToGrid(side, cell),
       hp: stats.hp,
       maxHp: stats.hp,
-      mana: 0,
+      // Spellblade Talisman: a head start on mana.
+      mana: Math.min(stats.maxMana, stats.maxMana * Math.max(0, ...items.map(({ id }) => ITEMS[id].startMana ?? 0))),
       maxMana: stats.maxMana,
       onTile: tiles.has(cell),
       chosen: chosenBy(levels, chosen, u.defId),
@@ -166,6 +204,19 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       mirror: 0,
       debuffs: [],
       triggers: unitTriggers(levels, def).map((tr) => ({ ...tr, fired: false })),
+      spring: items.map(({ id }) => ITEMS[id].spring).find((s) => s) ?? null,
+      fury: items.map(({ id }) => ITEMS[id].lowHpFury).find((s) => s) ?? null,
+      engulf: Math.max(0, ...items.map(({ id }) => ITEMS[id].engulf ?? 0)),
+      lifebane: items.map(({ id }) => ITEMS[id].lifebane).find((s) => s) ?? null,
+      antiHeal: { cut: 0, until: 0 },
+      scorch: items.map(({ id }) => ITEMS[id].scorch).find((s) => s) ?? null,
+      freeze: items.map(({ id }) => ITEMS[id].freeze).find((s) => s) ?? null,
+      frozen: { until: 0, healPerTick: 0 },
+      hexes: [...new Map(items.flatMap(({ id }) => (ITEMS[id].skillHex ? [[ITEMS[id].skillHex!.effect, ITEMS[id].skillHex!] as const] : []))).values()],
+      ccImmuneUntil: Math.round(Math.max(0, ...items.map(({ id }) => ITEMS[id].ccImmune ?? 0)) * TICKS_PER_SECOND),
+      stacking: [...new Map(items.flatMap(({ id }) => (ITEMS[id].stacking ? [[ITEMS[id].stacking!.effect, ITEMS[id].stacking!] as const] : []))).values()].map(
+        (def) => ({ def, n: 0, until: 0 }),
+      ),
       pulses: items.flatMap(({ id, tier }) => {
         const pulse = ITEMS[id].pulse?.(tier);
         return pulse ? [{ item: id, every: Math.round(pulse.every * TICKS_PER_SECOND), atkPct: pulse.atkPct, type: pulse.damageType }] : [];
@@ -184,6 +235,11 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
         columnAttackSpeed: o.columnAttackSpeed ?? 0,
       })),
       stunnedUntil: 0,
+      ward: u.uid === markedUid(p, 'ward') ? (powersOf(p).ward ?? null) : null,
+      refund: protectedUids(p).has(u.uid) ? (powersOf(p).protect?.refund ?? 0) : 0,
+      castMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].castMana ?? 0)),
+      sheep: items.map(({ id }) => ITEMS[id].sheep).find((s) => s) ?? null,
+      sheepReady: 0,
       taunt: null,
       buffs: [],
       busyUntil: 0,
@@ -233,8 +289,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   const fighters: SimFighter[] = [];
   const chosen = opts.chosen ?? {};
-  deploy(home, 0, traits[0], scale[0], chosen, fighters);
-  deploy(away, 1, traits[1], scale[1], chosen, fighters);
+  deploy(withCopies(rng, home), 0, traits[0], scale[0], chosen, fighters);
+  deploy(withCopies(rng, away), 1, traits[1], scale[1], chosen, fighters);
   const start = fighters.map(snapshot);
 
   const occupied = new Int16Array(GRID_W * GRID_H).fill(-1);
@@ -250,10 +306,17 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // The one place hp goes down. `dealer` is the unit dealing it (credited for it), or null for trait damage.
   function damage(target: SimFighter, raw: number, type: DamageType, dealer: SimFighter | null): number {
+    if (t < target.frozen.until) return 0;
+    // Blade of Despair: a low target fuels the dealer before this hit is worked out.
+    if (dealer?.fury && target.hp < target.maxHp * dealer.fury.below) {
+      api.buff(dealer, [{ stat: 'damageAmp', add: dealer.fury.amp }], dealer.fury.seconds, dealer.fury.effect, dealer);
+    }
     const amp = dealer ? dealer.stats.damageAmp : 0;
     const stat = type === 'physical' ? 'armor' : 'mr';
     const lowered = target.debuffs.reduce((n, d) => n + (t < d.until ? d[stat] : 0), 0);
-    const defense = type === 'pure' ? 0 : target.stats[stat] - target.shred - lowered;
+    const raw0 = type === 'pure' ? 0 : target.stats[stat] - target.shred - lowered;
+    // Magic penetration ignores a share of what magic resist is left.
+    const defense = type === 'magic' && dealer && raw0 > 0 ? raw0 * (1 - Math.min(1, dealer.stats.magicPen)) : raw0;
     const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
     const dealt = Math.round(raw * (1 + amp) * (1 + target.stats.damageTaken) * defenseMult(defense) * guard);
     // Shield layers soak it first, newest first.
@@ -271,8 +334,17 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       }
     }
     if (absorbed > 0) shieldEvent(target);
-    target.hp = Math.max(0, target.hp - (dealt - absorbed));
+    // Winter Crown: a lethal hit freezes it at 1 hp instead.
+    const lethal = target.freeze !== null && dealt - absorbed >= target.hp;
+    target.hp = lethal ? 1 : Math.max(0, target.hp - (dealt - absorbed));
+    if (lethal) freezeNow(target);
     if (dealer) dealer.dealt += dealt;
+    if (dealer && dealt > 0) stackUp(dealer, 'damage');
+    if (dealer?.lifebane && dealt > 0) {
+      const active = t < target.antiHeal.until;
+      target.antiHeal = { cut: Math.max(active ? target.antiHeal.cut : 0, dealer.lifebane.cut), until: t + Math.round(dealer.lifebane.seconds * TICKS_PER_SECOND) };
+      if (!active) events.push({ t, type: 'debuff', id: target.id, by: dealer.id, effect: 'lifebane', armor: 0, mr: 0, until: target.antiHeal.until });
+    }
     if (target.hp > 0) for (const end of broken) end();
     // Linked damage is shared once this hit has been logged (see afterDamage).
     if (dealt - absorbed > 0 && links.length) pendingShares.push({ target, taken: dealt - absorbed });
@@ -287,6 +359,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   function reactToDamage(target: SimFighter, t: number): void {
     if (target.hp > 0) checkExecute(target, t);
+    if (target.hp > 0) checkWard(target, t);
+    if (target.hp > 0) checkSpring(target, t);
+    if (target.hp > 0 && target.freeze && target.hp < target.maxHp * target.freeze.below) freezeNow(target);
     if (target.hp <= 0) {
       occupied[gridIndex(target)] = -1;
       events.push({ t, type: 'death', id: target.id });
@@ -310,7 +385,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         target.y = to.y;
         occupied[gridIndex(target)] = target.id;
       }
-      const heal = Math.min(target.maxHp - target.hp, Math.round(target.maxHp * tr.trigger.healPct));
+      const heal = Math.min(target.maxHp - target.hp, Math.round(target.maxHp * tr.trigger.healPct * healMult(target)));
       target.hp += heal;
       target.stats = applyMods(target.stats, tr.trigger.mods);
       events.push({ t, type: 'trigger', trait: tr.trait, id: target.id, x: target.x, y: target.y, hp: target.hp, heal });
@@ -318,10 +393,13 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   // Heals the dealer for a share of what it dealt: lifesteal on basic attacks, spell lifesteal on the rest.
+  // Healing it receives right now, after Lifebane-style cuts.
+  const healMult = (f: SimFighter) => (t < f.antiHeal.until ? 1 - f.antiHeal.cut : 1);
+
   function leech(f: SimFighter, dealt: number, basicAttack: boolean, t: number): void {
     const rate = basicAttack ? f.stats.lifesteal : f.stats.spellLifesteal;
     if (rate <= 0 || f.hp <= 0) return;
-    const amount = Math.min(f.maxHp - f.hp, Math.round(dealt * rate));
+    const amount = Math.min(f.maxHp - f.hp, Math.round(dealt * rate * healMult(f)));
     if (amount <= 0) return;
     f.hp += amount;
     events.push({ t, type: 'heal', id: f.id, amount, hp: f.hp });
@@ -340,7 +418,154 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     events.push({ t, type: 'effect', effect, by: s.id, target: victim.id, damage: dealt, hp: victim.hp, ...(crit && { crit: true }) });
     afterDamage(victim, t);
     leech(s, dealt, basic, t);
+    if (basic) {
+      engulf(s, victim);
+      ignite(s, victim);
+    } else hex(s, victim);
+    if (basic && dealt > 0) sheepOnHit(s, victim);
     return victim.hp <= 0;
+  }
+
+  // Item hexes (e.g. Ice Queen Wand's Ice Bound): skill damage puts them on the target, refreshed per hit.
+  function hex(f: SimFighter, target: SimFighter): void {
+    if (target.hp <= 0) return;
+    for (const h of f.hexes) api.buff(target, h.mods, h.seconds, h.effect, f);
+    if (f.scorch) scorch(f, f.scorch, target);
+  }
+
+  // Glowing Wand's Scorch: one burn per target and source, refreshed by every skill hit; it also cuts healing.
+  const burns: { source: SimFighter; target: SimFighter; effect: string; perSecond: number; next: number; until: number }[] = [];
+  function scorch(f: SimFighter, s: NonNullable<SimFighter['scorch']>, target: SimFighter): void {
+    const until = t + Math.round(s.seconds * TICKS_PER_SECOND);
+    const perSecond = Math.max(s.min, target.maxHp * s.share);
+    const live = burns.find((b) => b.source === f && b.target === target && b.effect === s.effect && t < b.until);
+    if (live) live.until = until;
+    else burns.push({ source: f, target, effect: s.effect, perSecond, next: t + TICKS_PER_SECOND, until });
+    const active = t < target.antiHeal.until;
+    target.antiHeal = { cut: Math.max(active ? target.antiHeal.cut : 0, s.cut), until: Math.max(active ? target.antiHeal.until : 0, until) };
+  }
+  // Basic-attack burns (Stats.burnOnHit, e.g. Cult of Fire): one per target and source, refreshed by every hit.
+  function ignite(f: SimFighter, target: SimFighter): void {
+    if (f.stats.burnOnHit <= 0 || target.hp <= 0) return;
+    const until = t + Math.round(BURN_SECONDS * TICKS_PER_SECOND);
+    const live = burns.find((b) => b.source === f && b.target === target && b.effect === 'cultburn' && t < b.until);
+    if (live) live.until = until;
+    else burns.push({ source: f, target, effect: 'cultburn', perSecond: target.maxHp * f.stats.burnOnHit, next: t + TICKS_PER_SECOND, until });
+  }
+
+  function fireBurns(t: number): void {
+    for (const b of burns) {
+      if (t > b.until || t < b.next || b.target.hp <= 0) continue;
+      const dealt = damage(b.target, b.perSecond, 'magic', b.source);
+      events.push({ t, type: 'effect', effect: b.effect, by: b.source.id, target: b.target.id, damage: dealt, hp: b.target.hp });
+      afterDamage(b.target, t);
+      b.next = t + TICKS_PER_SECOND;
+    }
+    for (let i = burns.length - 1; i >= 0; i--) if (t >= burns[i].until || burns[i].target.hp <= 0) burns.splice(i, 1);
+  }
+
+  // Stuns and stun-likes (a sheep): no moving, attacking or casting. Purify blocks it. Returns whether it landed.
+  function disable(f: SimFighter, seconds: number, by: SimFighter, effect?: string): boolean {
+    const until = t + Math.round(seconds * TICKS_PER_SECOND);
+    if (f.hp <= 0 || until <= f.stunnedUntil || t < f.ccImmuneUntil) return false;
+    f.stunnedUntil = until;
+    events.push({ t, type: 'stun', id: f.id, by: by.id, until, ...(effect && { effect }) });
+    return true;
+  }
+
+  // Sheep Stick: a basic attack that dealt damage sheeps its target, off cooldown.
+  function sheepOnHit(f: SimFighter, target: SimFighter): void {
+    if (!f.sheep || t < f.sheepReady || target.hp <= 0) return;
+    if (disable(target, f.sheep.onHit, f, 'sheep')) f.sheepReady = t + Math.round(f.sheep.cooldown * TICKS_PER_SECOND);
+  }
+
+  // Sheep Stick at the start: the enemy with the highest star (ties: higher cost, then first found).
+  function fireSheep(): void {
+    for (const f of fighters) {
+      if (!f.sheep) continue;
+      const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      const rank = (e: SimFighter) => e.star * 100 + UNIT_BY_ID[e.defId].tier;
+      const best = foes.reduce<SimFighter | null>((b, e) => (!b || rank(e) > rank(b) ? e : b), null);
+      if (best) disable(best, f.sheep.opening, f, 'sheep');
+    }
+  }
+
+  // Demon Hunter Sword: a basic attack's extra bite, a share of the target's max hp.
+  function engulf(f: SimFighter, target: SimFighter): void {
+    if (!f.engulf || target.hp <= 0) return;
+    const dealt = damage(target, target.maxHp * f.engulf, 'physical', f);
+    events.push({ t, type: 'effect', effect: 'engulf', by: f.id, target: target.id, damage: dealt, hp: target.hp });
+    afterDamage(target, t);
+    leech(f, dealt, true, t);
+  }
+
+  // Item passives that build up with every damaging hit (e.g. War Axe's Fighting Spirit): one more
+  // stack (up to max), all of them lasting from this hit; at max stacks the extra kicks in too.
+  function stackUp(f: SimFighter, on: 'damage' | 'basic'): void {
+    for (const s of f.stacking) {
+      if ((s.def.on ?? 'damage') !== on) continue;
+      if (t >= s.until) s.n = 0;
+      const was = s.n;
+      s.n = Math.min(s.def.max, s.n + 1);
+      s.until = s.def.seconds === Infinity ? Infinity : t + Math.round(s.def.seconds * TICKS_PER_SECOND);
+      const mods = [...s.def.perStack.flatMap((m) => ('add' in m ? [{ stat: m.stat, add: (m.add ?? 0) * s.n }] : [])), ...(s.n === s.def.max ? s.def.atMax : [])];
+      // Same stack count: just keep it going; otherwise swap the buff for the bigger one.
+      if (was === s.n && api.hasBuff(f, s.def.effect)) {
+        const live = f.buffs.find((b) => b.effect === s.def.effect);
+        if (live) live.until = s.until;
+        continue;
+      }
+      api.buff(f, mods as { stat: StatKey; add: number }[], s.def.seconds, s.def.effect, f);
+    }
+  }
+
+  // Winter Crown's Freeze: once per fight. Enemies going after it let go.
+  function freezeNow(f: SimFighter): void {
+    const s = f.freeze!;
+    f.freeze = null;
+    const ticks = Math.max(1, Math.round(s.seconds * TICKS_PER_SECOND));
+    f.frozen = { until: t + ticks, healPerTick: (f.maxHp * s.heal) / ticks };
+    for (const e of fighters) if (e.target === f) e.target = null;
+    events.push({ t, type: 'buff', id: f.id, by: f.id, effect: 'freeze', until: f.frozen.until });
+  }
+  function fireFrozen(t: number): void {
+    for (const f of fighters) if (f.hp > 0 && t < f.frozen.until) api.heal(f, f.frozen.healPerTick);
+  }
+  const frozen = (f: SimFighter) => t < f.frozen.until;
+
+  // Revitalize: the first drop under the threshold leaves a healing spring on the holder's tile.
+  const springs: { side: Side; cells: Point[]; heal: number; every: number; next: number; left: number; effect: string }[] = [];
+  function checkSpring(f: SimFighter, t: number): void {
+    if (!f.spring || f.hp >= f.maxHp * f.spring.below) return;
+    const s = f.spring;
+    f.spring = null;
+    const cells = [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => ({ x: f.x + dx, y: f.y + dy }))).filter((c) => c.x >= 0 && c.y >= 0 && c.x < GRID_W && c.y < GRID_H);
+    const every = Math.round(s.every * TICKS_PER_SECOND);
+    springs.push({ side: f.side, cells, heal: s.heal, every, next: t, left: Math.round(s.seconds / s.every), effect: s.effect });
+    events.push({ t, type: 'ground', effect: s.effect, cells, until: t + Math.round(s.seconds * TICKS_PER_SECOND) });
+    fireSprings(t);
+  }
+  function fireSprings(t: number): void {
+    for (const s of springs) {
+      if (s.left <= 0 || t < s.next) continue;
+      for (const c of s.cells) {
+        const id = occupied[gridIndex(c)];
+        const ally = id >= 0 ? fighters[id] : null;
+        if (ally && ally.side === s.side && ally.hp > 0) api.heal(ally, ally.maxHp * s.heal);
+      }
+      s.left--;
+      s.next = t + s.every;
+    }
+  }
+
+  // Kagura's umbrella: the first time the marked hero drops below its threshold, a big shield opens
+  // for the rest of the fight. Once per fight.
+  function checkWard(f: SimFighter, t: number): void {
+    if (!f.ward || f.hp >= f.maxHp * f.ward.below) return;
+    f.shields.push({ effect: 'umbrella', amount: Math.round(f.maxHp * f.ward.shield), until: MAX_COMBAT_TICKS, onEnd: null });
+    f.ward = null;
+    events.push({ t, type: 'buff', id: f.id, by: f.id, effect: 'umbrella' });
+    shieldEvent(f);
   }
 
   // Passive executes (see SkillDef.executeBelow): a living executor next to a damaged enemy that's
@@ -398,9 +623,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // What skills may do; each call goes through the same paths as attacks and effects.
   const api: SkillApi = {
-    enemiesOf: (f) => fighters.filter((e) => e.side !== f.side && e.hp > 0),
+    enemiesOf: (f) => fighters.filter((e) => e.side !== f.side && e.hp > 0 && !frozen(e)),
     nearestEnemy: (f) => {
-      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0 && !frozen(e));
       return enemies.length ? nearest(f as SimFighter, enemies) : null;
     },
     occupant: (p) => {
@@ -412,6 +637,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     safestCell: (f) => safestCell(occupied, f, fighters.filter((e) => e.side !== f.side && e.hp > 0)),
     dashTo: (who, to) => {
       const f = fighters[who.id];
+      // Displacement: an enemy's skill moving it. Immune units stay put.
+      if (casting && casting.side !== f.side && t < f.ccImmuneUntil) return;
       occupied[gridIndex(f)] = -1;
       f.x = to.x;
       f.y = to.y;
@@ -470,20 +697,17 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       const f = fighters[who.id];
       if (f.hp <= 0) return;
       const until = t + Math.round(seconds * TICKS_PER_SECOND);
+      if (t < f.ccImmuneUntil) return;
       f.taunt = { by: by.id, until };
       f.target = fighters[by.id];
       events.push({ t, type: 'taunt', id: f.id, by: by.id, until });
     },
     stun: (who, seconds, by) => {
-      const f = fighters[who.id];
-      const until = t + Math.round(seconds * TICKS_PER_SECOND);
-      if (f.hp <= 0 || until <= f.stunnedUntil) return;
-      f.stunnedUntil = until;
-      events.push({ t, type: 'stun', id: f.id, by: by.id, until });
+      disable(fighters[who.id], seconds, fighters[by.id]);
     },
     heal: (who, amount) => {
       const f = fighters[who.id];
-      const healed = Math.min(f.maxHp - f.hp, Math.round(amount));
+      const healed = Math.min(f.maxHp - f.hp, Math.round(amount * healMult(f)));
       if (f.hp <= 0 || healed <= 0) return 0;
       f.hp += healed;
       events.push({ t, type: 'heal', id: f.id, amount: healed, hp: f.hp });
@@ -537,6 +761,22 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         pulses: [],
         openers: [],
         stunnedUntil: 0,
+        ward: null,
+        refund: 0,
+        castMana: 0,
+        sheep: null,
+        sheepReady: 0,
+        ccImmuneUntil: 0,
+        spring: null,
+        fury: null,
+        engulf: 0,
+        lifebane: null,
+        antiHeal: { cut: 0, until: 0 },
+        hexes: [],
+        scorch: null,
+        freeze: null,
+        frozen: { until: 0, healPerTick: 0 },
+        stacking: [],
         taunt: null,
         buffs: [],
         busyUntil: independent ? 0 : Infinity, // a mirror never acts on its own: it only repeats its owner's hits
@@ -651,7 +891,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         r.left = 0;
         continue;
       }
+      casting = r.f;
       r.fn();
+      casting = null;
       r.left--;
       r.next += r.every;
     }
@@ -672,9 +914,12 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       f.mana = 0;
       hitEvent(f, target, t, 'cast', dealt, false);
       leech(f, dealt, false, t);
+      hex(f, target);
     } else {
       fullBasicAttack(f, target, t);
     }
+    // Mana straight back after a cast: Angela's protection (a share) and items like Purple Buff (flat).
+    if (cast && (f.refund > 0 || f.castMana > 0)) f.mana = Math.min(f.maxMana, f.mana + f.maxMana * f.refund + f.castMana);
     f.nextAttack = t + attackInterval(f.stats);
   }
 
@@ -698,8 +943,12 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const power = type === 'magic' ? f.stats.ap : f.stats.atk;
     const dealt = damage(target, power * (1 + f.stats.basicAmp) * (crit ? f.stats.critDamage : 1), type, f);
     gainMana(f, MANA_PER_ATTACK);
+    stackUp(f, 'basic');
     hitEvent(f, target, t, 'attack', dealt, crit, again);
     leech(f, dealt, true, t);
+    engulf(f, target);
+    ignite(f, target);
+    if (dealt > 0) sheepOnHit(f, target);
     // Its summons repeat the hit on the same target, crit and all. They copy the hit itself, not the
     // owner's damage bonuses (those are the owner's alone).
     for (const m of fighters) {
@@ -781,7 +1030,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
             if (p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H) continue;
             const id = occupied[gridIndex(p)];
             const target = id >= 0 ? fighters[id] : null;
-            if (!target || target.side === f.side || o.stunTicks <= target.stunnedUntil) continue;
+            if (!target || target.side === f.side || o.stunTicks <= target.stunnedUntil || target.ccImmuneUntil > 0) continue;
             target.stunnedUntil = o.stunTicks;
             events.push({ t: 0, type: 'stun', id: target.id, by: f.id, until: o.stunTicks });
           }
@@ -793,6 +1042,82 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       if (!h) continue;
       ally.stats = applyMods(ally.stats, [{ stat: 'attackSpeed', add: h.bonus }]);
       events.push({ t: 0, type: 'buff', id: ally.id, by: h.by, effect: h.source });
+    }
+  }
+
+  // Items like Aegis: the holder and its left and right neighbours get a shield (see ItemDef.sideShield).
+  // One per holder (unique); shields from different holders stack.
+  function fireSideShields(): void {
+    for (const f of fighters) {
+      const held = new Map(f.items.flatMap(({ id }) => (ITEMS[id].sideShield ? [[ITEMS[id].sideShield!.effect, ITEMS[id].sideShield!] as const] : [])));
+      for (const s of held.values()) {
+        for (const ally of fighters) {
+          if (ally.side !== f.side || ally.hp <= 0 || ally.y !== f.y || Math.abs(ally.x - f.x) > 1) continue;
+          ally.shields.push({ effect: `${s.effect}${f.id}`, amount: Math.round(ally.maxHp * s.share), until: Math.round(s.seconds * TICKS_PER_SECOND), onEnd: null });
+          shieldEvent(ally);
+        }
+      }
+    }
+  }
+
+  // Commander beasts (see commanders/): each fires once from where it stands, then is gone.
+  function fireBeasts(): void {
+    [home, away].forEach((p, side) => {
+      const power = beastOf(p);
+      const cell = p.board.findIndex((u) => u?.defId === BEAST_PIECE);
+      if (!power || cell < 0) return;
+      const front = Math.floor(cell / BOARD_COLS) === 0 && power.frontRow;
+      fireBeast(side as Side, boardToGrid(side as Side, cell), power, front);
+    });
+  }
+  function fireBeast(side: Side, at: Point, power: BeastPower, front: boolean): void {
+    const enemyAt = (p: Point) => {
+      if (p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H) return null;
+      const id = occupied[gridIndex(p)];
+      return id >= 0 && fighters[id].side !== side && fighters[id].hp > 0 ? fighters[id] : null;
+    };
+    let cells: Point[];
+    if (front) {
+      // The 3 tiles right ahead of it.
+      const y = at.y + (side === 0 ? -1 : 1);
+      cells = [-1, 0, 1].map((dx) => ({ x: at.x + dx, y }));
+    } else {
+      // The 3x3 with the most enemies in it (ties: the first found).
+      const square = (c: Point) => [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => ({ x: c.x + dx, y: c.y + dy })));
+      let best: { cells: Point[]; n: number } | null = null;
+      for (let x = 0; x < GRID_W; x++) {
+        for (let y = 0; y < GRID_H; y++) {
+          const sq = square({ x, y });
+          const n = sq.filter((c) => enemyAt(c)).length;
+          if (n > 0 && (!best || n > best.n)) best = { cells: sq, n };
+        }
+      }
+      if (!best) return;
+      cells = best.cells;
+    }
+    cells = cells.filter((c) => c.x >= 0 && c.y >= 0 && c.x < GRID_W && c.y < GRID_H);
+    const aim = front ? { x: at.x, y: cells[0]?.y ?? at.y } : cells[4] ?? cells[0];
+    events.push({ t: 0, type: 'piece', defId: BEAST_PIECE, side, x: at.x, y: at.y });
+    events.push({ t: 0, type: 'projectile', effect: BEAST_PIECE, from: at, to: aim, until: Math.round(0.3 * TICKS_PER_SECOND) });
+    events.push({ t: 0, type: 'ground', effect: BEAST_PIECE, cells, until: Math.round(0.5 * TICKS_PER_SECOND) });
+    for (const c of cells) {
+      const target = enemyAt(c);
+      if (!target) continue;
+      const dealt = damage(target, target.maxHp * power.damage, 'magic', null);
+      events.push({ t: 0, type: 'effect', effect: BEAST_PIECE, target: target.id, damage: dealt, hp: target.hp });
+      afterDamage(target, 0);
+      if (target.hp <= 0) continue;
+      if (front) {
+        const until = Math.round(power.shredSeconds * TICKS_PER_SECOND);
+        const entry = { effect: BEAST_PIECE, armor: target.stats.armor * power.shred, mr: target.stats.mr * power.shred, until };
+        target.debuffs.push(entry);
+        events.push({ t: 0, type: 'debuff', id: target.id, by: -1, effect: BEAST_PIECE, armor: entry.armor, mr: entry.mr, until });
+      } else {
+        const until = Math.round(power.stun * TICKS_PER_SECOND);
+        if (until <= target.stunnedUntil || target.ccImmuneUntil > 0) continue;
+        target.stunnedUntil = until;
+        events.push({ t: 0, type: 'stun', id: target.id, by: -1, until });
+      }
     }
   }
 
@@ -814,6 +1139,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   for (const f of fighters) if (f.shields.length) shieldEvent(f);
   if (alive(0) && alive(1)) {
     fireOpeners();
+    fireSideShields();
+    fireBeasts();
+    fireSheep();
     // Skill passives, from the starting positions.
     for (const f of fighters) {
       const skill = UNIT_BY_ID[f.defId].skill;
@@ -827,19 +1155,23 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireItemPulses(t);
     fireRepeats(t);
     fireGround(t);
+    fireSprings(t);
+    fireBurns(t);
+    fireFrozen(t);
     expireBuffs(t);
     expireShields(t);
 
     // Shuffled each tick so neither side always strikes first.
     for (const f of shuffle(rng, fighters.filter((f) => f.hp > 0))) {
-      if (f.hp <= 0 || t < f.stunnedUntil || t < f.busyUntil) continue;
-      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0);
-      if (enemies.length === 0) break;
+      if (f.hp <= 0 || t < f.stunnedUntil || t < f.busyUntil || frozen(f)) continue;
+      // Frozen enemies (Winter Crown) can't be targeted.
+      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0 && !frozen(e));
+      if (enemies.length === 0) continue;
 
       // A taunted unit goes after its taunter; otherwise it sticks with its target while alive and in range.
       const taunter = f.taunt && t < f.taunt.until ? fighters[f.taunt.by] : null;
-      if (taunter && taunter.hp > 0) f.target = taunter;
-      else if (!f.target || f.target.hp <= 0 || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
+      if (taunter && taunter.hp > 0 && !frozen(taunter)) f.target = taunter;
+      else if (!f.target || f.target.hp <= 0 || frozen(f.target) || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
       const target = f.target;
 
       if (dist(f, target) <= f.stats.range) {

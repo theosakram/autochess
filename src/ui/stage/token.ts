@@ -12,6 +12,7 @@ export interface TokenSpec {
   leads?: string[]; // traits this unit leads; each shows its leader icon
   orb?: string | null; // trait the player's Magic Orb boosts through this unit
   mistOrbs?: string[]; // traits of the Mist orbs it holds
+  marks?: string[]; // icons of the commander marks it holds (Kagura's umbrella and dance)
   itemIds?: string[];
   foe?: boolean;
   selected?: boolean;
@@ -81,7 +82,7 @@ export function makeToken(s: TokenSpec): TokenView {
   const barSpace = s.bars ? 9 : 0;
   const icons = def.traits.map((id) => TRAITS[id].icon).join('') + (def.honorary?.icon ?? '');
   if (icons) corner(icons, -half + 3, -half + 3 + barSpace, 0, 0);
-  const badges = (s.orb ? '🔮' : '') + '🌫️'.repeat(s.mistOrbs?.length ?? 0) + (s.crowned ? '👑' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
+  const badges = (s.marks ?? []).join('') + (s.orb ? '🔮' : '') + '🌫️'.repeat(s.mistOrbs?.length ?? 0) + (s.crowned ? '👑' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
   if (badges) corner(badges, half - 3, -half + 3 + barSpace, 1, 0);
   if (s.itemIds?.length) corner(s.itemIds.map((id) => ITEMS[id].icon).join(''), -half + 3, half - 3, 0, 1);
 
@@ -104,11 +105,13 @@ export function makeToken(s: TokenSpec): TokenView {
   const draw = (bar: 'hp' | 'mana') => {
     const f = frac[bar];
     const h = bar === 'hp' ? 4 : 3;
+    // The shield sits right after the remaining hp. When hp + shield is more than max hp, both shrink
+    // to fit, so a shield on a healthy unit still shows.
+    const shield = bar === 'hp' ? frac.shield : 0;
+    const scale = f + shield > 1 ? 1 / (f + shield) : 1;
     bars[bar].clear().rect(-barW / 2, barY[bar], barW, h).fill({ color: 0x000000, alpha: 0.5 });
-    if (f > 0) bars[bar].rect(-barW / 2, barY[bar], barW * f, h).fill(barColor[bar]);
-    // The shield sits right after the remaining hp, up to the bar's end.
-    const sh = bar === 'hp' ? Math.min(frac.shield, 1 - f) : 0;
-    if (sh > 0) bars.hp.rect(-barW / 2 + barW * f, barY.hp, barW * sh, h).fill(COLORS.shield);
+    if (f > 0) bars[bar].rect(-barW / 2, barY[bar], barW * f * scale, h).fill(barColor[bar]);
+    if (shield > 0) bars.hp.rect(-barW / 2 + barW * f * scale, barY.hp, barW * shield * scale, h).fill(COLORS.shield);
   };
   const setBar = (bar: 'hp' | 'mana' | 'shield', fraction: number) => {
     frac[bar] = Math.max(0, Math.min(1, fraction));

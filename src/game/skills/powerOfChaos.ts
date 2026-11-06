@@ -3,7 +3,7 @@ import type { SkillDef } from './types';
 
 // Per star, index 0 = 1★.
 export const POWER_OF_CHAOS = {
-  ap: [4, 4.5, 12], // of magic attack per Chaos Assault
+  ap: [3, 3.4, 5], // of magic attack per Chaos Assault
   assaults: 3,
 };
 

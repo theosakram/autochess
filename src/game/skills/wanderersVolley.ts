@@ -5,7 +5,7 @@ import type { SkillDef } from './types';
 
 // Wandering Eye (Plane Wanderer, Deadeye). Per star, index 0 = 1★.
 export const WANDERERS_VOLLEY = {
-  atk: [2.2, 2.6, 6], // of attack, physical, to each enemy in the path
+  atk: [2.8, 3.6, 8.5], // of attack, physical, to each enemy in the path
 };
 
 export const wanderersVolley: SkillDef = {

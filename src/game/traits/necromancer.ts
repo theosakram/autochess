@@ -1,4 +1,5 @@
-import type { TraitDef } from './types';
+import { rewardText } from './format';
+import type { StackReward, TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const NECROMANCER = {
@@ -10,11 +11,15 @@ export const NECROMANCER = {
   skillAmp: 0.0005, // skill damage per soul, Necromancers only
   // The Plane Wanderers: one is rolled per player when their grave first appears, and stays theirs.
   wanderers: ['wanderingblade', 'wanderingeye', 'wanderinghunter', 'wanderingbastion', 'wanderingseer'],
+  // The Plane Wanderer at 100 / 350 / 999 souls, with gold, equipment and an orb in between.
   rewards: [
     { at: 100, star: 1 },
+    { at: 200, gold: 10 },
     { at: 350, star: 2 },
+    { at: 400, equipment: 1 },
+    { at: 600, orbs: 1 },
     { at: 999, star: 3 },
-  ] as const,
+  ] as StackReward[],
 };
 
 export const necromancer: TraitDef = {
@@ -26,8 +31,8 @@ export const necromancer: TraitDef = {
   desc:
     'The grave gains {fight} souls after every fight and {deployed} per deployed unit at the start of every round ' +
     `(max ${NECROMANCER.maxSouls}). Necromancers deal +${+(NECROMANCER.skillAmp * 100).toFixed(2)}% skill damage per soul. ` +
-    `At ${NECROMANCER.rewards.map((r) => r.at).join(' / ')} souls the grave raises your Plane Wanderer ` +
-    `${NECROMANCER.rewards.map((r) => '★'.repeat(r.star)).join(' / ')}: one of five 5-gold heroes, rolled when your grave first appears. ` +
+    `The grave's rewards: ${NECROMANCER.rewards.map((r) => `${r.at}: ${rewardText(r, 'your Plane Wanderer')}`).join(', ')}. ` +
+    'Your Plane Wanderer is one of five 5-gold heroes, rolled when your grave first appears. ' +
     'It takes no board slot and gets the Necromancer bonus without counting as one. ' +
     `At 10, the grave fills to ${NECROMANCER.maxSouls} at once and you gain {gold} gold at the start of every round.`,
   values: () => ({
@@ -42,7 +47,7 @@ export const necromancer: TraitDef = {
     max: NECROMANCER.maxSouls,
     perFight: (level) => NECROMANCER.perFight[level - 1],
     perRound: (level, deployed) => NECROMANCER.perDeployed[level - 1] * deployed,
-    rewards: NECROMANCER.rewards.map((r) => ({ at: r.at, star: r.star })),
+    rewards: NECROMANCER.rewards,
     rewardUnits: NECROMANCER.wanderers,
     fullAt: NECROMANCER.fullAt,
   },

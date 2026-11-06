@@ -73,6 +73,26 @@ export function ahead3x3(f: Point & { side: 0 | 1 }): Point[] {
   return cells;
 }
 
+// A strip `width` cells wide from `f` toward `toward`, to the board's edge: along whichever axis it's
+// mostly off by (vertical on a tie), centred on `f`'s row or column, starting with the cell next to it.
+export function facingStrip(f: Point, toward: Point, width = 3): Point[] {
+  const dx = toward.x - f.x;
+  const dy = toward.y - f.y;
+  const vertical = Math.abs(dy) >= Math.abs(dx);
+  const step = vertical ? Math.sign(dy) || -1 : Math.sign(dx);
+  const half = Math.floor(width / 2);
+  const cells: Point[] = [];
+  for (let d = 1; ; d++) {
+    const along = vertical ? f.y + step * d : f.x + step * d;
+    if (along < 0 || along >= (vertical ? GRID_H : GRID_W)) break;
+    for (let o = -half; o <= half; o++) {
+      const p = vertical ? { x: f.x + o, y: along } : { x: along, y: f.y + o };
+      if (p.x >= 0 && p.y >= 0 && p.x < GRID_W && p.y < GRID_H) cells.push(p);
+    }
+  }
+  return cells;
+}
+
 // A strip `width` cells wide (centred on `f`'s column) from the row right ahead of it to the far edge.
 export function aheadStrip(f: Point & { side: 0 | 1 }, width = 3): Point[] {
   const forward = f.side === 0 ? -1 : 1;

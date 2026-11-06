@@ -1,3 +1,4 @@
+import { EQUIPMENT } from './items';
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
 import { defenseMult, simulateCombat } from './combat';
@@ -115,7 +116,32 @@ describe('Necromancer', () => {
     syncPlayer(state, p);
     syncPlayer(state, p);
     expect(wanderers(p).map((u) => u!.star)).toEqual([3]);
-    expect(p.rewards?.necromancer).toBe(3);
+    expect(p.rewards?.necromancer).toBe(NECROMANCER.rewards.length);
+  });
+
+  test('200 / 400 / 600 souls: gold, a random equipment, a Magic Orb', () => {
+    const state = newGame();
+    const p = state.players[0];
+    p.items = [];
+    p.orbs = [];
+    p.stacks.necromancer = 199;
+    syncPlayer(state, p);
+    const gold = p.gold;
+    p.stacks.necromancer = 200;
+    syncPlayer(state, p);
+    expect(p.gold).toBe(gold + 10);
+    expect(p.items).toHaveLength(0);
+    p.stacks.necromancer = 400;
+    syncPlayer(state, p);
+    expect(p.items).toHaveLength(1);
+    expect(EQUIPMENT).toContain(p.items[0].id);
+    expect(p.orbs).toHaveLength(0);
+    p.stacks.necromancer = 600;
+    syncPlayer(state, p);
+    expect(p.orbs).toHaveLength(1);
+    // Claimed once: nothing more on the next sync.
+    syncPlayer(state, p);
+    expect([p.gold, p.items.length, p.orbs.length]).toEqual([gold + 10, 1, 1]);
   });
 
   test('a reward waits for bench room; one sold before an upgrade comes back at the new star', () => {
@@ -237,6 +263,8 @@ describe('Necromancer 10', () => {
     const without = newGame();
     const q = without.players[0];
     field(q, [['boneadept', 1, 0], ['banshee', 1, 1]]);
+    // Same bank, so interest matches (the grave's gold milestone raised p's).
+    q.gold = gold;
     const before = q.gold;
     startRound(without);
     // Necromancer 2 pays nothing extra: the difference is just income.

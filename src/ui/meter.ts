@@ -1,3 +1,4 @@
+import { COMMANDER_EFFECTS } from '../game/commanders';
 import type { CombatEvent } from '../game/combat';
 import type { Fight } from '../game/game';
 import type { Side } from '../game/grid';
@@ -49,7 +50,7 @@ export function meterHtml(m: Meter | null): string {
     return { key: `u${id}`, label: `${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, ...d, dead: m.dead.has(id) };
   });
   const traits = [...m.byTrait].map(([id, dmg]) => {
-    const src = TRAITS[id] ?? ITEMS[id];
+    const src = TRAITS[id] ?? ITEMS[id] ?? COMMANDER_EFFECTS[id];
     return { key: id, label: `${src.icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
   });
   const rows = [...units, ...traits].sort((a, b) => b.attack + b.skill - (a.attack + a.skill));

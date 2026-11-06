@@ -10,7 +10,7 @@ export const MYTH_MADE_FLESH = {
   hp: 0.6, // of Mythweaver's max hp
   atk: [0.5, 0.6, 1], // of Mythweaver's magic attack: the beast's attack
   // As the Storyweaver protagonist:
-  protagonistAtk: 2.5, // x the beast's attack
+  protagonistAtk: 2, // x the beast's attack
   burn: [0.3, 0.35, 0.7], // of magic attack per second, magic, on the landing 3x3
   burnSeconds: 4,
 };

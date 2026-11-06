@@ -26,7 +26,8 @@ function newGame(seed = 42, keepStarters = false): GameState {
     for (const p of state.players) {
       for (const slots of [p.bench, p.board]) {
         slots.forEach((u, i) => {
-          if (u) state.pool[u.defId] += copiesOf(u);
+          // Commander pieces never came from the pool.
+          if (u && u.defId in state.pool) state.pool[u.defId] += copiesOf(u);
           slots[i] = null;
         });
       }
@@ -75,7 +76,7 @@ describe('game setup', () => {
 
   test('bots field their free units', () => {
     const bot = newGame(42, true).players[1];
-    expect(bot.board.filter(Boolean).length).toBe(START_LEVEL);
+    expect(boardCount(bot)).toBe(START_LEVEL);
   });
 });
 

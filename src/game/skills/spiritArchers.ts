@@ -6,9 +6,9 @@ export const SPIRIT_ARCHERS = {
   archer: 'spiritarcher',
   count: [1, 2, 3], // archers kept summoned
   hp: 0.3, // of Arjuna's max hp, each
-  mirror: [0.35, 0.4, 0.6], // of each of Arjuna's basic attacks, repeated by each archer
-  attackSpeed: [0.3, 0.4, 0.8],
-  damageAmp: [0.2, 0.25, 0.5],
+  mirror: [0.55, 0.55, 0.6], // of each of Arjuna's basic attacks, repeated by each archer
+  attackSpeed: [0.65, 0.65, 0.8],
+  damageAmp: [0.45, 0.45, 0.5],
   seconds: 5,
 };
 

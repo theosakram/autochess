@@ -1,7 +1,7 @@
 import { barrage } from './barrage';
 
 // Storm Herald (3g Phasewarper). Per star, index 0 = 1★.
-export const STORM_FLURRY = { hits: 5, every: 0.1, ap: [0.7, 0.85, 1.7] };
+export const STORM_FLURRY = { hits: 5, every: 0.1, ap: [1.3, 1.6, 3.4] };
 
 export const stormFlurry = barrage({
   id: 'stormflurry',

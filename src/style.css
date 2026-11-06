@@ -716,3 +716,38 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   .shop-trait { font-size: 11px; }
 }
 .gallery .gallery-card, .gallery .crossover td, .gallery .trait-desc, .trait-units li { text-align: left; }
+
+/* Commanders: the pick screens and the panel beside the board. */
+.commander-pick { width: min(96vw, 900px); }
+.commander-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 12px; }
+.commander-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 12px;
+  border: 1px solid #3a3f4d;
+  border-radius: 10px;
+  background: var(--cell);
+  color: var(--text);
+  text-align: center;
+}
+.commander-option:hover { border-color: var(--accent); filter: brightness(1.15); }
+.commander-option.own { border-color: var(--accent); }
+.commander-option small { color: var(--muted); font-size: 12px; }
+.commander-portrait { font-size: 40px; line-height: 1.1; }
+.commander-text { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: #c9ccd6; text-align: left; }
+.commander-card-line { margin-top: auto; padding-top: 6px; font-size: 12px; color: var(--muted); }
+.commander-panel {
+  padding: 10px 12px;
+  border: 1px solid #b8963e;
+  border-radius: 8px;
+  background: linear-gradient(#2e2a20, #22201b);
+}
+.commander-head { display: flex; align-items: center; gap: 10px; }
+.commander-head .commander-portrait { font-size: 34px; }
+.commander-head div { display: flex; flex-direction: column; min-width: 0; }
+.commander-head small { color: var(--muted); font-size: 11px; }
+.commander-hp { margin-left: auto; font-weight: 700; font-size: 16px; white-space: nowrap; }
+.commander-hpbar { height: 6px; margin-top: 8px; border-radius: 3px; background: #00000066; overflow: hidden; }
+.commander-hpbar span { display: block; height: 100%; background: #d65151; }

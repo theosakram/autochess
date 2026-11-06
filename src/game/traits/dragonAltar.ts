@@ -14,8 +14,9 @@ export const DRAGON_ALTAR = {
     ALL_CELLS,
     ALL_CELLS,
   ],
-  bonus: [0.075, 0.15, 0.225, 1], // hp, attack and magic attack for allies starting on an altar
-  memberMult: 3, // Dragon Altar units get this many times the bonus
+  // Hp, attack and magic attack for units starting on an altar: other allies, and Dragon Altar units.
+  allyBonus: [0.03, 0.06, 0.1, 1],
+  memberBonus: [0.15, 0.3, 0.5, 2],
 };
 
 export const dragonAltar: TraitDef = {
@@ -28,12 +29,12 @@ export const dragonAltar: TraitDef = {
   desc: 'Altar tiles: {tiles}. Allies starting on an altar get +{bonus} HP and both attacks, Dragon Altar units +{member}.',
   values: () => ({
     tiles: DRAGON_ALTAR.tiles.map((t) => (t.length === ALL_CELLS.length ? 'all' : String(t.length))),
-    bonus: DRAGON_ALTAR.bonus.map(pct),
-    member: DRAGON_ALTAR.bonus.map((b) => pct(b * DRAGON_ALTAR.memberMult)),
+    bonus: DRAGON_ALTAR.allyBonus.map(pct),
+    member: DRAGON_ALTAR.memberBonus.map(pct),
   }),
   mods: ({ level, member, cell }) => {
     if (!DRAGON_ALTAR.tiles[level - 1].includes(cell)) return [];
-    const bonus = DRAGON_ALTAR.bonus[level - 1] * (member ? DRAGON_ALTAR.memberMult : 1);
+    const bonus = (member ? DRAGON_ALTAR.memberBonus : DRAGON_ALTAR.allyBonus)[level - 1];
     return [
       { stat: 'hp', pct: bonus },
       { stat: 'atk', pct: bonus },

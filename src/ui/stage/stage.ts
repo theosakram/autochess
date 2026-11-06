@@ -1,3 +1,4 @@
+import { markIcons } from '../../game/commanders';
 import type { Fighter } from '../../game/combat';
 import { leadsOf } from '../../game/inventory';
 import { Application, Container, Graphics, Text, type FederatedPointerEvent } from 'pixi.js';
@@ -175,6 +176,7 @@ export class Stage {
           leads: area === 'board' ? leadsOf(p, levels, u.uid) : [],
           orb: p.orb?.defId === u.defId ? p.orb.trait : null,
           mistOrbs: (p.mistOrbs ?? []).filter((o) => o.holder === u.uid).map((o) => o.trait),
+          marks: markIcons(p, u.uid),
           itemIds: p.items.filter((i) => i.holder === u.uid).map((i) => i.id),
           selected: u.uid === view.selectedUid,
           target: view.pickingItem,
@@ -387,8 +389,10 @@ export class Stage {
           break;
         case 'stun': {
           const v = views.get(e.id)!;
+          const icon = e.effect === 'sheep' ? '🐑' : '💫';
+          if (v.stun && v.stun.text !== icon) v.stun.text = icon;
           if (!v.stun) {
-            v.stun = new Text({ text: '💫', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.22 } });
+            v.stun = new Text({ text: icon, style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.22 } });
             v.stun.anchor.set(0.5);
             v.stun.position.set(this.L.boardCell * 0.32, -this.L.boardCell * 0.42);
             v.root.addChild(v.stun);
@@ -469,6 +473,15 @@ export class Stage {
           }
           break;
         }
+        case 'piece': {
+          // The commander piece appears where it stands (yours or theirs), fires, and fades away.
+          const token = makeToken({ defId: e.defId, star: 1, size: this.L.boardCell, foe: e.side !== mySide });
+          const p = at(e);
+          token.root.position.set(p.x, p.y);
+          this.layers.units.addChild(token.root);
+          this.tweens.add(900, (k) => (token.root.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4), () => token.root.destroy());
+          break;
+        }
         case 'projectile': {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
           const orb = new Graphics().circle(0, 0, this.L.boardCell * 0.12).fill(color).stroke({ width: 2, color: 0xffffff, alpha: 0.7 });
@@ -515,11 +528,10 @@ export class Stage {
             .roundRect(-half, -half, half * 2, half * 2, 6)
             .stroke({ width: e.until ? 3 : 2, color: EFFECT_COLORS[e.effect] ?? COLORS.accent });
           views.get(e.id)!.root.addChild(ring);
-          if (e.until) {
-            const key = `${e.id}:${e.effect}`;
-            buffRings.get(key)?.ring.destroy();
-            buffRings.set(key, { ring, until: e.until });
-          }
+          // One ring per unit and effect: a refreshed buff (e.g. a stack more) replaces its ring.
+          const key = `${e.id}:${e.effect}`;
+          buffRings.get(key)?.ring.destroy();
+          buffRings.set(key, { ring, until: e.until ?? Infinity });
           break;
         }
         case 'trigger':

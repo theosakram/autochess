@@ -7,8 +7,8 @@ import type { SkillDef } from './types';
 export const UNDYING_FURY = {
   seconds: 4,
   every: 0.5,
-  hp: [0.025, 0.03, 0.06], // of its max hp, magic, per tick to each enemy around it
-  attackSpeed: [0.5, 0.6, 1],
+  hp: [0.015, 0.018, 0.04], // of its max hp, magic, per tick to each enemy around it
+  attackSpeed: [0.35, 0.45, 0.8],
   lifesteal: [0.3, 0.4, 0.7], // on its attacks and its aura alike
 };
 

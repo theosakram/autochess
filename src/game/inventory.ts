@@ -1,4 +1,5 @@
-import { MAX_ITEMS_PER_UNIT } from './config';
+import { markedUid, powersOf, protectedUids } from './commanders';
+import { MAX_ITEMS_PER_UNIT, stageOf } from './config';
 import { ITEMS } from './items';
 import { nextInt } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
@@ -8,21 +9,28 @@ import { UNIT_BY_ID } from './units';
 
 export const heldBy = (p: Player, unitUid: number) => p.items.filter((i) => i.holder === unitUid);
 
-export const hasRoom = (p: Player, unitUid: number) => heldBy(p, unitUid).length < MAX_ITEMS_PER_UNIT;
+// Item slots a unit's items take (most take 1; e.g. the Thief Tool takes them all). Also its item count.
+export const slotsUsed = (p: Player, unitUid: number) => heldBy(p, unitUid).reduce((n, i) => n + (ITEMS[i.id].slots ?? 1), 0);
+
+export const hasRoom = (p: Player, unitUid: number) => slotsUsed(p, unitUid) < MAX_ITEMS_PER_UNIT;
 
 // Why `unit` can't take `item`, or null if it can.
 export function equipBlock(p: Player, item: Item, unit: Unit): string | null {
   const def = ITEMS[item.id];
+  if (UNIT_BY_ID[unit.defId].piece) return `The ${UNIT_BY_ID[unit.defId].name} can't hold items`;
   if (def.forbidden && UNIT_BY_ID[unit.defId].traits.includes(def.forbidden)) {
     return `${TRAITS[def.forbidden].name} units can't hold the ${def.name}`;
   }
-  if (item.holder !== unit.uid && !hasRoom(p, unit.uid)) return `A unit holds at most ${MAX_ITEMS_PER_UNIT} items`;
+  if (item.holder !== unit.uid && slotsUsed(p, unit.uid) + (def.slots ?? 1) > MAX_ITEMS_PER_UNIT) {
+    return def.slots && def.slots > 1 ? `The ${def.name} takes all ${def.slots} item slots` : `A unit holds at most ${MAX_ITEMS_PER_UNIT} items`;
+  }
   return null;
 }
 
 // The tier an item works at given the holder's side's traits, or 0 if its trait is inactive.
 export function effectiveTier(item: Item, levels: TraitLevels): number {
   const def = ITEMS[item.id];
+  if (!def.trait) return item.tier; // equipment always works
   const level = levels[def.trait] ?? 0;
   if (!level) return 0;
   if (def.tierFromTrait) return Math.min(level, def.maxTier);
@@ -56,6 +64,21 @@ export function syncItems(state: GameState, p: Player): void {
   }
 }
 
+// Puts a basic item from the round-2 offer into the player's items (unequipped) and closes the offer.
+export function takeBasicItem(state: GameState, p: Player, itemId: string): void {
+  p.items.push({ uid: state.nextUid++, id: itemId, tier: 1, holder: null });
+  p.itemOffer = undefined;
+  stageItems(state, p);
+}
+
+// Items whose tier is the game's stage (see ItemDef.tierByStage) catch up with it.
+export function stageItems(state: GameState, p: Player): void {
+  for (const it of p.items) {
+    const def = ITEMS[it.id];
+    if (def.tierByStage) it.tier = Math.min(def.maxTier, stageOf(state.round));
+  }
+}
+
 // Traits whose member bonuses these (active) items grant their holder.
 export function honoraryTraits(items: { id: string }[]): string[] {
   return items.flatMap((it) => {
@@ -65,7 +88,7 @@ export function honoraryTraits(items: { id: string }[]): string[] {
 }
 
 // Trait id -> uid of its leader on this board. Every carried item counts, working or not.
-export const fieldLeaders = (p: Player, levels: TraitLevels) => traitLeaders(p.board, levels, (uid) => heldBy(p, uid).length);
+export const fieldLeaders = (p: Player, levels: TraitLevels) => traitLeaders(p.board, levels, (uid) => slotsUsed(p, uid));
 
 // The traits a unit leads, by uid.
 export function leadsOf(p: Player, levels: TraitLevels, uid: number): string[] {
@@ -100,13 +123,28 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
         { stat: 'mr', pct: bonus.def },
       ]
     : [];
+  const blessed = protectedUids(p);
+  const protect = powersOf(p).protect;
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
     const own = UNIT_BY_ID[u.defId].honorary;
     const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
     const leads = Object.keys(leaders).filter((id) => leaders[id] === u.uid);
-    stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads, extra }));
+    const mods: StatMod[] = [...extra];
+    // Kagura's card: the dancing hero fights harder.
+    const boost = u.uid === markedUid(p, 'boost') ? powersOf(p).boost : undefined;
+    if (boost) {
+      mods.push(
+        { stat: 'atk', pct: boost.hybridAtk },
+        { stat: 'ap', pct: boost.hybridAtk },
+        { stat: 'lifesteal', add: boost.hybridLifesteal },
+        { stat: 'spellLifesteal', add: boost.hybridLifesteal },
+      );
+    }
+    // Angela: protected heroes hit harder with their skills.
+    if (protect && blessed.has(u.uid)) mods.push({ stat: 'skillAmp', add: protect.skillAmp });
+    stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads, extra: mods }));
   });
   for (const holder of p.board) {
     if (!holder) continue;

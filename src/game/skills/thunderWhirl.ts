@@ -6,7 +6,7 @@ import type { SkillDef } from './types';
 export const THUNDER_WHIRL = {
   every: 0.25,
   seconds: 1.5,
-  atk: [0.35, 0.42, 0.85], // of attack, physical, per pulse to each enemy around it
+  atk: [0.22, 0.26, 0.5], // of attack, physical, per pulse to each enemy around it
 };
 
 export const thunderWhirl: SkillDef = {

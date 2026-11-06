@@ -12,7 +12,8 @@ export function boardCount(p: Player): number {
 }
 
 // Fielded units that take no slot.
-export const freeSlotCount = (p: Player) => p.board.filter((u) => u && UNIT_BY_ID[u.defId].freeSlot).length;
+// Commander pieces (the Divine Beast) aren't units, so they're not counted here either.
+export const freeSlotCount = (p: Player) => p.board.filter((u) => u && UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece).length;
 
 export function xpToNext(p: Player): number | null {
   return p.level >= MAX_LEVEL ? null : XP_TO_LEVEL[p.level - 1];

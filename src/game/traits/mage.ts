@@ -3,8 +3,8 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const MAGE = {
-  allies: [0.1, 0.2, 0.3], // magic attack for every ally
-  mageBonus: [0.4, 0.8, 1.2], // extra on top for Mages
+  allies: [0.1, 0.12, 0.25], // magic attack for every ally
+  mageBonus: [0.35, 0.53, 0.9], // extra on top for Mages
 };
 
 export const mage: TraitDef = {

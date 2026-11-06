@@ -4,7 +4,7 @@ import type { SkillDef, SkillFighter } from './types';
 
 // Per star, index 0 = 1★.
 export const PHANTOM_EXECUTION = {
-  atk: [1.7, 1.95, 4.5], // of total physical attack, to every enemy along a dash
+  atk: [2.6, 3, 10], // of total physical attack, to every enemy along a dash
   maxDashes: 3, // the 1st cast dashes once, each later cast once more, up to this
   dashLength: 4, // cells
   dashSeconds: 0.2, // how long one dash takes, for the damage reduction

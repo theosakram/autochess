@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 // Per star, index 0 = 1★.
 export const STARFALL_AEGIS = {
   shield: [0.1, 0.2, 0.75], // of max hp, lasts the whole starfall
-  ap: [0.95, 1, 4], // of magic attack, to every enemy, per strike
+  ap: [0.27, 0.28, 0.75], // of magic attack, to every enemy, per strike
   every: 0.5, // seconds between strikes
   seconds: 5, // starfall duration
 };

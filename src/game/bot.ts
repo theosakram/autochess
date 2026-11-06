@@ -1,5 +1,7 @@
 import { applyAction } from './actions';
+import { COMMANDERS, markedUid, markKinds, protectedUids } from './commanders';
 import { MAX_INTEREST } from './config';
+import { nextInt } from './rng';
 import { equipBlock } from './inventory';
 import { isItemCard } from './items';
 import { boardCount, interest, levelUpCost } from './player';
@@ -11,6 +13,15 @@ import { UNIT_BY_ID } from './units';
 // Placeholder AI: buy whatever is affordable, field as much as the cap allows,
 // take any trait tiles, level up whenever it can still keep max interest.
 export function runBot(state: GameState, p: Player): void {
+  // Commander and commander card: at random.
+  if (!p.commander) {
+    const ids = Object.keys(COMMANDERS);
+    applyAction(state, p.id, { type: 'pickCommander', commander: ids[nextInt(state, ids.length)] });
+  }
+  if (p.cardOffer?.length) applyAction(state, p.id, { type: 'pickCard', card: p.cardOffer[nextInt(state, p.cardOffer.length)] });
+  if (p.itemOffer?.length) applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[nextInt(state, p.itemOffer.length)] });
+  placeMarks(state, p);
+
   for (let i = 0; i < p.shop.length; i++) {
     const id = p.shop[i];
     if (id && (isItemCard(id) || UNIT_BY_ID[id].tier <= p.gold)) applyAction(state, p.id, { type: 'buy', slot: i });
@@ -38,6 +49,28 @@ export function runBot(state: GameState, p: Player): void {
   const keep = interestBank();
   for (let cost = levelUpCost(p); cost !== null && p.gold - cost >= keep; cost = levelUpCost(p)) {
     applyAction(state, p.id, { type: 'levelUp' });
+  }
+}
+
+// Commander marks on the most valuable fielded heroes (highest star, then cost): the umbrella on the best
+// melee one (the tank), the dance on the best ranged one (the carry); either falls back to the best overall.
+function placeMarks(state: GameState, p: Player): void {
+  const fielded = p.board
+    .filter((u) => u !== null && !UNIT_BY_ID[u.defId].piece)
+    .sort((a, b) => b!.star - a!.star || UNIT_BY_ID[b!.defId].tier - UNIT_BY_ID[a!.defId].tier);
+  if (!fielded.length) return;
+  const melee = (u: { defId: string }) => UNIT_BY_ID[u.defId].range <= 1;
+  for (const kind of markKinds(p)) {
+    if (kind === 'halo' || kind === 'halo2') {
+      // Halos: the best heroes not already protected (by the other halo or the automatic one).
+      if (markedUid(p, kind) !== null) continue;
+      const taken = protectedUids(p);
+      const best = fielded.find((u) => !taken.has(u!.uid));
+      if (best) applyAction(state, p.id, { type: 'mark', kind, unit: best.uid });
+      continue;
+    }
+    const best = fielded.find((u) => melee(u!) === (kind === 'ward')) ?? fielded[0]!;
+    if (markedUid(p, kind) !== best.uid) applyAction(state, p.id, { type: 'mark', kind, unit: best.uid });
   }
 }
 

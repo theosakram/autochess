@@ -4,7 +4,7 @@ import type { ItemDef } from './types';
 // Per tier, index 0 = tier 1.
 export const BLANGKON = {
   hp: [0.2, 0.3, 0.5, 2],
-  stun: [1, 1.5, 2, 3], // seconds
+  stun: [1, 1, 1, 1], // seconds, the same at every tier
   area: { width: 3, depth: 3 },
 };
 

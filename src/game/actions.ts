@@ -1,5 +1,6 @@
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { equipBlock } from './inventory';
+import { COMMANDERS, MARKS, pickGold, pieceBlock, powersOf, type MarkKind } from './commanders';
+import { equipBlock, takeBasicItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
@@ -25,7 +26,11 @@ export type Action =
   | { type: 'useOrb'; unit: number; trait: string } // unit uid
   | { type: 'mistBuy'; slot: number; choice?: string } // choice: a unit uid (Mirror) or trait id (picked orbs)
   | { type: 'equipMistOrb'; orb: number; unit: number } // uids; from the inventory or another unit
-  | { type: 'unequipMistOrb'; orb: number };
+  | { type: 'unequipMistOrb'; orb: number }
+  | { type: 'pickCommander'; commander: string } // once, at the start of the game
+  | { type: 'pickCard'; card: string } // one of the cards on offer (a commander id)
+  | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
+  | { type: 'pickItem'; item: string }; // one of the basic items on offer
 
 export type Result = { ok: true } | { ok: false; error: string };
 
@@ -118,6 +123,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!slots) return fail('Bad location');
       const unit = slots[action.from.index];
       if (!unit) return fail('No unit there');
+      if (UNIT_BY_ID[unit.defId].piece) return fail(`The ${UNIT_BY_ID[unit.defId].name} can't be sold`);
       const copies = copiesOf(unit);
       slots[action.from.index] = null;
       if (unit.defId in state.pool) state.pool[unit.defId] += copies;
@@ -133,6 +139,9 @@ function perform(state: GameState, p: Player, action: Action): Result {
       const unit = src[from.index];
       if (!unit) return fail('No unit there');
       const other = dst[to.index];
+      // Commander pieces only go where they may stand, even when swapped.
+      const blocked = pieceBlock(p, unit.defId, to) ?? (other ? pieceBlock(p, other.defId, from) : null);
+      if (blocked) return fail(blocked);
       src[from.index] = other;
       dst[to.index] = unit;
       if (boardCount(p) > p.level) {
@@ -158,12 +167,45 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (p.orbs.length === 0) return fail('No Magic Orb to use');
       const unit = [...p.board, ...p.bench].find((u) => u?.uid === action.unit);
       if (!unit) return fail('No such unit');
+      if (UNIT_BY_ID[unit.defId].piece) return fail(`The ${UNIT_BY_ID[unit.defId].name} can't take an orb`);
       if (!orbOptions(p.orbs[0], unit.defId).includes(action.trait)) return fail('That trait is not on offer');
       // A unit type holding a Mist orb (on any of its copies) can't take the Magic Orb.
       const copies = new Set([...p.board, ...p.bench].flatMap((u) => (u && u.defId === unit.defId ? [u.uid] : [])));
       if (p.mistOrbs?.some((o) => o.holder !== null && copies.has(o.holder))) return fail('It already holds a Mist orb');
       p.orbs.shift();
       p.orb = { defId: unit.defId, trait: action.trait };
+      return OK;
+    }
+
+    case 'pickCommander': {
+      if (p.commander) return fail('You already have a commander');
+      if (!COMMANDERS[action.commander]) return fail('No such commander');
+      p.commander = action.commander;
+      return OK;
+    }
+
+    case 'pickCard': {
+      if (!p.cardOffer?.includes(action.card)) return fail('That card is not on offer');
+      p.commanderCard = action.card;
+      p.cardOffer = undefined;
+      p.gold += pickGold(p, action.card);
+      return OK;
+    }
+
+    case 'pickItem': {
+      if (!p.itemOffer?.includes(action.item)) return fail('That item is not on offer');
+      takeBasicItem(state, p, action.item);
+      return OK;
+    }
+
+    case 'mark': {
+      const mark = MARKS[action.kind];
+      if (!mark) return fail('No such mark');
+      if (!mark.available(powersOf(p))) return fail(`You don't have the ${mark.name}`);
+      const unit = [...p.board, ...p.bench].find((u) => u?.uid === action.unit);
+      if (!unit) return fail('No such unit');
+      if (UNIT_BY_ID[unit.defId].piece) return fail(`The ${UNIT_BY_ID[unit.defId].name} can't take the ${mark.name}`);
+      (p.marks ??= {})[action.kind] = { uid: unit.uid, defId: unit.defId };
       return OK;
     }
 
@@ -193,7 +235,8 @@ function upgradeItem(p: Player, slot: number): Result {
   const itemId = cardItem(p.shop[slot]!);
   const item = p.items.find((i) => i.id === itemId);
   if (!item) return fail(`You don't own ${ITEMS[itemId].name}`);
-  const cap = TRAITS[ITEMS[itemId].trait].items?.maxShopTier ?? ITEMS[itemId].maxTier;
+  const trait = ITEMS[itemId].trait;
+  const cap = (trait && TRAITS[trait].items?.maxShopTier) || ITEMS[itemId].maxTier;
   if (item.tier >= cap) return fail(`${ITEMS[itemId].name} is already tier ${cap}`);
   item.tier++;
   p.shop[slot] = null;

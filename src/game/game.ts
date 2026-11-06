@@ -6,6 +6,11 @@ import {
   BENCH_SIZE,
   BOARD_COLS,
   BOARD_ROWS,
+  BASIC_ITEM_OFFER,
+  BASIC_ITEM_ROUND,
+  COMMANDER_CARD_ROUND,
+  EQUIPMENT_DROPS,
+  isMonsterRound,
   FREE_UNITS,
   PASSIVE_XP,
   POOL_SIZE,
@@ -14,13 +19,16 @@ import {
   START_LEVEL,
 } from './config';
 import { copiesOf, mergeUnits } from './merge';
+import { stageItems, takeBasicItem } from './inventory';
 import { addXp, interest, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop } from './shop';
 import { claimShopSlot, canClaim } from './actions';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
-import { isItemCard } from './items';
+import { offerCards, pickGold } from './commanders';
+import { BASIC_ITEMS, EQUIPMENT, isItemCard, ITEMS } from './items';
+import { MONSTER_ID, monsterSide } from './monsters';
 import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
 import type { GameState, Player } from './types';
@@ -39,6 +47,8 @@ export interface Fight {
   ghost: boolean;
   result: CombatResult;
   damage: number; // dealt to the loser
+  monster?: true; // a monster round: away is MONSTER_ID
+  drops?: string[]; // equipment item ids the home player got from it
 }
 
 export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
@@ -66,6 +76,7 @@ export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
       items: [],
       orbs: [],
       orb: null,
+      commander: null,
     })),
   };
   state.chosen = rollChosen(state);
@@ -105,11 +116,16 @@ export function startRound(state: GameState): RoundBonus[] {
     if (p.shopLocked) p.shopLocked = false;
     else refreshShop(state, p);
   }
+  // The commander card round: everyone gets an offer to pick from.
+  if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
+  // The basic item round: a few random basic items, pick one.
+  if (state.round === BASIC_ITEM_ROUND) for (const p of alive) p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
   // Units deployed at the start of the round feed counting traits (before bots rearrange).
   for (const p of alive) roundStacks(p);
   const bonuses = alive.flatMap((p) =>
     roundStartEffects(p).map(({ trait, effect }) => ({ playerId: p.id, trait, ...payOut(state, p, effect) })),
   );
+  for (const p of alive) stageItems(state, p);
   for (const p of alive) syncPlayer(state, p);
   for (const p of alive) {
     if (p.isBot) runBot(state, p);
@@ -140,6 +156,18 @@ function loot(state: GameState, p: Player, rule: 'cheapest' | 'random'): string 
 
 // Pair everyone up, fight, apply damage, knock out anyone at 0 hp.
 export function resolveCombat(state: GameState): Fight[] {
+  // A commander card left unpicked defaults to the first on offer (the player's own commander's).
+  for (const p of state.players.filter(isAlive)) {
+    if (p.cardOffer?.length) {
+      p.commanderCard = p.cardOffer[0];
+      p.cardOffer = undefined;
+      p.gold += pickGold(p, p.commanderCard);
+    }
+    // Likewise an unpicked basic item: the first on offer.
+    if (p.itemOffer?.length) takeBasicItem(state, p, p.itemOffer[0]);
+    syncPlayer(state, p);
+  }
+  if (isMonsterRound(state.round)) return monsterRound(state);
   const alive = shuffle(state, state.players.filter(isAlive));
   const fights: Fight[] = [];
 
@@ -163,6 +191,24 @@ export function resolveCombat(state: GameState): Fight[] {
     fights.push({ home: home.id, away: away.id, ghost, result, damage });
   }
 
+  eliminate(state, alive.length);
+  return fights;
+}
+
+// Everyone fights the round's monsters. Win or lose, each player gets random equipment; losing still
+// costs hp, as in any fight.
+function monsterRound(state: GameState): Fight[] {
+  const alive = state.players.filter(isAlive);
+  const fights = alive.map((p): Fight => {
+    const { player: monsters, statMult } = monsterSide(state.round);
+    const result = simulateCombat(state, p, monsters, { chosen: state.chosen, statMult: [1, statMult] });
+    const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
+    if (result.winner === 1) p.hp -= damage;
+    gainStacks(p, result.traits[0], (traitId: string) => ({ kills: enemyDeaths(result, 0), memberSkills: memberSkills(result, 0, traitId) }));
+    const drops = Array.from({ length: EQUIPMENT_DROPS }, () => EQUIPMENT[nextInt(state, EQUIPMENT.length)]).filter((id) => id in ITEMS);
+    for (const id of drops) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
+    return { home: p.id, away: MONSTER_ID, ghost: false, result, damage, monster: true, drops };
+  });
   eliminate(state, alive.length);
   return fights;
 }

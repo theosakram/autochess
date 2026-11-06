@@ -4,7 +4,7 @@ import { UNITS } from '../units';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const SPECTRE = {
-  damageAmp: [0.2, 0.4, 0.6, 4], // Spectres only
+  damageAmp: [0.5, 0.75, 1.1, 4], // Spectres only
   hp: [0, 0, 0, 4], // Spectres only
   // Two-starring a Spectre of these costs conjures a free Spectre one cost up (cumulative by level).
   giftTiers: [[1, 2], [3, 4], [5], []] as number[][],

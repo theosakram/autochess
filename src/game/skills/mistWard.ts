@@ -3,7 +3,7 @@ import type { SkillDef } from './types';
 
 // Hazeguard (1g Mistbender): a cheap shield to spam for Mist coins. Per star, index 0 = 1★.
 export const MIST_WARD = {
-  shield: [60, 90, 200], // flat; the blast deals the same, as magic damage
+  shield: [25, 40, 100], // flat; the blast deals the same, as magic damage
   seconds: 2,
 };
 

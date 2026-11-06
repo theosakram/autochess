@@ -6,7 +6,7 @@ import type { SkillDef } from './types';
 // Wandering Blade (Plane Wanderer, Fighter). Per star, index 0 = 1★.
 export const BLADE_DESCENT = {
   stun: [1, 1.25, 1.75], // seconds, everyone around where it lands
-  bonus: [1.5, 1.8, 4], // its next basic attack: extra damage
+  bonus: [4.5, 5.5, 12], // its next basic attack: extra damage
   shield: [0.25, 0.3, 0.5], // of its max hp
   seconds: 4,
 };

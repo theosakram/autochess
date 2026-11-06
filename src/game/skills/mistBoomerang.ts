@@ -5,7 +5,7 @@ import type { SkillDef, SkillFighter } from './types';
 // Mist Oracle (5g Mistbender): like Tidal Surge, but it throws the wave instead of riding it.
 // Per star, index 0 = 1★.
 export const MIST_BOOMERANG = {
-  ap: [2.6, 3.1, 8], // of magic attack, magic, to each enemy on the path, per pass (out and back)
+  ap: [4, 6, 18], // of magic attack, magic, to each enemy on the path, per pass (out and back)
   past: 2, // tiles it flies on past its target before turning back
   back: 0.4, // seconds before it flies back
 };

@@ -113,7 +113,7 @@ export const MIST_WARES: Record<string, MistWare> = Object.fromEntries(
     {
       id: 'mirror',
       name: 'Mirror Device',
-      icon: '🪞',
+      icon: '👥',
       price: 80,
       desc: 'Copy one of your units: a new 1-star copy of it, from the pool.',
       weight: 1,
@@ -175,6 +175,7 @@ export function buyMistWare(state: GameState, p: Player, slot: number, choice?: 
 export function orbBlock(p: Player, uid: number): string | null {
   const unit = [...p.board, ...p.bench].find((u) => u?.uid === uid);
   if (!unit) return 'No such unit';
+  if (UNIT_BY_ID[unit.defId].piece) return `The ${UNIT_BY_ID[unit.defId].name} can't hold an orb`;
   if (p.orb?.defId === unit.defId) return 'It already has the Magic Orb';
   if (p.mistOrbs?.some((o) => o.holder === uid)) return 'It already holds a Mist orb';
   return null;

@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Wandering Seer (Plane Wanderer, Stargazer). Per star, index 0 = 1★.
 export const FATE_THREAD = {
-  linked: [2, 3, Infinity], // enemies linked at the start of combat (3 stars: all of them)
+  linked: [2, 3, 4], // enemies linked at the start of combat
   share: [0.3, 0.4, 0.5], // of the damage a linked enemy takes, dealt to each other linked enemy
   ap: [4.5, 5.4, 12], // active: of magic attack, magic, one target
 };

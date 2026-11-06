@@ -3,7 +3,7 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const DEADEYE = {
-  critChance: [0.2, 0.3, 0.4], // every ally, basic attacks only
+  critChance: [0.2, 0.25, 0.4], // every ally, basic attacks only
   critDamage: [1.5, 2.5, 3], // extra crit damage for Deadeyes, on top of the base 150%
 };
 

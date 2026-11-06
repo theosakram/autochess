@@ -68,7 +68,7 @@ export { COMMANDERS_MARK } from './commandersMark';
 export { ALTAR_SPARK } from './altarSpark';
 export { ASHEN_WALL } from './ashenWall';
 export { ASH_STORM } from './ashStorm';
-export { aheadStrip, beyond } from './areas';
+export { aheadStrip, beyond, facingStrip } from './areas';
 export { CRATER_FALL } from './craterFall';
 export { CRYPT_SEAL } from './cryptSeal';
 export { DRAGON_LANCE } from './dragonLance';

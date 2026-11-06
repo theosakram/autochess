@@ -8,8 +8,8 @@ import type { SkillDef, SkillFighter } from './types';
 export const RAMPAGE = {
   dashes: 5,
   stepSeconds: 0.2, // a slow charge: one cell per step
-  atk: [1.2, 1.4, 3], // of attack, physical, to each enemy it crashes into (once per dash)
-  burn: [0.2, 0.25, 0.6], // of attack per second, magic, to enemies standing in the trail
+  atk: [2.5, 3.5, 9], // of attack, physical, to each enemy it crashes into (once per dash)
+  burn: [0.4, 0.5, 1.3], // of attack per second, magic, to enemies standing in the trail
   burnSeconds: 3,
 };
 
