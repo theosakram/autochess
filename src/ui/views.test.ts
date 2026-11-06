@@ -3,7 +3,8 @@ import { createGame } from '../game/game';
 import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
-import { bearerDetailHtml, galleryHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
+import { traitBadgeHtml } from './traitBadges';
+import { armoryHtml, bearerDetailHtml, galleryHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
 
 describe('orb choice popup', () => {
   // Regression: options carried data-trait, which the click handler treats as "open trait popup",
@@ -144,6 +145,48 @@ describe('unit info popup', () => {
 });
 
 
+describe('equipment panel', () => {
+  const setup = () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    p.board[0] = { uid: 1, defId: 'kindler', star: 1 };
+    p.board[1] = { uid: 2, defId: 'divinebeast', star: 1 };
+    p.bench[0] = { uid: 3, defId: 'wisp', star: 1 };
+    p.items = [{ uid: 9, id: 'keris', tier: 1, holder: 1 }, { uid: 10, id: 'aegis', tier: 1, holder: null }];
+    return p;
+  };
+  const slotsOf = (html: string, attr: string) => html.split(attr).length - 1;
+
+  test('owned equipment on top, then each deployed hero with 1 orb slot and 3 equipment slots', () => {
+    const p = setup();
+    const html = armoryHtml(p);
+    expect(html.indexOf('armory-stash')).toBeLessThan(html.indexOf('gear-heroes'));
+    expect(slotsOf(html, 'data-orb-unit="1"')).toBe(1);
+    expect(slotsOf(html, 'data-gear-unit="1"')).toBe(3);
+    // Worn or not, everything owned is listed at the top; worn items also sit in their slot.
+    expect(slotsOf(html, 'data-item="9"')).toBe(2);
+    expect(slotsOf(html, 'data-item="10"')).toBe(1);
+  });
+
+  test('commander pieces and benched heroes get no card', () => {
+    const html = armoryHtml(setup());
+    expect(html).not.toContain('data-gear-unit="2"');
+    expect(html).not.toContain('data-gear-unit="3"');
+  });
+
+  test('unused Magic Orbs and Mist orbs are listed; a held Mist orb sits in the orb slot', () => {
+    const p = setup();
+    p.orbs = [7];
+    p.mistOrbs = [{ uid: 50, trait: 'mage', holder: 1 }];
+    const html = armoryHtml(p);
+    expect(html).toContain('data-orb="magic"');
+    const slot = html.slice(html.indexOf('data-orb-unit="1"'), html.indexOf('gear-slots'));
+    expect(slot).toContain('data-orb="50"');
+  });
+});
+
 describe('grave', () => {
   test('names the Plane Wanderer rolled for this player, and opens its card', () => {
     const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
@@ -153,5 +196,14 @@ describe('grave', () => {
     const html = graveHtml(p);
     expect(html).toContain('data-unit-info="wanderinghunter"');
     expect(html).toContain('Wandering Hunter');
+  });
+
+  test('shows the rolled Plane Wanderer with its role icon', () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.stacks = { necromancer: 12 };
+    p.rewardUnit = { necromancer: 'wanderingbastion' };
+    expect(graveHtml(p)).toContain(`${traitBadgeHtml('dauntless')} Wandering Bastion`);
+    expect(galleryHtml(p, state.chosen)).toContain(`${traitBadgeHtml('dauntless')} Wandering Bastion`);
   });
 });

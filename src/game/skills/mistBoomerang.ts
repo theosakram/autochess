@@ -2,7 +2,7 @@ import { pct } from '../traits/format';
 import { beyond, enemiesOn, pathTo } from './areas';
 import type { SkillDef, SkillFighter } from './types';
 
-// Mist Oracle (5g Mistbender): like Tidal Surge, but it throws the wave instead of riding it.
+// Mist Oracle (5g Mistbender): a boomerang of mist, thrown through its target and back.
 // Per star, index 0 = 1★.
 export const MIST_BOOMERANG = {
   ap: [4, 6, 18], // of magic attack, magic, to each enemy on the path, per pass (out and back)

@@ -5,6 +5,7 @@ import type { Side } from '../game/grid';
 import { ITEMS } from '../game/items';
 import { TRAITS } from '../game/traits';
 import { UNIT_BY_ID } from '../game/units';
+import { PORTRAITS } from './portraits';
 
 // Damage dealt by the viewer's side in one fight, filled in as playback replays events.
 export interface Meter {
@@ -47,7 +48,7 @@ export function meterHtml(m: Meter | null): string {
   if (!m) return `<aside class="meter"><h3>Damage</h3><p class="meter-empty">Fight to see who carried.</p></aside>`;
   const units = [...m.byUnit].map(([id, d]) => {
     const f = m.fight.result.fighters[id];
-    return { key: `u${id}`, label: `${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, ...d, dead: m.dead.has(id) };
+    return { key: `u${id}`, label: `${PORTRAITS[f.defId]} ${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, ...d, dead: m.dead.has(id) };
   });
   const traits = [...m.byTrait].map(([id, dmg]) => {
     const src = TRAITS[id] ?? ITEMS[id] ?? COMMANDER_EFFECTS[id];

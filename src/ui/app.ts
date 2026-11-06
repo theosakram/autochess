@@ -22,12 +22,14 @@ import {
   hudHtml,
   orbChoiceHtml,
   playersHtml,
-  shopBarHtml,
+  shopDockHtml,
+  railHtml,
+  type GearPick,
+  type RailPanel,
   commanderPickHtml,
   cardOfferHtml,
   itemOfferHtml,
   commanderPanelHtml,
-  shopPopupHtml,
   traitDetailHtml,
   traitsPanelHtml,
   unitInfoHtml,
@@ -57,33 +59,34 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   // Mist Shop slot whose ware is waiting for a pick (Mirror: a unit; picked orbs: a trait).
   let mistPick: number | null = null;
   let galleryOpen = false;
-  // The shop popup (cards, lock, reroll) is open.
-  let shopOpen = false;
+  // What the sidebar shows beside its icons; null when collapsed.
+  let railPanel: RailPanel | null = 'synergy';
   let galleryTab: GalleryTab = 'cards';
   // Own unit shown in the right column; cleared once it's no longer owned (sold, merged away).
   let selectedUid: number | null = null;
-  // Item picked up from the item row, waiting for a unit to be clicked.
-  let selectedItem: number | null = null;
-  // An item chip is being dragged: units light up as targets.
-  let draggingItem = false;
+  // Item or orb picked up in the Equipment panel, waiting for a slot to be clicked.
+  let picked: GearPick | null = null;
+  // One is being dragged: its slots light up.
+  let draggingGear: GearPick | null = null;
   // A drag just ended; swallow the click the browser fires after it.
   let swallowClick = false;
 
   root.innerHTML = `
     <div class="slot" data-slot="hud"></div>
     <div class="layout">
-      <div class="slot" data-slot="traits"></div>
-      <div class="slot" data-slot="meter"></div>
-      <main>
-        <div class="stage-wrap">
-          <section class="stage"></section>
+      <div class="col-left">
+        <div class="slot" data-slot="rail"></div>
+        <div class="slot" data-slot="panel"></div>
+      </div>
+      <main><section class="stage"></section></main>
+      <div class="col col-right">
+        <div class="col-scroll">
+          <div class="slot" data-slot="side"></div>
+          <div class="slot" data-slot="grave"></div>
         </div>
-        <div class="slot" data-slot="armory"></div>
-        <div class="slot" data-slot="shop"></div>
-        <div class="slot" data-slot="grave"></div>
-      </main>
-      <div class="slot" data-slot="side"></div>
+      </div>
     </div>
+    <div class="slot" data-slot="shop"></div>
     <div class="slot" data-slot="overlays"></div>
     <div class="toast"></div>`;
   const slot = (name: string) => root.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
@@ -121,18 +124,14 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   const stage = await Stage.create(root.querySelector<HTMLElement>('.stage')!, {
     unitClick(uid) {
       if (combat) return;
-      if (selectedItem !== null) {
-        const item = selectedItem;
-        selectedItem = null;
-        return dispatch({ type: 'equip', item, unit: uid });
-      }
+      picked = null;
       selectUnit(uid);
     },
     // An empty cell: move the selected unit there, or put a picked-up item back down.
     cellClick(to) {
       if (combat) return;
-      if (selectedItem !== null) {
-        selectedItem = null;
+      if (picked) {
+        picked = null;
         return render();
       }
       if (selectedUid === null) return;
@@ -150,18 +149,53 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     },
   });
 
+  function renderPanel(): void {
+    const p = me();
+    const panel = slot('panel');
+    // Repaints are rebuilds; a long panel stays where it was scrolled to.
+    const scrolled = panel.firstElementChild?.scrollTop ?? 0;
+    panel.innerHTML =
+      railPanel === 'synergy' ? traitsPanelHtml(p) : railPanel === 'damage' ? meterHtml(meter) : railPanel === 'equipment' ? armoryHtml(p, picked, draggingGear) : '';
+    if (panel.firstElementChild) panel.firstElementChild.scrollTop = scrolled;
+  }
+
+  const pickOf = (chip: HTMLElement): GearPick =>
+    chip.dataset.orb ? { kind: 'orb', orb: chip.dataset.orb === 'magic' ? 'magic' : Number(chip.dataset.orb) } : { kind: 'item', uid: Number(chip.dataset.item) };
+
+  // Puts an item or orb down on whatever is at `el`: a hero's slot, or the top of the panel to take
+  // it off. Anywhere else, or the wrong kind of slot, leaves it where it was.
+  function place(pick: GearPick, el: Element | null): void {
+    const stash = el?.closest('.armory-stash');
+    if (pick.kind === 'item') {
+      const unit = el?.closest<HTMLElement>('[data-gear-unit]')?.dataset.gearUnit;
+      if (unit) return dispatch({ type: 'equip', item: pick.uid, unit: Number(unit) });
+      if (stash && me().items.find((i) => i.uid === pick.uid)?.holder != null) return dispatch({ type: 'unequip', item: pick.uid });
+      return render();
+    }
+    const unit = el?.closest<HTMLElement>('[data-orb-unit]')?.dataset.orbUnit;
+    if (unit && pick.orb === 'magic') {
+      orbFor = Number(unit);
+      return render();
+    }
+    if (pick.orb !== 'magic') {
+      if (unit) return dispatch({ type: 'equipMistOrb', orb: pick.orb, unit: Number(unit) });
+      const orb = pick.orb;
+      if (stash && me().mistOrbs?.find((o) => o.uid === orb)?.holder != null) return dispatch({ type: 'unequipMistOrb', orb });
+    }
+    render();
+  }
+
   function render(): void {
     const p = me();
     const opponent = combat && (combat.fight.monster ? { name: '👹 Monsters' } : state.players.find((o) => o.id === combat!.opponentId));
     const over = !isAlive(p) || isGameOver(state);
     if (selectedUid !== null && !unitLoc(selectedUid)) selectedUid = null;
-    if (selectedItem !== null && !p.items.some((i) => i.uid === selectedItem)) selectedItem = null;
+    if (picked?.kind === 'item' && !p.items.some((i) => i.uid === (picked as { uid: number }).uid)) picked = null;
 
     slot('hud').innerHTML = hudHtml(state, p, shownHp(p), opponent?.name ?? null);
-    slot('traits').innerHTML = traitsPanelHtml(p);
-    slot('meter').innerHTML = meterHtml(meter);
-    slot('armory').innerHTML = armoryHtml(p, selectedItem);
-    slot('shop').innerHTML = shopBarHtml(p, combat !== null);
+    slot('rail').innerHTML = railHtml(railPanel, p);
+    renderPanel();
+    slot('shop').innerHTML = shopDockHtml(p, combat !== null, state.chosen);
     slot('grave').innerHTML = `<div class="graves">${graveHtml(p)}${sideShopsHtml(p)}</div>`;
     slot('side').innerHTML = `<div class="side">
       ${commanderPanelHtml(p, shownHp(p))}
@@ -177,7 +211,6 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const scrolled = new Map<string, [number, number]>();
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolled.set(el.dataset.keepScroll!, [el.scrollTop, el.scrollLeft]);
     slot('overlays').innerHTML = [
-      shopOpen ? shopPopupHtml(p, combat !== null, state.chosen) : '',
       galleryOpen ? galleryHtml(p, state.chosen, galleryTab) : '',
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
@@ -195,7 +228,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       if (at) [el.scrollTop, el.scrollLeft] = at;
     }
     // While a fight plays the stage is busy; it shows the board again when the fight ends.
-    if (!combat) stage.showPrep({ player: p, chosen: state.chosen, selectedUid, pickingItem: selectedItem !== null || draggingItem });
+    if (!combat) stage.showPrep({ player: p, chosen: state.chosen, selectedUid });
   }
 
   function endTurn(): void {
@@ -206,16 +239,15 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (!fight) return nextRound();
 
     combat = { fight, opponentId: fight.home === playerId ? fight.away : fight.home, playback: null };
-    shopOpen = false;
     selectedUid = null;
-    selectedItem = null;
+    picked = null;
     meter = createMeter(fight, playerId);
     render();
     const live = meter;
     // Only the meter repaints per event; nothing else changes mid-fight.
     const onEvent = (e: CombatEvent) => {
       recordEvent(live, e);
-      slot('meter').innerHTML = meterHtml(live);
+      if (railPanel === 'damage') renderPanel();
     };
     combat.playback = stage.playFight(fight, playerId, onEvent, nextRound);
   }
@@ -228,8 +260,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const orbsBefore = me().orbs.length;
     const bonuses = isAlive(me()) && !isGameOver(state) ? startRound(state) : [];
     render();
-    if (me().orbs.length > orbsBefore) toast('🔮 You got a Magic Orb! Click a unit to use it.', 'info');
-    if (drops.length) toast(`👹 Monster loot: ${drops.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name}`).join(', ')}. Equip from your items.`, 'info');
+    if (me().orbs.length > orbsBefore) toast('🔮 You got a Magic Orb! Open 🎒 Equipment to use it.', 'info');
+    if (drops.length) toast(`👹 Monster loot: ${drops.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name}`).join(', ')}. Equip it in 🎒 Equipment.`, 'info');
     const mine = bonuses
       .filter((b) => b.playerId === playerId)
       .map((b) => {
@@ -261,18 +293,30 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const target = e.target as HTMLElement;
     // The stage handles its own clicks (units and cells).
     if (target.closest('.stage')) return;
-    // Click-to-equip: click an item chip to pick it up, then a unit on the stage.
+    // Click-to-equip: click an item or orb to pick it up, then a slot in the Equipment panel.
     const chip = target.closest<HTMLElement>('.item-chip');
-    if (chip && !combat) {
-      const uid = Number(chip.dataset.item);
-      selectedItem = selectedItem === uid ? null : uid;
-      selectedUid = null;
-      return render();
+    if (!combat) {
+      if (picked && target.closest('[data-gear-unit], [data-orb-unit]')) {
+        const pick = picked;
+        picked = null;
+        return place(pick, target);
+      }
+      if (chip) {
+        const next = pickOf(chip);
+        picked = JSON.stringify(picked) === JSON.stringify(next) ? null : next;
+        selectedUid = null;
+        return render();
+      }
+      if (picked && target.closest('.armory-stash')) {
+        const pick = picked;
+        picked = null;
+        return place(pick, target);
+      }
     }
     // Any other click outside the unit card puts a picked-up item down and closes the card,
     // then still does its own thing. Modal popups on top don't count as outside.
-    if ((selectedItem !== null || selectedUid !== null) && !target.closest('.unit-detail, .overlay')) {
-      selectedItem = null;
+    if ((picked || selectedUid !== null) && !target.closest('.unit-detail, .overlay')) {
+      picked = null;
       selectedUid = null;
       render();
     }
@@ -300,7 +344,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (modal && !(btn && modal.contains(btn))) return;
     if (btn) {
       const a = btn.dataset.action;
-      if (a === 'closeTrait') showTrait(null);
+      if (a === 'rail') {
+        const panel = btn.dataset.panel as RailPanel;
+        railPanel = railPanel === panel ? null : panel;
+        slot('panel').innerHTML = '';
+        render();
+      } else if (a === 'closeTrait') showTrait(null);
       else if (a === 'mistBuy') {
         const slot = Number(btn.dataset.slot);
         const ware = MIST_WARES[me().mistShop![slot]];
@@ -308,8 +357,6 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
           mistPick = slot;
           render();
         } else dispatch({ type: 'mistBuy', slot });
-      } else if (a === 'equipMistOrb') {
-        dispatch({ type: 'equipMistOrb', orb: Number(btn.dataset.orb), unit: Number(btn.dataset.unit) });
       } else if (a === 'unequipMistOrb') {
         dispatch({ type: 'unequipMistOrb', orb: Number(btn.dataset.orb) });
       } else if (a === 'mistPick') {
@@ -326,8 +373,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'closeBearer') {
         openBearer = null;
         render();
-      } else if (a === 'openOrb' || a === 'closeOrb') {
-        orbFor = a === 'openOrb' ? Number(btn.dataset.unit) : null;
+      } else if (a === 'closeOrb') {
+        orbFor = null;
         render();
       } else if (a === 'useOrb') {
         const unit = orbFor!;
@@ -347,10 +394,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'pickCard') dispatch({ type: 'pickCard', card: btn.dataset.card! });
       else if (a === 'pickItem') dispatch({ type: 'pickItem', item: btn.dataset.itemId! });
       else if (a === 'mark') dispatch({ type: 'mark', kind: btn.dataset.kind as MarkKind, unit: Number(btn.dataset.unit) });
-      else if (a === 'openShop' || a === 'closeShop') {
-        shopOpen = a === 'openShop';
-        render();
-      } else if (a === 'buy') dispatch({ type: 'buy', slot: Number(btn.dataset.slot) });
+      else if (a === 'buy') dispatch({ type: 'buy', slot: Number(btn.dataset.slot) });
       else if (a === 'unequip') dispatch({ type: 'unequip', item: Number(btn.dataset.item) });
       else if (a === 'sellUnit') {
         const from = unitLoc(Number(btn.dataset.uid));
@@ -377,20 +421,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       orbFor = null;
       return render();
     }
-    // The shop sits under every other popup, so it closes last.
-    if (e.key === 'Escape' && shopOpen) {
-      shopOpen = false;
-      return render();
-    }
-    if (e.key === 'Escape' && selectedItem !== null) {
-      selectedItem = null;
+    if (e.key === 'Escape' && picked) {
+      picked = null;
       return render();
     }
     if (e.key === 'Escape' && selectedUid !== null) return selectUnit(null);
-    if ((e.key === 's' || e.key === 'S') && !combat) {
-      shopOpen = !shopOpen;
-      render();
-    } else if (e.key === 'd' || e.key === 'D') dispatch({ type: 'reroll' });
+    if (e.key === 'd' || e.key === 'D') dispatch({ type: 'reroll' });
     else if (e.key === 'f' || e.key === 'F') dispatch({ type: 'levelUp' });
     else if (e.key === ' ') {
       e.preventDefault();
@@ -399,13 +435,13 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     }
   });
 
-  // Item drag: pointer events (not the browser's drag-and-drop API, which is unreliable).
-  // A ghost copy of the chip follows the pointer; drop on a unit to equip, on the item row to unequip.
-  // A press that barely moves stays a click (pick up, then click a unit).
+  // Gear drag: pointer events (not the browser's drag-and-drop API, which is unreliable).
+  // A ghost copy of the chip follows the pointer; drop it on a slot, or back at the top to take it off.
+  // A press that barely moves stays a click (pick up, then click a slot).
   root.addEventListener('pointerdown', (e) => {
     const chip = (e.target as HTMLElement).closest<HTMLElement>('.item-chip');
     if (!chip || combat || e.button !== 0) return;
-    const item = Number(chip.dataset.item);
+    const pick = pickOf(chip);
     const start = { x: e.clientX, y: e.clientY };
     let ghost: HTMLElement | null = null;
     const move = (ev: PointerEvent) => {
@@ -414,8 +450,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         ghost = chip.cloneNode(true) as HTMLElement;
         ghost.classList.add('drag-ghost');
         document.body.append(ghost);
-        draggingItem = true;
-        selectedItem = null;
+        draggingGear = pick;
+        picked = null;
         render();
       }
       ghost.style.left = `${ev.clientX}px`;
@@ -427,15 +463,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       window.removeEventListener('pointercancel', up);
       if (!ghost) return;
       ghost.remove();
-      draggingItem = false;
+      draggingGear = null;
       swallowClick = true;
-      const loc = stage.locAtClient(ev.clientX, ev.clientY);
-      const p = me();
-      const unit = loc && (loc.area === 'board' ? p.board : p.bench)[loc.index];
-      const overRow = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest('.armory');
-      if (unit) dispatch({ type: 'equip', item, unit: unit.uid });
-      else if (overRow) dispatch({ type: 'unequip', item });
-      else render();
+      place(pick, document.elementFromPoint(ev.clientX, ev.clientY));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);

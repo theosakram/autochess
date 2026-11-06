@@ -121,7 +121,7 @@ export { pickSpread, UNFOLDING_TALE } from './unfoldingTale';
 export { WANDERERS_VOLLEY } from './wanderersVolley';
 export { WYRM_FRENZY } from './wyrmFrenzy';
 export { ZODIAC_SLAM } from './zodiacSlam';
-export { pathTo } from './areas';
+export { pathTo, lineThrough } from './areas';
 export { freeCellNextTo, pickEnemy } from './dashStrike';
 export { STARFALL_AEGIS } from './starfallAegis';
 

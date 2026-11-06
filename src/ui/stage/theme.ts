@@ -2,14 +2,16 @@
 
 export const COLORS = {
   shield: 0xf2f6ff,
+  bg: 0x0f1116,
+  ally: 0x4fd1c5,
   panel: 0x1d2029,
   cell: 0x262a35,
   cellAlt: 0x2b303c,
   text: 0xe6e8ee,
   muted: 0x8b90a0,
   accent: 0xe0a63a,
-  foe: 0xd65151,
-  hp: 0x3fae5a,
+  foe: 0xff4d4d,
+  hp: 0x4ccb6d,
   mana: 0x4a8ff0,
   heal: 0x3fae5a,
   crit: 0xff3b3b,
@@ -18,7 +20,10 @@ export const COLORS = {
   leader: 0xffd76a, // the glow around a unit that leads a trait (Astral's Sovereign)
 };
 
-export const TIER_COLORS: Record<number, number> = { 1: 0x8a8f99, 2: 0x3fae5a, 3: 0x3a84d6, 4: 0xa457d6, 5: 0xe0a63a, 7: 0xe0475e }; // by tier
+// One star is silver, two gold, three blazing: a merge should be unmissable.
+export const STAR_COLORS: Record<number, number> = { 1: 0xcfd3dc, 2: 0xffc93c, 3: 0xff5ac8 };
+
+export const TIER_COLORS: Record<number, number> = { 1: 0xf2f4f8, 2: 0x3fae5a, 3: 0x3a84d6, 4: 0xa457d6, 5: 0xe0a63a, 7: 0xe0475e }; // by tier
 
 // Per trait / item / skill effect id: flashes and damage numbers.
 export const EFFECT_COLORS: Record<string, number> = {

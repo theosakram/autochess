@@ -3,7 +3,7 @@ import { simulateCombat } from './combat';
 import { createGame } from './game';
 import { dist, type Point } from './grid';
 import { JIMAT } from './items';
-import { ahead3x3, aheadStrip, beyond, facingStrip, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, volleyShot, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { ahead3x3, aheadStrip, beyond, facingStrip, lineThrough, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, volleyShot, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -991,21 +991,29 @@ describe('Tidal Surge', () => {
     expect(pathTo({ x: 3, y: 5 }, { x: 5, y: 1 })).toEqual([{ x: 4, y: 4 }, { x: 5, y: 3 }, { x: 5, y: 2 }, { x: 5, y: 1 }]);
   });
 
-  test('surges beside the target and back home, hitting everyone on the path both ways', () => {
-    // From (3,5) to the target at (3,1); an enemy in the way at (3,3), one off the path at (0,0).
-    const b = fakeBattle([{ x: 3, y: 1 }, { x: 3, y: 3 }, { x: 0, y: 0 }]);
+  test('a straight line runs through the target to the edge, at any angle', () => {
+    expect(lineThrough({ x: 3, y: 5 }, { x: 3, y: 3 })).toEqual([{ x: 3, y: 4 }, { x: 3, y: 3 }, { x: 3, y: 2 }, { x: 3, y: 1 }, { x: 3, y: 0 }]);
+    expect(lineThrough({ x: 3, y: 3 }, { x: 5, y: 3 })).toEqual([{ x: 4, y: 3 }, { x: 5, y: 3 }, { x: 6, y: 3 }]);
+    expect(lineThrough({ x: 2, y: 4 }, { x: 3, y: 3 })).toEqual([{ x: 3, y: 3 }, { x: 4, y: 2 }, { x: 5, y: 1 }, { x: 6, y: 0 }]);
+    expect(lineThrough({ x: 1, y: 5 }, { x: 2, y: 2 })).toContainEqual({ x: 2, y: 2 });
+    expect(lineThrough({ x: 3, y: 2 }, { x: 3, y: 1 })).toEqual([{ x: 3, y: 1 }, { x: 3, y: 0 }]);
+  });
+
+  test('the wave goes through her target, wherever it stands, and hits everyone in the line', () => {
+    // From (3,5) toward the target at (5,3): (4,4) is on the way, (6,2) past it, (3,4) off the line.
+    const b = fakeBattle([{ x: 5, y: 3 }, { x: 4, y: 4 }, { x: 6, y: 2 }, { x: 3, y: 4 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.rarajonggrang, 1);
     b.cast('tidalsurge');
-    expect(b.log.dashes).toHaveLength(1);
-    expect(b.log.busy).toEqual([true]);
-    b.log.repeats[0].fn(); // the way back, a beat later
-    expect(b.log.busy).toEqual([true, false]);
-    expect(b.log.dashes).toHaveLength(2);
-    expect(dist(b.log.dashes[0], { x: 3, y: 1 })).toBe(1);
-    expect(b.log.dashes[1]).toEqual({ x: 3, y: 5 });
-    const by = (id: number) => b.log.hits.filter((h) => h.target === id).length;
-    expect([by(1), by(2), by(3)]).toEqual([2, 2, 0]);
+    expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2, 3]);
     expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * TIDAL_SURGE.ap[0] && h.effect === 'tidalsurge' && !h.basic)).toBe(true);
+    expect(b.log.dashes).toEqual([]);
+    expect(b.log.repeats).toEqual([]);
+  });
+
+  test('a target beside her gets hit too', () => {
+    const b = fakeBattle([{ x: 4, y: 5 }]);
+    b.cast('tidalsurge');
+    expect(b.log.hits.map((h) => h.target)).toEqual([1]);
   });
 });
 

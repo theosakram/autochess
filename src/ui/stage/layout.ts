@@ -22,6 +22,12 @@ export interface StageLayout {
   locAt(x: number, y: number): Loc | null;
 }
 
+// The widest stage that fits `height`. Height grows linearly with width, so two samples give the line.
+export function stageWidthForHeight(height: number): number {
+  const [a, b] = [stageLayout(400).height, stageLayout(800).height];
+  return 400 + ((height - a) * 400) / (b - a);
+}
+
 export function stageLayout(width: number): StageLayout {
   const boardCell = (width - PAD * 2 - GAP * (GRID_W - 1)) / GRID_W;
   const benchCell = (width - PAD * 2 - GAP * (BENCH_SIZE - 1)) / BENCH_SIZE;

@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { BENCH_SIZE, BOARD_COLS, BOARD_ROWS } from '../../game/config';
 import { boardToGrid } from '../../game/grid';
-import { stageLayout } from './layout';
+import { stageLayout, stageWidthForHeight } from './layout';
 
 describe('stage layout', () => {
   const L = stageLayout(660);
+
+  test('a stage sized for a height is exactly that tall', () => {
+    for (const h of [480, 640, 900]) expect(stageLayout(stageWidthForHeight(h)).height).toBeCloseTo(h, 6);
+  });
 
   test('every cell centre maps back to the same cell', () => {
     for (let index = 0; index < BOARD_COLS * BOARD_ROWS; index++) {

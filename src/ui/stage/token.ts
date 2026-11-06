@@ -1,8 +1,10 @@
-import { Container, Graphics, Rectangle, Text } from 'pixi.js';
+import { Container, Graphics, GraphicsContext, Rectangle, Text } from 'pixi.js';
 import { ITEMS } from '../../game/items';
 import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
-import { COLORS, FONT, mix, TIER_COLORS } from './theme';
+import { PORTRAITS } from '../portraits';
+import { TRAIT_BADGES, traitIconSvg } from '../traitBadges';
+import { COLORS, FONT, mix, STAR_COLORS, TIER_COLORS } from './theme';
 
 export interface TokenSpec {
   defId: string;
@@ -16,7 +18,6 @@ export interface TokenSpec {
   itemIds?: string[];
   foe?: boolean;
   selected?: boolean;
-  target?: boolean; // can take the item currently picked up
   bars?: boolean; // hp and mana bars, for combat
 }
 
@@ -29,8 +30,25 @@ export interface TokenView {
 const text = (value: string, size: number, fill: number, weight: '400' | '700' | '900' = '400') =>
   new Text({ text: value, style: { fontFamily: FONT, fontSize: size, fill, fontWeight: weight } });
 
-// Shortens a label with an ellipsis until it fits `maxWidth`.
+// One parsed drawing per trait, shared by every token: a board rebuilds its tokens on each action.
+const ICONS = new Map<string, GraphicsContext>();
+const iconOf = (id: string) => ICONS.get(id) ?? ICONS.set(id, new GraphicsContext().svg(traitIconSvg(id))).get(id)!;
+
+// A trait's round badge, centred on (0, 0): the same one the HTML side shows.
+function traitBadge(id: string, size: number): Container {
+  const badge = new Container();
+  const icon = new Graphics(iconOf(id));
+  const scale = (size * 0.72) / 24;
+  icon.scale.set(scale);
+  icon.position.set(-12 * scale);
+  badge.addChild(new Graphics().circle(0, 0, size / 2).fill(TRAIT_BADGES[id].color).stroke({ width: 1, color: 0x000000, alpha: 0.5 }), icon);
+  return badge;
+}
+
+// Fits a name to `maxWidth`: on two lines, then in smaller type, with an ellipsis as a last resort.
 function fit(label: Text, maxWidth: number): void {
+  if (label.width > maxWidth && label.text.includes(' ')) label.text = label.text.replace(/ (?=\S+$)/, '\n');
+  while (label.width > maxWidth && label.style.fontSize > 7) label.style.fontSize -= 0.5;
   while (label.width > maxWidth && label.text.length > 2) label.text = `${label.text.slice(0, -2)}…`;
 }
 
@@ -57,54 +75,89 @@ export function makeToken(s: TokenSpec): TokenView {
         .stroke({ width: 1.5, color: COLORS.leader, alpha: 0.9 }),
     );
   }
+  // The plate and rim are the hero's cost, and the big picture is who it is.
   root.addChild(
     new Graphics()
       .roundRect(-half, -half, w, w, radius)
-      .fill(mix(COLORS.cell, tier, 0.25))
-      .stroke({ width: 2, color: leads ? mix(tier, COLORS.leader, 0.6) : tier }),
+      .fill(mix(COLORS.bg, tier, 0.7))
+      .stroke({ width: Math.max(2, w * 0.035), color: leads ? mix(tier, COLORS.leader, 0.6) : tier }),
   );
-  if (s.foe) root.addChild(new Graphics().roundRect(-half + 2, -half + 2, w - 4, w - 4, radius).stroke({ width: 1, color: COLORS.foe }));
-  if (s.selected || s.target) {
+  // In a fight, sides must read instantly: a thick frame in the side's own colour.
+  if (s.bars || s.foe) {
+    root.addChild(
+      new Graphics()
+        .roundRect(-half - 2, -half - 2, w + 4, w + 4, radius + 2)
+        .stroke({ width: 3, color: s.foe ? COLORS.foe : COLORS.ally }),
+    );
+  }
+  if (s.selected) {
     root.addChild(
       new Graphics()
         .roundRect(-half - 3, -half - 3, w + 6, w + 6, radius + 3)
-        .stroke({ width: 2, color: s.selected ? COLORS.selected : COLORS.accent }),
+        .stroke({ width: 3, color: COLORS.selected }),
     );
   }
 
-  const small = Math.max(8, w * 0.14);
+  const hpH = Math.max(5, w * 0.07);
+  const manaH = Math.max(3, w * 0.045);
+  const barSpace = s.bars ? hpH + manaH + 3 : 0;
+
+  const nameSize = Math.max(9, w * 0.13);
+  const name = new Text({ text: def.name, style: { fontFamily: FONT, fontSize: nameSize, fill: COLORS.text, fontWeight: '700', align: 'center', lineHeight: nameSize * 1.05 } });
+  fit(name, w - 6);
+  const ribbonH = name.height + 3;
+  const ribbonTop = half - ribbonH;
+  root.addChild(
+    new Graphics()
+      .roundRect(-half + 1, ribbonTop, w - 2, ribbonH - 1, radius)
+      .fill({ color: s.foe ? mix(0x000000, COLORS.foe, 0.55) : 0x000000, alpha: 0.72 }),
+  );
+  name.anchor.set(0.5);
+  name.position.set(0, ribbonTop + ribbonH / 2 - 0.5);
+  root.addChild(name);
+
+  const faceTop = -half + barSpace;
+  const face = text(PORTRAITS[s.defId], (ribbonTop - faceTop) * 0.74, 0xffffff);
+  face.anchor.set(0.5);
+  face.position.set(0, (faceTop + ribbonTop) / 2);
+  root.addChild(face);
+
+  const small = Math.max(9, w * 0.14);
   const corner = (value: string, x: number, y: number, ax: number, ay: number) => {
     const t = text(value, small, COLORS.text);
     t.anchor.set(ax, ay);
     t.position.set(x, y);
     root.addChild(t);
   };
-  const barSpace = s.bars ? 9 : 0;
-  const icons = def.traits.map((id) => TRAITS[id].icon).join('') + (def.honorary?.icon ?? '');
-  if (icons) corner(icons, -half + 3, -half + 3 + barSpace, 0, 0);
+  if (w > 60) {
+    const size = small * 1.3;
+    [...def.traits, ...(def.honorary ? [def.honorary.trait] : [])].forEach((id, i) => {
+      const badge = traitBadge(id, size);
+      badge.position.set(-half + 3 + size / 2 + i * (size + 1), -half + 3 + barSpace + size / 2);
+      root.addChild(badge);
+    });
+  }
   const badges = (s.marks ?? []).join('') + (s.orb ? '🔮' : '') + '🌫️'.repeat(s.mistOrbs?.length ?? 0) + (s.crowned ? '👑' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
   if (badges) corner(badges, half - 3, -half + 3 + barSpace, 1, 0);
-  if (s.itemIds?.length) corner(s.itemIds.map((id) => ITEMS[id].icon).join(''), -half + 3, half - 3, 0, 1);
+  if (s.itemIds?.length) corner(s.itemIds.map((id) => ITEMS[id].icon).join(''), -half + 3, ribbonTop - 1, 0, 1);
 
-  const name = text(def.name, Math.max(9, w * 0.15), COLORS.text, '700');
-  fit(name, w - 6);
-  name.anchor.set(0.5);
-  name.position.set(0, small * 0.2);
-  root.addChild(name);
-  const stars = text('★'.repeat(s.star), Math.max(8, w * 0.12), COLORS.accent);
-  stars.anchor.set(0.5, 0);
-  stars.position.set(0, name.y + name.height / 2);
+  const stars = new Text({
+    text: '★'.repeat(s.star),
+    style: { fontFamily: FONT, fontSize: Math.max(11, w * 0.17), fill: STAR_COLORS[s.star] ?? COLORS.accent, fontWeight: '900', stroke: { color: 0x000000, width: 3 } },
+  });
+  stars.anchor.set(1, 1);
+  stars.position.set(half - 3, ribbonTop + 2);
   root.addChild(stars);
 
   // Combat bars along the top edge.
   const barW = w - 8;
   const bars: Record<'hp' | 'mana', Graphics> = { hp: new Graphics(), mana: new Graphics() };
   const barColor = { hp: s.foe ? COLORS.foe : COLORS.hp, mana: COLORS.mana };
-  const barY = { hp: -half + 3, mana: -half + 8 };
+  const barY = { hp: -half + 2, mana: -half + 3 + hpH };
   const frac = { hp: 1, mana: 0, shield: 0 };
   const draw = (bar: 'hp' | 'mana') => {
     const f = frac[bar];
-    const h = bar === 'hp' ? 4 : 3;
+    const h = bar === 'hp' ? hpH : manaH;
     // The shield sits right after the remaining hp. When hp + shield is more than max hp, both shrink
     // to fit, so a shield on a healthy unit still shows.
     const shield = bar === 'hp' ? frac.shield : 0;

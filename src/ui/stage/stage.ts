@@ -8,7 +8,7 @@ import type { Fight } from '../../game/game';
 import { boardToGrid, GRID_H, GRID_W, gridIndex, viewPoint, type Point, type Side } from '../../game/grid';
 import { playerTraits, traitTiles } from '../../game/traits';
 import type { Loc, Player } from '../../game/types';
-import { PAD, stageLayout, type StageLayout } from './layout';
+import { PAD, stageLayout, stageWidthForHeight, type StageLayout } from './layout';
 import { COLORS, EFFECT_COLORS, FONT, TILE_COLORS, mix } from './theme';
 import { makeToken, type TokenView } from './token';
 import { lerp, Tweens } from './tween';
@@ -23,7 +23,6 @@ export interface PrepView {
   player: Player;
   chosen: Record<string, string>;
   selectedUid: number | null;
-  pickingItem: boolean; // an item is picked up, so every unit is a target
 }
 
 // The stage reports input; the app decides what it means.
@@ -73,9 +72,11 @@ export class Stage {
     return stage;
   }
 
-  // Matches the canvas to the host's width. Returns whether the size changed.
+  // Matches the canvas to the host: as wide as it can be without outgrowing the host's height, so
+  // the whole game stays on one screen. Returns whether the size changed.
   private fit(): boolean {
-    const width = Math.floor(this.host.clientWidth);
+    const { clientWidth, clientHeight } = this.host;
+    const width = Math.floor(clientHeight ? Math.min(clientWidth, stageWidthForHeight(clientHeight)) : clientWidth);
     if (!width || width === this.L.width) return false;
     this.L = stageLayout(width);
     this.app.renderer.resize(width, Math.ceil(this.L.height));
@@ -112,14 +113,15 @@ export class Stage {
     for (let y = 0; y < GRID_H; y++) {
       for (let x = 0; x < GRID_W; x++) {
         const tile = tiles.get(y * GRID_W + x);
-        const base = (x + y) % 2 ? COLORS.cellAlt : COLORS.cell;
-        const color = tile ? mix(base, TILE_COLORS[tile] ?? COLORS.accent, 0.3) : base;
         const enemyHalf = y < BOARD_ROWS;
+        // Each half leans toward its side's colour, so which half is whose never needs explaining.
+        const base = mix((x + y) % 2 ? COLORS.cellAlt : COLORS.cell, enemyHalf ? COLORS.foe : COLORS.ally, 0.07);
+        const color = tile ? mix(base, TILE_COLORS[tile] ?? COLORS.accent, 0.3) : base;
         const loc: Loc | null = enemyHalf ? null : { area: 'board', index: (y - BOARD_ROWS) * BOARD_COLS + x };
         const outline = tile
           ? { color: TILE_COLORS[tile] ?? COLORS.accent, alpha: 0.7 }
           : loc && targets.has(key(loc))
-            ? { color: COLORS.selected, alpha: 0.35 }
+            ? { color: COLORS.selected, alpha: 0.6 }
             : undefined;
         const g = this.cell(this.L.gridCenter({ x, y }), boardCell, color, prep && enemyHalf ? 0.35 : 1, outline);
         if (prep && loc) clickable(g, loc);
@@ -127,7 +129,7 @@ export class Stage {
     }
     for (let i = 0; i < 8; i++) {
       const loc: Loc = { area: 'bench', index: i };
-      const outline = targets.has(key(loc)) ? { color: COLORS.selected, alpha: 0.35 } : undefined;
+      const outline = targets.has(key(loc)) ? { color: COLORS.selected, alpha: 0.6 } : undefined;
       const g = this.cell(this.L.benchCenter(i), benchCell, COLORS.cell, 1, outline);
       if (prep) clickable(g, loc);
     }
@@ -135,13 +137,6 @@ export class Stage {
 
   private center(loc: Loc): Point {
     return loc.area === 'bench' ? this.L.benchCenter(loc.index) : this.L.gridCenter(boardToGrid(0, loc.index));
-  }
-
-  // Your board cell or bench slot under a point on screen, or null (e.g. for drags that start
-  // outside the canvas, like items).
-  locAtClient(clientX: number, clientY: number): Loc | null {
-    const r = this.app.canvas.getBoundingClientRect();
-    return this.L.locAt(clientX - r.left, clientY - r.top);
   }
 
   // ---------- prep view
@@ -179,12 +174,11 @@ export class Stage {
           marks: markIcons(p, u.uid),
           itemIds: p.items.filter((i) => i.holder === u.uid).map((i) => i.id),
           selected: u.uid === view.selectedUid,
-          target: view.pickingItem,
         });
         const at = this.center(loc);
         token.root.position.set(at.x, at.y);
         token.root.eventMode = 'static';
-        token.root.cursor = view.pickingItem ? 'pointer' : 'grab';
+        token.root.cursor = 'grab';
         token.root.on('pointerdown', (e) => this.press(e, u.uid, loc, token.root));
         this.layers.units.addChild(token.root);
       });
@@ -296,8 +290,9 @@ export class Stage {
       const root = views.get(id)!.root;
       const t = new Text({ text: label, style: { fontFamily: FONT, fontSize: size, fill: color, fontWeight: weight, stroke: { color: 0x000000, width: 3 } } });
       t.anchor.set(0.5, 1);
-      const x = root.x + (Math.random() - 0.5) * this.L.boardCell * 0.4;
-      const y0 = root.y - this.L.boardCell * 0.3;
+      // Numbers rise from the body, not the top edge, so they don't cover the hp bar they changed.
+      const x = root.x + (Math.random() - 0.5) * this.L.boardCell * 0.5;
+      const y0 = root.y + this.L.boardCell * (0.1 + Math.random() * 0.15);
       t.position.set(x, y0);
       this.layers.fx.addChild(t);
       this.tweens.add(650, (k) => {
@@ -369,8 +364,8 @@ export class Stage {
           setBar(e.target, 'hp', e.hp);
           setBar(e.id, 'mana', e.mana);
           setBar(e.target, 'mana', e.targetMana);
-          if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 18, '900');
-          else pop(e.target, String(e.damage), e.type === 'cast' ? COLORS.spell : COLORS.text, e.type === 'cast' ? 16 : 13);
+          if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 22, '900');
+          else pop(e.target, String(e.damage), e.type === 'cast' ? COLORS.spell : COLORS.text, e.type === 'cast' ? 19 : 16, '900');
           break;
         case 'skill':
           flash(e.id, COLORS.mana, 400);
@@ -380,12 +375,12 @@ export class Stage {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
           flash(e.target, color, 350);
           setBar(e.target, 'hp', e.hp);
-          pop(e.target, e.crit ? `${e.damage}!` : String(e.damage), e.crit ? COLORS.crit : color, e.crit ? 18 : 15, e.crit ? '900' : '700');
+          pop(e.target, e.crit ? `${e.damage}!` : String(e.damage), e.crit ? COLORS.crit : color, e.crit ? 22 : 18, '900');
           break;
         }
         case 'heal':
           setBar(e.id, 'hp', e.hp);
-          pop(e.id, `+${e.amount}`, COLORS.heal, 13);
+          pop(e.id, `+${e.amount}`, COLORS.heal, 16, '900');
           break;
         case 'stun': {
           const v = views.get(e.id)!;

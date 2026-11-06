@@ -1,44 +1,23 @@
 import { pct } from '../traits/format';
-import { enemiesOn, pathTo } from './areas';
-import { freeCellNextTo } from './dashStrike';
+import { enemiesOn, lineThrough } from './areas';
 import type { SkillDef } from './types';
 
-// Rara Jonggrang (3g Mooneater): she becomes a wave. Per star, index 0 = 1★.
+// Rara Jonggrang (3g Mooneater): a wave rolls from her through her target. Per star, index 0 = 1★.
 export const TIDAL_SURGE = {
-  ap: [1.5, 1.8, 5.5], // of magic attack, magic, to each enemy on the path, per pass (out and back)
-  back: 0.3, // seconds before the wave pulls back
+  ap: [2.3, 2.7, 9], // of magic attack, magic, to each enemy in the line
 };
 
 export const tidalSurge: SkillDef = {
   id: 'tidalsurge',
   name: 'Tidal Surge',
-  desc:
-    'Becomes a wave: surges to its target and back to where it stood, ' +
-    'hitting every enemy on the path both ways for {ap} of magic attack as magic damage each pass.',
+  desc: 'Sends a wave 1 tile wide in a straight line through her target to the edge of the board, hitting every enemy it passes for {ap} of magic attack as magic damage.',
   values: () => ({ ap: TIDAL_SURGE.ap.map(pct) }),
   cast(api, caster, target) {
     const victim = target.hp > 0 ? target : api.nearestEnemy(caster);
     if (!victim) return;
+    const line = lineThrough(caster, victim);
+    api.showProjectile(caster, line[line.length - 1], 0.3, 'tidalsurge');
     const raw = caster.stats.ap * TIDAL_SURGE.ap[caster.star - 1];
-    const home = { x: caster.x, y: caster.y };
-    // The wave's path runs all the way to the target; she lands beside it if there's room.
-    const path = pathTo(home, victim);
-    const pass = () => {
-      for (const e of enemiesOn(api, caster, path)) if (e.hp > 0) api.hit(caster, e, raw, 'magic', 'tidalsurge');
-    };
-    const landing = freeCellNextTo(api, victim, home);
-    if (landing) api.dashTo(caster, landing);
-    pass();
-    // The way back comes a beat later, so the surge out reads on screen.
-    api.busy(caster, true);
-    api.repeat(caster, TIDAL_SURGE.back, 1, () => {
-      if (landing) {
-        // Someone took her tile meanwhile: she washes up beside it instead.
-        const back = api.occupant(home) ? freeCellNextTo(api, home, caster) : home;
-        if (back) api.dashTo(caster, back);
-      }
-      pass();
-      api.busy(caster, false);
-    });
+    for (const e of enemiesOn(api, caster, line)) api.hit(caster, e, raw, 'magic', 'tidalsurge');
   },
 };

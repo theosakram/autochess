@@ -1,12 +1,12 @@
 :root {
-  --bg: #14161c;
-  --panel: #1d2029;
+  --bg: #0f1116;
+  --panel: #1b1e27;
   --cell: #262a35;
   --cell-alt: #2b303c;
   --text: #e6e8ee;
-  --muted: #8b90a0;
+  --muted: #9aa0b2;
   --accent: #e0a63a;
-  --tier-1: #8a8f99;
+  --tier-1: #f2f4f8;
   --tier-2: #3fae5a;
   --tier-3: #3a84d6;
   --tier-4: #a457d6;
@@ -25,9 +25,13 @@ body {
 }
 
 #app {
-  max-width: 1360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100vh;
+  max-width: 1720px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 8px 12px;
 }
 
 button {
@@ -46,49 +50,86 @@ kbd {
 
 .hud {
   display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  padding: 10px 16px;
-  margin-bottom: 16px;
+  flex: none;
+  align-items: center;
+  gap: 28px;
+  padding: 6px 16px;
   background: var(--panel);
   border-radius: 8px;
   color: var(--muted);
 }
-.hud b { color: var(--text); }
-.hud-stat { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
-.hud-stat small { color: var(--muted); font-size: 11px; }
-.xp-bar { display: inline-block; width: 44px; height: 6px; border-radius: 3px; background: var(--cell); overflow: hidden; }
-.xp-bar span { display: block; height: 100%; background: #7c6cf0; }
+.hud b { color: var(--text); font-size: 20px; line-height: 1; }
+.hud b.gold { color: #ffc93c; }
+.hud-stat { display: flex; flex-direction: column; gap: 1px; cursor: default; }
+.hud-stat > small { color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.hud-stat > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.hud-stat span small { color: var(--muted); font-size: 12px; }
+.hud-stat small.warn { color: #ffb04d; font-weight: 600; }
+.xp-bar, .hp-bar { display: inline-block; width: 72px; height: 8px; border-radius: 4px; background: var(--cell); overflow: hidden; }
+.xp-bar span, .hp-bar span { display: block; height: 100%; }
+.xp-bar span { background: #7c6cf0; }
+.hp-bar span { background: #4ccb6d; }
 .hud-book {
   margin-left: auto;
-  padding: 0 4px;
-  border: none;
-  background: none;
-  font-size: 20px;
-  line-height: 1;
+  padding: 6px 14px;
+  border: 1px solid #3a3f4d;
+  border-radius: 6px;
+  background: var(--cell);
+  font-weight: 600;
 }
-.hud-book:hover { filter: brightness(1.3); transform: scale(1.1); }
+.hud-book:hover { border-color: var(--accent); }
 
-/* Left (synergies + damage) and right columns are the same width, so the board sits dead centre. */
+/* The left column is as wide as the sidebar and its open panel. */
 .layout {
   display: grid;
-  grid-template-columns: 64px 160px minmax(0, 1fr) 240px;
-  grid-template-areas: 'traits meter main side';
-  align-items: start;
-  gap: 16px;
+  flex: 1;
+  grid-template-columns: auto minmax(0, 1fr) 270px;
+  gap: 12px;
+  min-height: 0;
 }
 /* Regions are wrapped in .slot elements (display: contents) so they can re-render separately. */
 .slot { display: contents; }
-.layout .traits { grid-area: traits; }
-.layout .meter { grid-area: meter; }
-.layout > main { grid-area: main; }
-.layout .side { grid-area: side; }
+.col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* Sidebar: icons only; the one that's open shows its panel to the right. */
+.col-left { display: flex; gap: 8px; min-height: 0; }
+.rail { display: flex; flex: none; flex-direction: column; gap: 6px; padding: 6px; background: var(--panel); border-radius: 8px; }
+.rail-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--cell);
+  font-size: 20px;
+  line-height: 1;
+}
+.rail-btn:hover { filter: brightness(1.25); }
+.rail-btn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--cell)); }
+.rail-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #14161c;
+  font-size: 11px;
+  line-height: 17px;
+}
+aside.traits, .col-left .meter, .armory { width: 290px; min-height: 0; overflow-y: auto; }
 
-/* The Pixi canvas: board + bench. touch-action lets pointer drags work on touch screens. */
-.stage-wrap { position: relative; width: min(100%, 660px); align-self: center; }
-.stage { width: 100%; }
-/* Trait extras (the grave, the Mist Shop) get the row under the action bar, where the shop used to be. */
-.graves { display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 8px; width: min(100%, 660px); align-self: center; }
+/* The floating unit card is placed against .col-right, so it stays put while the column scrolls. */
+.col-right { position: relative; }
+.col-scroll { display: flex; flex-direction: column; gap: 8px; height: 100%; overflow-y: auto; }
+
+/* The Pixi canvas: board + bench. It's taken out of flow so the stage's size comes from the page,
+   never from the canvas. touch-action lets pointer drags work on touch screens. */
+.stage { position: relative; width: 100%; height: 100%; }
+.stage canvas { position: absolute; left: 0; right: 0; margin: 0 auto; display: block; touch-action: none; }
+/* Trait extras (the grave, the Mist Shop) sit in the right column. */
+.graves { display: flex; flex-direction: column; gap: 8px; }
 .graves:empty { display: none; }
 .grave {
   display: flex;
@@ -116,7 +157,7 @@ kbd {
 .side-shop-head { border: none; background: none; padding: 0; font-weight: 700; color: var(--text); }
 .side-shop-coins { margin: 0; font-size: 12px; color: var(--muted); }
 .side-shop-coins b { font-size: 18px; color: var(--text); }
-.mist-wares { display: flex; flex-wrap: wrap; gap: 4px; }
+.mist-wares { display: flex; flex-direction: column; gap: 4px; width: 100%; }
 .mist-ware {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
@@ -134,7 +175,6 @@ kbd {
 .mist-ware:not(:disabled):hover { border-color: var(--accent); }
 .mist-ware-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mist-ware-price { color: #c8d6e5; }
-.mist-ware { min-width: 130px; }
 .mist-owned { margin: 0; flex-basis: 100%; font-size: 11px; color: var(--muted); text-align: center; }
 .grave-count { font-size: 20px; }
 .grave small { font-size: 10px; color: var(--muted); text-align: center; }
@@ -142,7 +182,7 @@ kbd {
   padding: 2px 6px;
   border-radius: 8px;
   background: #1e1b2a;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.2;
   text-align: center;
   cursor: pointer;
@@ -150,43 +190,52 @@ kbd {
 .grave-unit:hover { color: var(--accent); }
 .stack-rewards { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .stack-rewards .done { color: var(--accent); }
-.stage canvas { display: block; touch-action: none; }
 
-main {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+main { min-width: 0; min-height: 0; }
 
-/* Board, bench and the action bar share one width so the play area lines up. */
-.shop-bar {
+/* The dock: leveling on the left, the shop in the middle, the fight button on the right. */
+.dock {
   position: relative;
-  display: flex;
+  display: grid;
+  flex: none;
+  grid-template-columns: 150px minmax(0, 1fr) 150px;
   gap: 8px;
-  width: min(100%, 660px);
-  align-self: center;
   padding: 8px;
   background: var(--panel);
   border-radius: 8px;
   border: 2px dashed transparent;
 }
-.shop-bar button {
+.dock-side { display: flex; flex-direction: column; gap: 4px; }
+.dock-btn {
+  display: flex;
   flex: 1;
-  padding: 10px 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: 6px;
   border: 1px solid #3a3f4d;
   background: var(--cell);
+  font-size: 13px;
 }
-.shop-bar button:not(:disabled):hover { background: var(--cell-alt); }
-.shop-bar button:disabled { opacity: 0.45; cursor: not-allowed; }
-.shop-bar .shop-open { flex: 2; font-weight: 700; font-size: 15px; }
-.shop-bar .shop-open.upgrade { border-color: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent); }
-.shop-bar .shop-open .up { color: var(--accent); }
-.shop-bar .primary { border-color: var(--accent); }
-.shop-popup { width: min(96vw, 760px); }
-.shop-popup .trait-title small { margin-left: 8px; color: var(--accent); }
-.unit-star { color: var(--accent); font-size: 10px; }
-.unit-name, .shop-card .unit-name, .shop-card .traits {
+.dock-btn:not(:disabled):hover { background: var(--cell-alt); border-color: var(--accent); }
+.dock-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.dock-btn.lock { justify-content: center; }
+.dock-btn.lock.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, var(--cell)); }
+.fight-btn {
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  background: linear-gradient(#e0a63a, #b67c1a);
+  color: #14161c;
+  font-size: 19px;
+  font-weight: 800;
+}
+.fight-btn kbd { display: block; width: fit-content; margin: 4px auto 0; border-color: #14161c88; color: #14161c; }
+.fight-btn:hover { filter: brightness(1.12); }
+.fight-btn.skip { background: var(--cell); color: var(--text); border-color: #3a3f4d; font-size: 15px; }
+.fight-btn.skip kbd { border-color: var(--muted); color: var(--muted); }
+.unit-star { color: var(--accent); font-size: 13px; }
+.unit-name, .shop-card .traits {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -201,12 +250,6 @@ main {
 .tier-5 { --tier-color: var(--tier-5); }
 .tier-7 { --tier-color: var(--tier-7); }
 
-.shop {
-  padding: 8px;
-  background: var(--panel);
-  border-radius: 8px;
-  border: 2px dashed transparent;
-}
 /* Sell hint while dragging. Must not change layout: anything that moves the dragged unit
    at drag start makes Chrome cancel the drag. */
 .dragging [data-sell] {
@@ -225,78 +268,84 @@ main {
   pointer-events: none;
 }
 
-.shop-cards {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+/* A hero's picture on its faction plate, as on the board. */
+.portrait {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--plate, #6b7280) 70%, #0f1116);
+  font-size: 26px;
+  line-height: 1;
 }
+.portrait.tiny { width: 20px; height: 20px; margin-right: 4px; border-radius: 4px; font-size: 12px; vertical-align: middle; }
+.portrait.big { width: 52px; height: 52px; font-size: 32px; }
+
+.shop-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.shop-cards.locked { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.dock.fighting .shop-cards { opacity: 0.55; }
 
 .shop-card {
-  height: 112px;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 6px;
-  border: 2px solid var(--tier-color, transparent);
-  background: color-mix(in srgb, var(--tier-color, var(--cell)) 14%, var(--cell));
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  height: 96px;
+  padding: 6px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 2px solid var(--tier-color, transparent);
+  background: color-mix(in srgb, var(--tier-color, var(--cell)) 12%, var(--cell));
   text-align: left;
 }
-.shop-card.empty { background: var(--cell); }
-/* Cost strip in the tier colour. */
-.shop-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  background: var(--tier-color, var(--accent));
-  color: #14161c;
-  font-size: 12px;
-}
-.shop-top .cost { font-size: 13px; color: #14161c; }
-.shop-top .owned, .shop-top .up { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.shop-top { min-width: 0; }
+.shop-card.empty { background: var(--cell); border-color: transparent; }
+.shop-face { align-self: center; width: 64px; height: 80px; font-size: 42px; }
+.shop-body { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; padding-right: 4px; }
 .shop-card .unit-name {
-  padding: 4px 6px 2px;
-  font-size: 14px;
+  display: -webkit-box;
+  padding-right: 26px;
+  overflow: hidden;
+  font-size: 15px;
   font-weight: 700;
   line-height: 1.15;
   white-space: normal;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
-.shop-card .traits { display: flex; flex-direction: column; gap: 1px; padding: 0 6px 4px; margin-top: auto; white-space: normal; }
-.shop-trait { display: flex; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; font-size: 12px; color: #c9ccd6; white-space: nowrap; }
+.shop-card .traits { display: flex; flex-direction: column; gap: 2px; margin-top: auto; }
+.shop-card .cost {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 7px;
+  border-bottom-left-radius: 6px;
+  background: var(--tier-color, var(--accent));
+  color: #14161c;
+  font-size: 14px;
+}
+.shop-card .owned, .shop-card .up {
+  position: absolute;
+  bottom: 3px;
+  left: 9px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #000a;
+  font-size: 11px;
+  font-weight: 700;
+}
+.shop-card .up { color: var(--accent); }
+.shop-trait { display: flex; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; font-size: 13px; color: #c9ccd6; white-space: nowrap; }
 .shop-trait .t-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.shop-trait em { flex: none; }
+.shop-trait em { flex: none; font-style: normal; color: var(--accent); font-weight: 700; }
 .shop-trait.none { color: var(--muted); font-style: italic; }
 .shop-trait.have { color: var(--text); font-weight: 600; }
-.shop-trait em { font-style: normal; color: var(--accent); font-weight: 700; }
 /* Buying this completes a merge. */
 .shop-card.upgrade { box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
 .shop-card:disabled { opacity: 0.45; cursor: not-allowed; }
 .shop-card:not(:disabled):hover { filter: brightness(1.2); }
-
-.shop-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-.shop-buttons button {
-  flex: 1;
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid #3a3f4d;
-  background: var(--cell);
-}
-.shop-buttons button:hover { background: var(--cell-alt); }
-.shop-buttons .primary { border-color: var(--accent); }
-.shop-buttons .lock { flex: 0 0 48px; }
-.shop-buttons .lock.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, var(--cell)); }
-.shop.locked .shop-cards { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
 .meter {
   padding: 8px 10px;
@@ -319,20 +368,25 @@ main {
 .meter-empty, .meter-legend { color: var(--muted); margin: 8px 0 0; }
 .meter-legend span { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 3px 0 6px; }
 
-.side {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.side { display: flex; flex-direction: column; gap: 8px; }
 
+/* Floats over the right column instead of pushing the players list off screen. */
 .unit-detail {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 100%;
+  overflow-y: auto;
   padding: 10px 12px;
   background: var(--panel);
   border-radius: 8px;
   border-top: 3px solid var(--tier-color);
+  box-shadow: 0 8px 24px #000c;
   font-size: 13px;
 }
+.detail-head { display: flex; align-items: center; gap: 10px; padding-right: 16px; }
 .unit-detail h3 { margin: 0; font-size: 15px; }
 .unit-detail h4 { margin: 10px 0 2px; font-size: 13px; }
 .unit-detail h4 small, .unit-detail .meta { color: var(--muted); font-weight: 400; }
@@ -383,12 +437,14 @@ main {
 .opponents ul { list-style: none; margin: 0; padding: 0; }
 .opponents li {
   display: flex;
-  flex-direction: column;
-  padding: 6px 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 8px;
+  padding: 4px 0;
   border-bottom: 1px solid var(--cell);
 }
-.opponents .opp-info { color: var(--muted); }
-.opp-traits { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.opponents .opp-info { color: var(--muted); font-size: 12px; }
+.opp-traits { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .opp-trait {
   display: inline-flex;
   align-items: center;
@@ -403,29 +459,48 @@ main {
 .opp-trait b { font-size: 11px; color: var(--accent); }
 .opponents li.out { opacity: 0.4; }
 
-.traits {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.traits-empty { color: var(--muted); font-size: 11px; text-align: center; margin: 8px 0; }
-
-.trait-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 4px;
-  border-radius: 8px;
-  border: 2px solid transparent;
+aside.traits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 4px;
+  padding: 8px;
   background: var(--panel);
-  opacity: 0.6;
+  border-radius: 8px;
 }
-.trait-tile:hover { filter: brightness(1.25); }
-.trait-tile.active { opacity: 1; border-color: var(--accent); }
-.trait-icon { font-size: 26px; line-height: 1; }
-.trait-count { font-size: 12px; font-weight: 700; color: var(--muted); }
+aside.traits h3, .armory h3 { grid-column: 1 / -1; margin: 2px 2px 4px; font-size: 14px; }
+.armory-stash { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--cell); }
+.traits-empty { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin: 4px 2px; }
+
+/* Name and progress in view: what's active and what's close, without opening anything. */
+.trait-tile {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-areas: 'icon name name' 'icon steps count';
+  align-items: center;
+  gap: 0 6px;
+  flex: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--cell);
+  text-align: left;
+}
+.trait-tile:hover { filter: brightness(1.2); }
+.trait-tile.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--cell)); }
+.trait-tile .trait-icon { grid-area: icon; font-size: 18px; }
+.trait-name { grid-area: name; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.trait-tile:not(.active) .trait-name { color: var(--muted); }
+.trait-count { grid-area: count; font-size: 13px; font-weight: 700; color: var(--muted); }
 .trait-tile.active .trait-count { color: var(--accent); }
+.trait-steps { display: flex; grid-area: steps; gap: 4px; font-size: 10px; color: var(--muted); }
+.trait-steps i { font-style: normal; }
+.trait-steps i.on { color: var(--accent); font-weight: 700; }
+.trait-icon { font-size: 26px; line-height: 1; }
+/* A trait's round badge: sized by the text around it, coloured inline. */
+.trait-badge { display: inline-grid; flex: none; place-items: center; width: 1.5em; height: 1.5em; border-radius: 50%; line-height: 1; vertical-align: -0.4em; }
+.trait-badge svg { display: block; width: 72%; height: 72%; }
+.trait-icon .trait-badge, .grave-icon .trait-badge { width: 1.15em; height: 1.15em; }
 
 .trait-popup {
   position: relative;
@@ -569,14 +644,9 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 
 .hud .vs b { color: #d65151; }
 
+.armory-items { display: flex; flex-wrap: wrap; gap: 6px; }
 .armory {
-  width: min(100%, 660px);
-  align-self: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-height: 44px;
-  padding: 6px 8px;
+  padding: 8px;
   background: var(--panel);
   border-radius: 8px;
   border: 2px dashed transparent;
@@ -606,9 +676,48 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 }
 .item-chip b { color: var(--accent); }
 .item-chip small { color: var(--muted); }
-.item-chip.equipped { border-color: var(--accent); }
+.item-chip.equipped { opacity: 0.55; }
 .item-chip.inactive { opacity: 0.45; }
 .item-chip.selected { box-shadow: 0 0 0 2px var(--accent); cursor: pointer; }
+.orb-chip { border-color: #c77dff; }
+
+/* A deployed hero: who it is, its orb slot, its equipment slots. */
+.gear-heroes { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.gear-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 4px;
+  border-left: 3px solid var(--tier-color);
+  border-radius: 6px;
+  background: var(--cell);
+}
+.gear-who { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: none; background: none; text-align: left; }
+.gear-who:hover .gear-name { color: var(--accent); }
+.gear-face { width: 32px; height: 32px; border-radius: 6px; font-size: 20px; }
+.gear-name { min-width: 0; font-size: 11px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+.gear-name .unit-star { display: block; font-size: 10px; font-style: normal; }
+.gear-slots { display: flex; gap: 3px; }
+.gear-slot {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px dashed #4a5060;
+  border-radius: 6px;
+  background: #0003;
+}
+.gear-slot.orb-slot { border-color: #7a5ca0; border-radius: 50%; }
+.gear-slot.taken { border-style: solid; background: var(--panel); }
+.gear-slot .item-chip { position: relative; width: 100%; height: 100%; justify-content: center; padding: 0; border-radius: 5px; }
+.gear-slot .orb-chip { border-radius: 50%; }
+.gear-slot .item-chip b { position: absolute; right: 0; bottom: -2px; font-size: 9px; text-shadow: 0 0 2px #000; }
+.gear-slot .item-chip .item-icon { font-size: 15px; }
+.magic-orb { font-size: 15px; line-height: 1; cursor: help; }
+/* While an item or orb is on the move, the slots that can take it light up. */
+.armory.picking-item .gear-slot:not(.orb-slot), .armory.picking-orb .orb-slot { border-style: solid; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); cursor: pointer; }
 
 .shop-card.item-card {
   border: 2px dashed var(--accent);
@@ -675,11 +784,10 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   background: var(--cell);
 }
 
-.shop-buttons button:disabled { opacity: 0.45; cursor: not-allowed; }
-
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 130px;
+  z-index: 20;
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 16px;
@@ -692,28 +800,36 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .toast.show { opacity: 1; }
 .toast.info { background: #3a6ea5; }
 
-/* Narrower: synergies stay left with a matching empty column right; damage and players go below. */
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 64px minmax(0, 1fr) 64px;
-    grid-template-areas:
-      'traits main .'
-      'meter meter meter'
-      'side side side';
-  }
+/* Tighter columns give the shop cards room for full names. */
+@media (max-width: 1500px) {
+  .layout { grid-template-columns: auto minmax(0, 1fr) 250px; }
+  aside.traits, .col-left .meter, .armory { width: 262px; }
+  .dock { grid-template-columns: 120px minmax(0, 1fr) 110px; }
+  .shop-card { gap: 6px; }
+  .shop-face { width: 46px; font-size: 30px; }
+  .shop-card .unit-name { font-size: 14px; }
+  .shop-trait { font-size: 12px; }
+  .dock-btn { padding: 4px 6px; font-size: 12px; }
+  .fight-btn { font-size: 16px; }
 }
 
-@media (max-width: 760px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'traits' 'main' 'meter' 'side';
-  }
-  /* Synergies become a row above the board. */
-  .traits { flex-direction: row; flex-wrap: wrap; }
-  .trait-tile { min-width: 60px; }
-  .shop-card { height: 100px; }
-  .shop-card .unit-name { font-size: 12px; }
-  .shop-trait { font-size: 11px; }
+/* Too small for one screen: everything stacks and the page scrolls. The stage takes its height from
+   its width here, at the board's own proportions. */
+@media (max-width: 1100px), (max-height: 600px) {
+  #app { height: auto; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .col-left { order: 2; }
+  aside.traits, .col-left .meter, .armory { flex: 1; width: auto; }
+  .col-right { order: 3; }
+  .col-scroll { height: auto; overflow: visible; }
+  .stage { height: auto; aspect-ratio: 1 / 1.03; }
+  .unit-detail { position: static; max-height: none; }
+  .dock { position: sticky; bottom: 0; z-index: 4; grid-template-columns: minmax(0, 1fr) 110px; }
+  .dock-side { grid-column: 1 / -1; flex-direction: row; }
+  .shop-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .shop-card { height: 84px; }
+  .shop-face { width: 44px; font-size: 28px; }
+  .hud { flex-wrap: wrap; gap: 12px 20px; }
 }
 .gallery .gallery-card, .gallery .crossover td, .gallery .trait-desc, .trait-units li { text-align: left; }
 
@@ -737,6 +853,7 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .commander-option small { color: var(--muted); font-size: 12px; }
 .commander-portrait { font-size: 40px; line-height: 1.1; }
 .commander-text { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: #c9ccd6; text-align: left; }
+.commander-panel .commander-text.clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .commander-card-line { margin-top: auto; padding-top: 6px; font-size: 12px; color: var(--muted); }
 .commander-panel {
   padding: 10px 12px;
@@ -745,7 +862,7 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   background: linear-gradient(#2e2a20, #22201b);
 }
 .commander-head { display: flex; align-items: center; gap: 10px; }
-.commander-head .commander-portrait { font-size: 34px; }
+.commander-head .commander-portrait { font-size: 30px; }
 .commander-head div { display: flex; flex-direction: column; min-width: 0; }
 .commander-head small { color: var(--muted); font-size: 11px; }
 .commander-hp { margin-left: auto; font-weight: 700; font-size: 16px; white-space: nowrap; }

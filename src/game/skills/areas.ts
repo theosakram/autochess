@@ -27,6 +27,20 @@ export function pathTo(from: Point, to: Point): Point[] {
   return cells;
 }
 
+// The cells of a straight line from `from` through `to` (at any angle) on to the board's edge: one
+// per step along the longer axis, `from` not included, `to` always on it. `from` and `to` must differ.
+export function lineThrough(from: Point, to: Point): Point[] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.max(Math.abs(dx), Math.abs(dy));
+  const cells: Point[] = [];
+  for (let i = 1; ; i++) {
+    const p = { x: from.x + Math.round((dx * i) / len), y: from.y + Math.round((dy * i) / len) };
+    if (p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H) return cells;
+    cells.push(p);
+  }
+}
+
 // The cell `n` steps past `to`, carrying on the line from `from` through it (stopped at the board's edge).
 export function beyond(from: Point, to: Point, n: number): Point {
   const dx = to.x - from.x;
