@@ -15,6 +15,7 @@ export const COLORS = {
   crit: 0xff3b3b,
   spell: 0x8fb8ff,
   selected: 0xffffff,
+  leader: 0xffd76a, // the glow around a unit that leads a trait (Astral's Sovereign)
 };
 
 export const TIER_COLORS: Record<number, number> = { 1: 0x8a8f99, 2: 0x3fae5a, 3: 0x3a84d6, 4: 0xa457d6, 5: 0xe0a63a, 7: 0xe0475e }; // by tier

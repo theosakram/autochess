@@ -174,6 +174,7 @@ export class Stage {
           crowned: crowned.has(u.defId),
           leads: area === 'board' ? leadsOf(p, levels, u.uid) : [],
           orb: p.orb?.defId === u.defId ? p.orb.trait : null,
+          mistOrbs: (p.mistOrbs ?? []).filter((o) => o.holder === u.uid).map((o) => o.trait),
           itemIds: p.items.filter((i) => i.holder === u.uid).map((i) => i.id),
           selected: u.uid === view.selectedUid,
           target: view.pickingItem,
@@ -218,7 +219,7 @@ export class Stage {
       window.removeEventListener('pointercancel', up);
       if (!dragging) return this.on.unitClick(uid);
       this.on.dragging(false);
-      const overShop = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest('.shop');
+      const overShop = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest('[data-sell]');
       const p = local(ev);
       const to: Loc | 'sell' | null = overShop ? 'sell' : this.L.locAt(p.x, p.y);
       if (to && (to === 'sell' || key(to) !== key(from))) this.on.drop(from, to);
@@ -265,6 +266,7 @@ export class Stage {
         crowned: f.chosen !== null,
         leads: f.leads,
         orb: f.orb,
+        mistOrbs: f.mistOrbs,
         itemIds: f.items.map((i) => i.id),
         foe: f.side !== mySide,
         bars: true,

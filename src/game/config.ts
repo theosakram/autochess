@@ -16,7 +16,7 @@ export const START_HP = 100;
 export const START_LEVEL = 3;
 export const MAX_ITEMS_PER_UNIT = 3;
 // Rounds that hand every player a Magic Orb.
-export const ORB_ROUNDS = [10, 20, 30];
+export const ORB_ROUNDS = [5, 12, 19];
 // Units every player gets before round 1, drawn from the pool at START_LEVEL shop odds.
 export const FREE_UNITS = 3;
 

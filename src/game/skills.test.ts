@@ -3,7 +3,7 @@ import { simulateCombat } from './combat';
 import { createGame } from './game';
 import { dist, type Point } from './grid';
 import { JIMAT } from './items';
-import { ahead3x3, aheadStrip, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, volleyShot, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { ahead3x3, aheadStrip, beyond, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, volleyShot, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -1088,15 +1088,21 @@ describe('shield layers', () => {
 });
 
 describe('Mist Boomerang', () => {
-  test('hits everyone on the path to its target now, and again on the way back; it stays put', () => {
-    const b = fakeBattle([{ x: 3, y: 1 }, { x: 3, y: 3 }, { x: 0, y: 0 }]);
+  test('beyond: carries on the line past the target, stopping at the edge', () => {
+    expect(beyond({ x: 3, y: 5 }, { x: 5, y: 3 }, 2)).toEqual({ x: 6, y: 1 });
+    expect(beyond({ x: 3, y: 5 }, { x: 3, y: 1 }, 2)).toEqual({ x: 3, y: 0 });
+  });
+
+  test('flies through its target and 2 tiles beyond, hitting everyone on the way, then again on the way back', () => {
+    // From (3,5) at the target (3,3): out to (3,1). (3,4) is before it, (3,2) and (3,1) behind it; (3,0) is past the end.
+    const b = fakeBattle([{ x: 3, y: 3 }, { x: 3, y: 4 }, { x: 3, y: 2 }, { x: 3, y: 1 }, { x: 3, y: 0 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.mistoracle, 1);
     b.cast('mistboomerang');
     const by = (id: number) => b.log.hits.filter((h) => h.target === id).length;
-    expect([by(1), by(2), by(3)]).toEqual([1, 1, 0]);
+    expect([by(1), by(2), by(3), by(4), by(5)]).toEqual([1, 1, 1, 1, 0]);
     expect(b.log.repeats[0]).toMatchObject({ seconds: MIST_BOOMERANG.back, times: 1 });
     b.log.repeats[0].fn();
-    expect([by(1), by(2), by(3)]).toEqual([2, 2, 0]);
+    expect([by(1), by(2), by(3), by(4), by(5)]).toEqual([2, 2, 2, 2, 0]);
     expect(b.log.dashes).toEqual([]);
     expect(b.log.busy).toEqual([]);
     expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * MIST_BOOMERANG.ap[0] && h.effect === 'mistboomerang')).toBe(true);

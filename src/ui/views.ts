@@ -213,16 +213,20 @@ export function mistChoiceHtml(p: Player, slot: number): string {
 }
 
 // The grave beside the board: every counting trait with rewards, once it has shown up this game.
+// It names the reward unit rolled for this player (e.g. their Plane Wanderer), which opens its card,
+// so they can decide early whether it's worth building toward.
 export function graveHtml(p: Player): string {
   return Object.entries(p.stacks)
     .filter(([id]) => TRAITS[id].stacks?.rewards)
     .map(([id, n]) => {
       const rule = TRAITS[id].stacks!;
       const next = rule.rewards![p.rewards?.[id] ?? 0];
+      const reward = p.rewardUnit?.[id] ? UNIT_BY_ID[p.rewardUnit[id]] : null;
       return `<button class="grave" data-trait="${id}" title="${TRAITS[id].name}: ${rule.label.toLowerCase()}">
         <span class="grave-icon">${TRAITS[id].icon}</span>
         <b class="grave-count">${n}</b>
         <small>${next ? `next ${next.at}: ${'★'.repeat(next.star)}` : 'complete'}</small>
+        ${reward ? `<span class="grave-unit" data-unit-info="${reward.id}" title="Your reward unit: click to see it">${reward.honorary?.icon ?? '🎁'} ${reward.name}</span>` : ''}
       </button>`;
     })
     .join('');
@@ -310,6 +314,40 @@ function crossoverGridHtml(p: Player): string {
   <p class="grid-legend">Colour = cost (${[1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-unit tier-${t}">${t}g</span>`).join(' ')}) · bold = on your board · 🧭 = Plane Wanderer (Necromancer reward, not in shop) · click a trait or unit to open it</p>`;
 }
 
+// True if buying some card in the shop right now completes a merge.
+const shopHasUpgrade = (p: Player) => p.shop.some((id) => id && !isItemCard(id) && findCopies(p, id, 1).length >= 2);
+
+// The bar under the bench: opens the shop, levels up, fights. Drop a unit on it to sell.
+export function shopBarHtml(p: Player, locked: boolean): string {
+  const levelCost = levelUpCost(p);
+  const levelBtn =
+    levelCost === null
+      ? `<button disabled title="Max level">🏅 max</button>`
+      : `<button data-action="levelUp" title="Level up" ${locked || p.gold < levelCost ? 'disabled' : ''}>⏫ ${levelCost}g <kbd>F</kbd></button>`;
+  const upgrade = shopHasUpgrade(p);
+  return `<section class="shop-bar" data-sell title="Drop a unit here to sell it">
+    <button data-action="openShop" class="shop-open${upgrade ? ' upgrade' : ''}" title="Open the shop">
+      🛒 Shop${p.shopLocked ? ' 🔒' : ''}${upgrade ? ' <span class="up" title="A card in the shop makes a 2-star">★★</span>' : ''} <kbd>S</kbd>
+    </button>
+    ${levelBtn}
+    ${
+      locked
+        ? `<button data-action="skip" class="primary" title="Skip fight">⏭️ <kbd>Space</kbd></button>`
+        : `<button data-action="endTurn" class="primary" title="Fight!">⚔️ <kbd>Space</kbd></button>`
+    }
+  </section>`;
+}
+
+// The shop popup: the cards, lock, reroll and level up. It stays open while you buy.
+export function shopPopupHtml(p: Player, locked: boolean, chosen: Record<string, string>): string {
+  return modalHtml(
+    'closeShop',
+    'shop-popup',
+    `<h2 class="trait-title">🛒 Shop <small>💰 ${p.gold}g</small></h2>
+    ${shopHtml(p, locked, chosen)}`,
+  );
+}
+
 export function shopHtml(p: Player, locked: boolean, chosen: Record<string, string>): string {
   const counts = playerTraitCounts(p);
   const cards = p.shop
@@ -318,7 +356,7 @@ export function shopHtml(p: Player, locked: boolean, chosen: Record<string, stri
       if (isItemCard(id)) {
         const item = ITEMS[cardItem(id)];
         const tier = p.items.find((it) => it.id === item.id)?.tier ?? 0;
-        return `<button class="shop-card item-card" data-slot="${slot}" ${locked ? 'disabled' : ''} title="${item.name} tier ${tier + 1}: ${itemText(item, tier + 1)}">
+        return `<button class="shop-card item-card" data-action="buy" data-slot="${slot}" ${locked ? 'disabled' : ''} title="${item.name} tier ${tier + 1}: ${itemText(item, tier + 1)}">
           <span class="shop-top"><b class="cost">Free</b><span class="owned">upgrade</span></span>
           <span class="unit-name">${item.icon} ${item.name}</span>
           <span class="traits"><span class="shop-trait">Tier ${tier} → ${tier + 1}</span></span>
@@ -336,7 +374,7 @@ export function shopHtml(p: Player, locked: boolean, chosen: Record<string, stri
           return `<span class="shop-trait${gain ? ' have' : ''}"><span class="t-name">${TRAITS[t].icon} ${TRAITS[t].name}</span>${gain}</span>`;
         })
         .join('');
-      return `<button class="shop-card tier-${def.tier}${upgrade ? ' upgrade' : ''}" data-slot="${slot}" ${locked || p.gold < def.tier ? 'disabled' : ''}>
+      return `<button class="shop-card tier-${def.tier}${upgrade ? ' upgrade' : ''}" data-action="buy" data-slot="${slot}" ${locked || p.gold < def.tier ? 'disabled' : ''}>
         <span class="shop-top"><b class="cost">${def.tier}g</b>${upgrade ? '<span class="up" title="Buying this makes a 2-star">★★</span>' : owned ? `<span class="owned">own ${owned}</span>` : ''}</span>
         <span class="unit-name">${isChosen(chosen, id) ? '👑 ' : ''}${def.name}</span>
         <span class="traits">${traits || '<span class="shop-trait none">no traits</span>'}</span>
@@ -351,17 +389,12 @@ export function shopHtml(p: Player, locked: boolean, chosen: Record<string, stri
       : `<button data-action="levelUp" title="Level up" ${locked || p.gold < levelCost ? 'disabled' : ''}>⏫ ${levelCost}g <kbd>F</kbd></button>`;
   const lockBtn = `<button data-action="toggleLock" class="lock${p.shopLocked ? ' on' : ''}"
     title="${p.shopLocked ? 'Locked: keeps this shop next round (click to unlock)' : 'Lock: keep this shop next round'}">${p.shopLocked ? '🔒' : '🔓'}</button>`;
-  return `<section class="shop${p.shopLocked ? ' locked' : ''}" title="Drop a unit here to sell it">
+  return `<section class="shop${p.shopLocked ? ' locked' : ''}">
     <div class="shop-cards">${cards}</div>
     <div class="shop-buttons">
       ${lockBtn}
       <button data-action="reroll" title="Reroll the shop" ${disabled}>🔄 ${REROLL_COST}g <kbd>D</kbd></button>
       ${levelBtn}
-      ${
-        locked
-          ? `<button data-action="skip" class="primary" title="Skip fight">⏭️ <kbd>Space</kbd></button>`
-          : `<button data-action="endTurn" class="primary" title="Fight!">⚔️ <kbd>Space</kbd></button>`
-      }
     </div>
   </section>`;
 }

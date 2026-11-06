@@ -11,6 +11,7 @@ export interface TokenSpec {
   crowned?: boolean;
   leads?: string[]; // traits this unit leads; each shows its leader icon
   orb?: string | null; // trait the player's Magic Orb boosts through this unit
+  mistOrbs?: string[]; // traits of the Mist orbs it holds
   itemIds?: string[];
   foe?: boolean;
   selected?: boolean;
@@ -44,11 +45,22 @@ export function makeToken(s: TokenSpec): TokenView {
   root.hitArea = new Rectangle(-half, -half, w, w);
   root.interactiveChildren = false;
 
+  // A leader (Astral's Sovereign) glows: a soft halo under the chip and a bright rim on it.
+  const leads = (s.leads ?? []).length > 0;
+  if (leads) {
+    root.addChild(
+      new Graphics()
+        .roundRect(-half - 4, -half - 4, w + 8, w + 8, radius + 4)
+        .stroke({ width: 6, color: COLORS.leader, alpha: 0.3 })
+        .roundRect(-half - 1.5, -half - 1.5, w + 3, w + 3, radius + 1.5)
+        .stroke({ width: 1.5, color: COLORS.leader, alpha: 0.9 }),
+    );
+  }
   root.addChild(
     new Graphics()
       .roundRect(-half, -half, w, w, radius)
       .fill(mix(COLORS.cell, tier, 0.25))
-      .stroke({ width: 2, color: tier }),
+      .stroke({ width: 2, color: leads ? mix(tier, COLORS.leader, 0.6) : tier }),
   );
   if (s.foe) root.addChild(new Graphics().roundRect(-half + 2, -half + 2, w - 4, w - 4, radius).stroke({ width: 1, color: COLORS.foe }));
   if (s.selected || s.target) {
@@ -69,7 +81,7 @@ export function makeToken(s: TokenSpec): TokenView {
   const barSpace = s.bars ? 9 : 0;
   const icons = def.traits.map((id) => TRAITS[id].icon).join('') + (def.honorary?.icon ?? '');
   if (icons) corner(icons, -half + 3, -half + 3 + barSpace, 0, 0);
-  const badges = (s.orb ? '🔮' : '') + (s.crowned ? '👑' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
+  const badges = (s.orb ? '🔮' : '') + '🌫️'.repeat(s.mistOrbs?.length ?? 0) + (s.crowned ? '👑' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
   if (badges) corner(badges, half - 3, -half + 3 + barSpace, 1, 0);
   if (s.itemIds?.length) corner(s.itemIds.map((id) => ITEMS[id].icon).join(''), -half + 3, half - 3, 0, 1);
 

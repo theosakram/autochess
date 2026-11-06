@@ -3,7 +3,7 @@ import { createGame } from '../game/game';
 import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
-import { bearerDetailHtml, galleryHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
+import { bearerDetailHtml, galleryHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
 
 describe('orb choice popup', () => {
   // Regression: options carried data-trait, which the click handler treats as "open trait popup",
@@ -143,3 +143,15 @@ describe('unit info popup', () => {
   });
 });
 
+
+describe('grave', () => {
+  test('names the Plane Wanderer rolled for this player, and opens its card', () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.stacks = { necromancer: 12 };
+    p.rewardUnit = { necromancer: 'wanderinghunter' };
+    const html = graveHtml(p);
+    expect(html).toContain('data-unit-info="wanderinghunter"');
+    expect(html).toContain('Wandering Hunter');
+  });
+});

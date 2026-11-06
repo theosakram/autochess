@@ -28,6 +28,7 @@ export interface Fighter {
   leads: string[]; // traits it leads on its side (see TraitDef.leader)
   items: { id: string; tier: number }[]; // active items and the tier each works at
   orb: string | null; // trait its player's Magic Orb boosts through this unit type
+  mistOrbs: string[]; // traits of the Mist orbs it holds
 }
 
 // Mana values are after the event, rounded for display. Regen between events isn't logged.
@@ -157,6 +158,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       leads: leadsOf(p, levels, u.uid),
       items,
       orb: p.orb?.defId === u.defId ? p.orb.trait : null,
+      mistOrbs: (p.mistOrbs ?? []).filter((o) => o.holder === u.uid).map((o) => o.trait),
       stats,
       shred: 0,
       dealt: 0,
@@ -196,7 +198,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
   });
 }
 
-const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTile, chosen, leads, items, orb }: Fighter): Fighter => ({
+const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTile, chosen, leads, items, orb, mistOrbs }: Fighter): Fighter => ({
   id,
   side,
   defId,
@@ -212,6 +214,7 @@ const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTil
   leads,
   items,
   orb,
+  mistOrbs,
 });
 
 function nearest(f: SimFighter, enemies: SimFighter[]): SimFighter {
@@ -523,6 +526,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         leads: [],
         items: [],
         orb: null,
+        mistOrbs: [],
         stats,
         shred: 0,
         dealt: 0,

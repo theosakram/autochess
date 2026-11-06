@@ -27,6 +27,15 @@ export function pathTo(from: Point, to: Point): Point[] {
   return cells;
 }
 
+// The cell `n` steps past `to`, carrying on the line from `from` through it (stopped at the board's edge).
+export function beyond(from: Point, to: Point, n: number): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.max(Math.abs(dx), Math.abs(dy)) || 1;
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max - 1, v));
+  return { x: clamp(to.x + Math.round((dx / len) * n), GRID_W), y: clamp(to.y + Math.round((dy / len) * n), GRID_H) };
+}
+
 // The (up to) 8 cells touching `center`, on the board.
 export function around(center: Point): Point[] {
   const cells: Point[] = [];

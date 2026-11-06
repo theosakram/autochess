@@ -87,34 +87,36 @@ kbd {
 /* The Pixi canvas: board + bench. touch-action lets pointer drags work on touch screens. */
 .stage-wrap { position: relative; width: min(100%, 660px); align-self: center; }
 .stage { width: 100%; }
-/* The grave sits just right of the board, level with your half; on narrow screens, above it. */
-.graves { position: absolute; left: calc(100% + 10px); top: 52%; display: flex; flex-direction: column; gap: 8px; }
+/* Trait extras (the grave, the Mist Shop) get the row under the action bar, where the shop used to be. */
+.graves { display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 8px; width: min(100%, 660px); align-self: center; }
+.graves:empty { display: none; }
 .grave {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
-  width: 76px;
-  padding: 8px 4px;
+  gap: 8px;
+  padding: 6px 14px;
   border: 1px solid #7a6a9a;
-  border-radius: 28px 28px 6px 6px;
+  border-radius: 16px;
   background: linear-gradient(#3a3550, #262335);
   color: var(--text);
 }
 .grave-icon { font-size: 22px; line-height: 1; }
 .side-shop {
-  width: 120px;
-  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   border: 1px solid #6f8fa6;
   border-radius: 8px;
   background: linear-gradient(#2c3a46, #232a33);
   text-align: center;
 }
 .side-shop-head { border: none; background: none; padding: 0; font-weight: 700; color: var(--text); }
-.side-shop-coins { margin: 6px 0 2px; font-size: 12px; color: var(--muted); }
+.side-shop-coins { margin: 0; font-size: 12px; color: var(--muted); }
 .side-shop-coins b { font-size: 18px; color: var(--text); }
-.side-shop { width: 168px; }
-.mist-wares { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.mist-wares { display: flex; flex-wrap: wrap; gap: 4px; }
 .mist-ware {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
@@ -132,21 +134,22 @@ kbd {
 .mist-ware:not(:disabled):hover { border-color: var(--accent); }
 .mist-ware-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mist-ware-price { color: #c8d6e5; }
-.mist-owned { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.mist-ware { min-width: 130px; }
+.mist-owned { margin: 0; flex-basis: 100%; font-size: 11px; color: var(--muted); text-align: center; }
 .grave-count { font-size: 20px; }
 .grave small { font-size: 10px; color: var(--muted); text-align: center; }
+.grave-unit {
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: #1e1b2a;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+.grave-unit:hover { color: var(--accent); }
 .stack-rewards { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .stack-rewards .done { color: var(--accent); }
-/* Beside the board only where there's room for it; otherwise a row under the board. */
-@media (max-width: 1700px) {
-  .graves { position: static; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start; margin: 6px 0; }
-  .grave { flex-direction: row; width: auto; padding: 4px 12px; border-radius: 16px; gap: 8px; }
-  .side-shop { width: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; }
-  .side-shop-coins { margin: 0; }
-  .mist-wares { flex-direction: row; margin: 0; }
-  .mist-ware { min-width: 140px; }
-  .mist-owned { margin: 0; flex-basis: 100%; text-align: center; }
-}
 .stage canvas { display: block; touch-action: none; }
 
 main {
@@ -155,11 +158,33 @@ main {
   gap: 12px;
 }
 
-/* Board, bench and shop share one width so the play area lines up. */
-.shop {
+/* Board, bench and the action bar share one width so the play area lines up. */
+.shop-bar {
+  position: relative;
+  display: flex;
+  gap: 8px;
   width: min(100%, 660px);
   align-self: center;
+  padding: 8px;
+  background: var(--panel);
+  border-radius: 8px;
+  border: 2px dashed transparent;
 }
+.shop-bar button {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: 6px;
+  border: 1px solid #3a3f4d;
+  background: var(--cell);
+}
+.shop-bar button:not(:disabled):hover { background: var(--cell-alt); }
+.shop-bar button:disabled { opacity: 0.45; cursor: not-allowed; }
+.shop-bar .shop-open { flex: 2; font-weight: 700; font-size: 15px; }
+.shop-bar .shop-open.upgrade { border-color: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent); }
+.shop-bar .shop-open .up { color: var(--accent); }
+.shop-bar .primary { border-color: var(--accent); }
+.shop-popup { width: min(96vw, 760px); }
+.shop-popup .trait-title small { margin-left: 8px; color: var(--accent); }
 .unit-star { color: var(--accent); font-size: 10px; }
 .unit-name, .shop-card .unit-name, .shop-card .traits {
   max-width: 100%;
@@ -184,11 +209,10 @@ main {
 }
 /* Sell hint while dragging. Must not change layout: anything that moves the dragged unit
    at drag start makes Chrome cancel the drag. */
-.shop { position: relative; }
-.dragging .shop {
+.dragging [data-sell] {
   border-color: #d65151;
 }
-.dragging .shop::after {
+.dragging [data-sell]::after {
   content: 'Drop here to sell';
   position: absolute;
   inset: 0;

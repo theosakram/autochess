@@ -20,7 +20,8 @@ import {
   hudHtml,
   orbChoiceHtml,
   playersHtml,
-  shopHtml,
+  shopBarHtml,
+  shopPopupHtml,
   traitDetailHtml,
   traitsPanelHtml,
   unitInfoHtml,
@@ -50,6 +51,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   // Mist Shop slot whose ware is waiting for a pick (Mirror: a unit; picked orbs: a trait).
   let mistPick: number | null = null;
   let galleryOpen = false;
+  // The shop popup (cards, lock, reroll) is open.
+  let shopOpen = false;
   let galleryTab: GalleryTab = 'cards';
   // Own unit shown in the right column; cleared once it's no longer owned (sold, merged away).
   let selectedUid: number | null = null;
@@ -68,10 +71,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       <main>
         <div class="stage-wrap">
           <section class="stage"></section>
-          <div class="slot" data-slot="grave"></div>
         </div>
         <div class="slot" data-slot="armory"></div>
         <div class="slot" data-slot="shop"></div>
+        <div class="slot" data-slot="grave"></div>
       </main>
       <div class="slot" data-slot="side"></div>
     </div>
@@ -152,7 +155,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     slot('traits').innerHTML = traitsPanelHtml(p);
     slot('meter').innerHTML = meterHtml(meter);
     slot('armory').innerHTML = armoryHtml(p, selectedItem);
-    slot('shop').innerHTML = shopHtml(p, combat !== null, state.chosen);
+    slot('shop').innerHTML = shopBarHtml(p, combat !== null);
     slot('grave').innerHTML = `<div class="graves">${graveHtml(p)}${sideShopsHtml(p)}</div>`;
     slot('side').innerHTML = `<div class="side">
       ${selectedUid !== null ? unitDetailHtml(p, selectedUid, state.chosen) : ''}
@@ -167,6 +170,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const scrolled = new Map<string, [number, number]>();
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolled.set(el.dataset.keepScroll!, [el.scrollTop, el.scrollLeft]);
     slot('overlays').innerHTML = [
+      shopOpen ? shopPopupHtml(p, combat !== null, state.chosen) : '',
       galleryOpen ? galleryHtml(p, state.chosen, galleryTab) : '',
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
@@ -191,6 +195,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (!fight) return nextRound();
 
     combat = { fight, opponentId: fight.home === playerId ? fight.away : fight.home, playback: null };
+    shopOpen = false;
     selectedUid = null;
     selectedItem = null;
     meter = createMeter(fight, playerId);
@@ -325,6 +330,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'skip') skip();
       else if (a === 'newGame') location.reload();
       else if (a === 'reroll' || a === 'levelUp' || a === 'toggleLock') dispatch({ type: a });
+      else if (a === 'openShop' || a === 'closeShop') {
+        shopOpen = a === 'openShop';
+        render();
+      } else if (a === 'buy') dispatch({ type: 'buy', slot: Number(btn.dataset.slot) });
       else if (a === 'unequip') dispatch({ type: 'unequip', item: Number(btn.dataset.item) });
       else if (a === 'sellUnit') {
         const from = unitLoc(Number(btn.dataset.uid));
@@ -332,8 +341,6 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       }
       return;
     }
-    const card = target.closest<HTMLElement>('.shop-card[data-slot]');
-    if (card) dispatch({ type: 'buy', slot: Number(card.dataset.slot) });
   });
 
   window.addEventListener('keydown', (e) => {
@@ -352,12 +359,20 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       orbFor = null;
       return render();
     }
+    // The shop sits under every other popup, so it closes last.
+    if (e.key === 'Escape' && shopOpen) {
+      shopOpen = false;
+      return render();
+    }
     if (e.key === 'Escape' && selectedItem !== null) {
       selectedItem = null;
       return render();
     }
     if (e.key === 'Escape' && selectedUid !== null) return selectUnit(null);
-    if (e.key === 'd' || e.key === 'D') dispatch({ type: 'reroll' });
+    if ((e.key === 's' || e.key === 'S') && !combat) {
+      shopOpen = !shopOpen;
+      render();
+    } else if (e.key === 'd' || e.key === 'D') dispatch({ type: 'reroll' });
     else if (e.key === 'f' || e.key === 'F') dispatch({ type: 'levelUp' });
     else if (e.key === ' ') {
       e.preventDefault();
