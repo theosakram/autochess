@@ -28,6 +28,7 @@ import {
   type RailPanel,
   commanderPickHtml,
   cardOfferHtml,
+  itemDetailHtml,
   itemOfferHtml,
   commanderPanelHtml,
   traitDetailHtml,
@@ -54,6 +55,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let orbFor: number | null = null;
   // Item whose bearer popup is open.
   let openBearer: number | null = null;
+  // Item whose detail popup is open.
+  let openItem: number | null = null;
   // Unit type whose info popup is open (from the gallery or a trait card).
   let openUnitInfo: string | null = null;
   // Mist Shop slot whose ware is waiting for a pick (Mirror: a unit; picked orbs: a trait).
@@ -215,6 +218,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
+      openItem !== null && p.items.some((i) => i.uid === openItem) ? itemDetailHtml(p, openItem, !combat, state.chosen) : '',
       orbFor !== null && p.orbs.length ? orbChoiceHtml(p, orbFor) : '',
       mistPick !== null && p.mistShop ? mistChoiceHtml(p, mistPick) : '',
       !p.commander ? commanderPickHtml() : '',
@@ -293,8 +297,15 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const target = e.target as HTMLElement;
     // The stage handles its own clicks (units and cells).
     if (target.closest('.stage')) return;
-    // Click-to-equip: click an item or orb to pick it up, then a slot in the Equipment panel.
+    // An item shows its details; unless one is already picked up and this is a slot to put it in.
     const chip = target.closest<HTMLElement>('.item-chip');
+    if (chip?.dataset.item && !(picked && !combat && target.closest('[data-gear-unit]'))) {
+      picked = null;
+      selectedUid = null;
+      openItem = Number(chip.dataset.item);
+      return render();
+    }
+    // Click-to-equip: click an orb, or the popup's Equip, to pick it up, then a slot in the Equipment panel.
     if (!combat) {
       if (picked && target.closest('[data-gear-unit], [data-orb-unit]')) {
         const pick = picked;
@@ -370,7 +381,17 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         openUnitInfo = null;
         render();
       }
-      else if (a === 'closeBearer') {
+      else if (a === 'closeItem') {
+        openItem = null;
+        render();
+      } else if (a === 'pickUpItem') {
+        openItem = null;
+        picked = { kind: 'item', uid: Number(btn.dataset.itemUid) };
+        render();
+      } else if (a === 'takeOffItem') {
+        openItem = null;
+        dispatch({ type: 'unequip', item: Number(btn.dataset.itemUid) });
+      } else if (a === 'closeBearer') {
         openBearer = null;
         render();
       } else if (a === 'closeOrb') {
@@ -413,6 +434,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     }
     if (e.key === 'Escape' && openTrait) return showTrait(null);
     if (e.key === 'Escape' && galleryOpen) return showGallery(false);
+    if (e.key === 'Escape' && openItem !== null) {
+      openItem = null;
+      return render();
+    }
     if (e.key === 'Escape' && openBearer !== null) {
       openBearer = null;
       return render();

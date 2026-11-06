@@ -45,7 +45,9 @@ export interface CommanderPower {
   ward?: WardPower;
   boost?: BoostPower;
   protect?: ProtectPower;
+  roundGold?: { win: number; loss: number }; // extra gold after each fight won or lost (a draw pays nothing)
   pickGold?: number; // gold paid once, when this card is picked
+  pickItem?: string; // item handed over once, when this card is picked
 }
 
 export interface CommanderCard {

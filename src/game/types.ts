@@ -85,7 +85,8 @@ export interface Player {
   commander: string | null; // commander id, picked at the start of the game (see commanders/)
   commanderCard?: string | null; // the commander card picked (a commander id)
   cardOffer?: string[]; // commander cards on offer, waiting for a pick
-  itemOffer?: string[]; // basic items on offer (round 2), waiting for a pick
+  itemOffer?: string[]; // items on offer (round-2 basics, an Equipment Chest), waiting for a pick
+  chests?: { kills: number; earned: number; waiting: number }; // Equipment Chests: kills toward the next, earned so far, not opened yet
   // Heroes marked by commander powers (Kagura's umbrella and dance), by mark kind. See commanders/.
   marks?: Partial<Record<'ward' | 'boost' | 'halo' | 'halo2', { uid: number; defId: string } | null>>;
 }

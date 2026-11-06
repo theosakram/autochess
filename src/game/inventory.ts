@@ -1,7 +1,7 @@
 import { markedUid, powersOf, protectedUids } from './commanders';
-import { MAX_ITEMS_PER_UNIT, stageOf } from './config';
-import { ITEMS } from './items';
-import { nextInt } from './rng';
+import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
+import { EQUIPMENT, ITEMS } from './items';
+import { nextInt, shuffle } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
 import { playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
 import type { GameState, Item, Player, Unit } from './types';
@@ -20,6 +20,9 @@ export function equipBlock(p: Player, item: Item, unit: Unit): string | null {
   if (UNIT_BY_ID[unit.defId].piece) return `The ${UNIT_BY_ID[unit.defId].name} can't hold items`;
   if (def.forbidden && UNIT_BY_ID[unit.defId].traits.includes(def.forbidden)) {
     return `${TRAITS[def.forbidden].name} units can't hold the ${def.name}`;
+  }
+  if (def.membersOnly && !UNIT_BY_ID[unit.defId].traits.includes(def.trait!)) {
+    return `Only ${TRAITS[def.trait!].name} units can hold the ${def.name}`;
   }
   if (item.holder !== unit.uid && slotsUsed(p, unit.uid) + (def.slots ?? 1) > MAX_ITEMS_PER_UNIT) {
     return def.slots && def.slots > 1 ? `The ${def.name} takes all ${def.slots} item slots` : `A unit holds at most ${MAX_ITEMS_PER_UNIT} items`;
@@ -64,11 +67,19 @@ export function syncItems(state: GameState, p: Player): void {
   }
 }
 
-// Puts a basic item from the round-2 offer into the player's items (unequipped) and closes the offer.
-export function takeBasicItem(state: GameState, p: Player, itemId: string): void {
+// Puts an offered item into the player's items (unequipped) and closes the offer; the next chest opens.
+export function takeOfferedItem(state: GameState, p: Player, itemId: string): void {
   p.items.push({ uid: state.nextUid++, id: itemId, tier: 1, holder: null });
   p.itemOffer = undefined;
+  openChest(state, p);
   stageItems(state, p);
+}
+
+// Opens a waiting Equipment Chest, unless an offer is already up: pick 1 of a few random equipment.
+export function openChest(state: GameState, p: Player): void {
+  if (p.itemOffer?.length || !p.chests?.waiting) return;
+  p.chests.waiting--;
+  p.itemOffer = shuffle(state, [...EQUIPMENT]).slice(0, CHEST_OFFER);
 }
 
 // Items whose tier is the game's stage (see ItemDef.tierByStage) catch up with it.

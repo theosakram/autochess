@@ -5,15 +5,17 @@ import type { GameState, Loc, Player } from '../types';
 import { UNIT_BY_ID } from '../units';
 import { angela } from './angela';
 import { kagura } from './kagura';
+import { kenzo } from './kenzo';
 import { lukas } from './lukas';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 
 export type { BeastPower, BoostPower, CommanderDef, CommanderPower, ProtectPower, WardPower } from './types';
 export { ANGELA } from './angela';
 export { KAGURA } from './kagura';
+export { KENZO } from './kenzo';
 export { LUKAS } from './lukas';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo].map((c) => [c.id, c]));
 
 // The board piece a beast power puts on the board (see UnitDef.piece).
 export const BEAST_PIECE = 'divinebeast';
@@ -41,9 +43,9 @@ export function commanderPowers(p: Player): CommanderPower[] {
 }
 
 // Everything working for this player, merged (later powers override earlier ones, field by field).
-// `pickGold` is left out: it's paid once, on the pick.
-export function powersOf(p: Player): Omit<CommanderPower, 'pickGold'> {
-  const { pickGold: _, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
+// `pickGold` and `pickItem` are left out: they're paid once, on the pick.
+export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem'> {
+  const { pickGold: _gold, pickItem: _item, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
   return merged;
 }
 
@@ -119,8 +121,12 @@ export function syncMarks(p: Player): void {
   }
 }
 
-// What picking card `cardId` pays out right away (its gold).
-export const pickGold = (p: Player, cardId: string): number => cardFace(p, cardId).power.pickGold ?? 0;
+// Pays out what picking card `cardId` gives right away: its gold and its item.
+export function payCard(state: GameState, p: Player, cardId: string): void {
+  const { pickGold = 0, pickItem } = cardFace(p, cardId).power;
+  p.gold += pickGold;
+  if (pickItem) p.items.push({ uid: state.nextUid++, id: pickItem, tier: 1, holder: null });
+}
 
 // The cards offered on the card round: the player's own commander's card, then random others.
 export function offerCards(state: GameState, p: Player): string[] {

@@ -14,7 +14,7 @@ import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLev
 import type { GameState, Item, Player, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS } from '../game/units';
 import { portraitHtml } from './portraits';
-import { traitBadgeHtml } from './traitBadges';
+import { bearerBadgeHtml, traitBadgeHtml } from './traitBadges';
 
 // Pure HTML builders. No state, no DOM access: app.ts decides what to show.
 
@@ -47,7 +47,7 @@ export function traitsPanelHtml(p: Player): string {
       const grant = ITEMS[it.id].grantsMembership!;
       const name = `${ITEMS[it.id].name} bearer`;
       return `<button class="trait-tile bearer${effectiveTier(it, levels) ? ' active' : ''}" data-bearer="${it.uid}" title="${name}">
-        <span class="trait-icon">${traitBadgeHtml(grant.trait)}</span>
+        <span class="trait-icon">${bearerBadgeHtml(grant.trait)}</span>
         <span class="trait-name">${name}</span>
         <span class="trait-count">1/1</span>
       </button>`;
@@ -59,7 +59,7 @@ export function traitsPanelHtml(p: Player): string {
     .map((u) => {
       const h = UNIT_BY_ID[u.defId].honorary!;
       return `<button class="trait-tile bearer${levels[h.trait] ? ' active' : ''}" data-select-unit="${u.uid}" title="${UNIT_BY_ID[u.defId].name}: ${TRAITS[h.trait].name} bonus, doesn't count">
-        <span class="trait-icon">${traitBadgeHtml(h.trait)}</span>
+        <span class="trait-icon">${bearerBadgeHtml(h.trait)}</span>
         <span class="trait-name">${UNIT_BY_ID[u.defId].name}</span>
         <span class="trait-count">1/1</span>
       </button>`;
@@ -139,7 +139,7 @@ function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string
     <p class="trait-desc">${descHtml(t, lvl)}</p>
     ${chosen[traitId] ? `<p class="trait-stacks">👑 This game: <b>${UNIT_BY_ID[chosen[traitId]].name}</b></p>` : ''}
     ${t.leader ? leaderLineHtml(traitId, p) : ''}
-    ${p.orb?.trait === traitId ? `<p class="trait-stacks">🔮 Orb: <b>${UNIT_BY_ID[p.orb.defId].name}</b> counts +1</p>` : ''}
+    ${p.orb?.trait === traitId ? `<p class="trait-stacks">🔮 Magic Orb: <b>${UNIT_BY_ID[p.orb.defId].name}</b> counts +1</p>` : ''}
     ${t.stacks ? stacksHtml(traitId, p) : ''}
     ${unlockHtml(traitId, p)}
     ${t.items ? traitItemsHtml(t.items.pool, p) : ''}
@@ -270,7 +270,7 @@ export function traitDetailHtml(traitId: string, p: Player, chosen: Record<strin
 
 // Like a trait chip, for a unit that carries a trait's bonus without being a member.
 const bearerChipHtml = (h: { trait: string; icon: string }) =>
-  `<button class="trait-chip bearer-chip" data-trait="${h.trait}" title="Gets the ${TRAITS[h.trait].name} bonus, doesn't count">${traitBadgeHtml(h.trait)} ${TRAITS[h.trait].name} bearer</button>`;
+  `<button class="trait-chip bearer-chip" data-trait="${h.trait}" title="Gets the ${TRAITS[h.trait].name} bonus, doesn't count">${bearerBadgeHtml(h.trait)} ${TRAITS[h.trait].name} bearer</button>`;
 
 // A small button naming a trait; clicking it opens that trait's popup.
 const traitChipHtml = (id: string) =>
@@ -314,7 +314,7 @@ function crossoverGridHtml(p: Player): string {
     UNITS.filter((u) => !u.summon && has(traitsOf(u), role, 'role') && has(traitsOf(u), faction, 'faction'))
       .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name))
       .map((u) => {
-        const bearer = u.honorary && u.honorary.trait === faction ? `${u.honorary.icon} ` : '';
+        const bearer = u.honorary && u.honorary.trait === faction ? `${bearerBadgeHtml(u.honorary.trait)} ` : '';
         const note = bearer ? ` · ${TRAITS[u.honorary!.trait].name} bearer, not in shop` : '';
         return `<button class="grid-unit tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}" data-unit-info="${u.id}" title="${u.tier}g${note}">${portraitHtml(u.id, 'tiny')}${bearer}${u.name}</button>`;
       })
@@ -327,7 +327,7 @@ function crossoverGridHtml(p: Player): string {
     <thead><tr><th></th>${factions.map((f) => `<th scope="col">${head(f)}</th>`).join('')}</tr></thead>
     <tbody>${rows}</tbody>
   </table></div>
-  <p class="grid-legend">Colour = cost (${[1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-unit tier-${t}">${t}g</span>`).join(' ')}) · bold = on your board · 🧭 = Plane Wanderer (Necromancer reward, not in shop) · click a trait or unit to open it</p>`;
+  <p class="grid-legend">Colour = cost (${[1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-unit tier-${t}">${t}g</span>`).join(' ')}) · bold = on your board · ${bearerBadgeHtml('necromancer')} = Plane Wanderer (Necromancer reward, not in shop) · click a trait or unit to open it</p>`;
 }
 
 // The dock along the bottom: leveling, the shop and the fight button, always in view so buying never
@@ -415,6 +415,9 @@ export function railHtml(open: RailPanel | null, p: Player): string {
   return `<nav class="rail">${buttons}</nav>`;
 }
 
+// A Mist Shop orb by what it boosts. The Magic Orb is the other kind: always 🔮, whatever trait it's set to.
+const orbName = (trait: string) => (TRAITS[trait].kind === 'faction' ? 'Faction Orb' : 'Role Orb');
+
 // Something on its way to a slot: an item (uid), a Mist orb (uid) or an unused Magic Orb.
 export type GearPick = { kind: 'item'; uid: number } | { kind: 'orb'; orb: number | 'magic' };
 
@@ -422,7 +425,7 @@ const samePick = (a: GearPick | null, b: GearPick) =>
   a?.kind === b.kind && (a.kind === 'item' ? a.uid === (b as { uid: number }).uid : a.orb === (b as { orb: number | 'magic' }).orb);
 
 // The player's equipment on top, then every deployed hero with its slots. Equipping happens here:
-// click or drag an item into a hero's slot, or back to the top to take it off.
+// drag an item into a hero's slot, or back to the top to take it off. Clicking one shows what it does.
 export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: GearPick | null = null): string {
   const levels = playerTraits(p);
   const grants = auraGrants(p, levels);
@@ -448,12 +451,12 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
   const mistChip = (o: NonNullable<Player['mistOrbs']>[number], inSlot: boolean) => {
     const holder = nameOf(o.holder);
     const selected = samePick(picked, { kind: 'orb', orb: o.uid });
-    return `<div class="item-chip orb-chip${holder && !inSlot ? ' equipped' : ''}${selected ? ' selected' : ''}" data-orb="${o.uid}" title="Mist orb: +1 ${TRAITS[o.trait].name}${holder ? ` on ${holder}` : ''}">
+    return `<div class="item-chip orb-chip${holder && !inSlot ? ' equipped' : ''}${selected ? ' selected' : ''}" data-orb="${o.uid}" title="${orbName(o.trait)}: +1 ${TRAITS[o.trait].name}${holder ? ` on ${holder}` : ''}">
       <span class="item-icon">${traitBadgeHtml(o.trait)}</span>
     </div>`;
   };
   const magicChip = p.orbs.length
-    ? `<div class="item-chip orb-chip${samePick(picked, { kind: 'orb', orb: 'magic' }) ? ' selected' : ''}" data-orb="magic" title="Magic Orb: put it in a hero's orb slot, then pick a trait">
+    ? `<div class="item-chip orb-chip magic-chip${samePick(picked, { kind: 'orb', orb: 'magic' }) ? ' selected' : ''}" data-orb="magic" title="Magic Orb: put it in a hero's orb slot, then pick a trait">
         <span class="item-icon">🔮</span>${p.orbs.length > 1 ? `<b>×${p.orbs.length}</b>` : ''}
       </div>`
     : '';
@@ -467,7 +470,7 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
       const orb = mist
         ? mistChip(mist, true)
         : p.orb?.defId === def.id
-          ? `<span class="magic-orb" title="Magic Orb: +1 ${TRAITS[p.orb.trait].name}, every ${def.name} you field">${traitBadgeHtml(p.orb.trait)}</span>`
+          ? `<span class="magic-orb" title="Magic Orb: +1 ${TRAITS[p.orb.trait].name}, every ${def.name} you field">🔮${traitBadgeHtml(p.orb.trait)}</span>`
           : '';
       const held = heldBy(p, u.uid);
       const slots: string[] = held.flatMap((it) => [
@@ -494,7 +497,7 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
       ${stash ? `<div class="armory-items">${stash}</div>` : '<p class="traits-empty">No equipment yet.</p>'}
     </div>
     <h3>Heroes</h3>
-    ${heroes ? `<ul class="gear-heroes">${heroes}</ul><p class="traits-empty">Click or drag an item into a slot. Back up top takes it off.</p>` : '<p class="traits-empty">Deploy heroes to equip them.</p>'}
+    ${heroes ? `<ul class="gear-heroes">${heroes}</ul><p class="traits-empty">Click an item to see what it does. Drag it into a slot to equip it; back up top takes it off.</p>` : '<p class="traits-empty">Deploy heroes to equip them.</p>'}
   </section>`;
 }
 
@@ -553,7 +556,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
   const traits = [
     ...def.traits.map((id) => `<button class="chip" data-trait="${id}">${traitBadgeHtml(id)} ${TRAITS[id].name}</button>`),
     ...[...honorary, ...(def.honorary ? [def.honorary] : [])].map(
-      (g) => `<button class="chip" data-trait="${g.trait}" title="Gets the bonuses, doesn't count">${traitBadgeHtml(g.trait)} ${TRAITS[g.trait].name} bearer</button>`,
+      (g) => `<button class="chip" data-trait="${g.trait}" title="Gets the bonuses, doesn't count">${bearerBadgeHtml(g.trait)} ${TRAITS[g.trait].name} bearer</button>`,
     ),
     ...(area === 'board' ? leadsOf(p, levels, uid) : []).map(
       (id) => `<button class="chip" data-trait="${id}">${TRAITS[id].leader!.icon} ${TRAITS[id].leader!.title}</button>`,
@@ -577,11 +580,11 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       )
       .join('')}
     ${autoHalo(p) === uid ? `<p class="orb-line">${MARKS.halo.icon} Protected: the hero with the most items</p>` : ''}
-    ${p.orb?.defId === def.id ? `<p class="orb-line">🔮 Orb: +1 ${traitBadgeHtml(p.orb.trait)} ${TRAITS[p.orb.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
+    ${p.orb?.defId === def.id ? `<p class="orb-line">🔮 Magic Orb: +1 ${TRAITS[p.orb.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
     ${(p.mistOrbs ?? [])
       .filter((o) => o.holder === uid)
       .map(
-        (o) => `<p class="orb-line">🌫️ Mist orb: +1 ${traitBadgeHtml(o.trait)} ${TRAITS[o.trait].name}${area === 'bench' ? ' (when fielded)' : ''}
+        (o) => `<p class="orb-line">${traitBadgeHtml(o.trait)} ${orbName(o.trait)}: +1 ${TRAITS[o.trait].name}${area === 'bench' ? ' (when fielded)' : ''}
           <button class="chip" data-action="unequipMistOrb" data-orb="${o.uid}" title="Back to the inventory">✕</button></p>`,
       )
       .join('')}
@@ -723,7 +726,7 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
   return modalHtml(
     'closeBearer',
     'trait-popup',
-    `<h2 class="trait-title"><span class="trait-icon">${traitBadgeHtml(grant.trait)}</span> ${def.name} bearer <small>1/1</small></h2>
+    `<h2 class="trait-title"><span class="trait-icon">${bearerBadgeHtml(grant.trait)}</span> ${def.name} bearer <small>1/1</small></h2>
     <p class="trait-desc"><b>${who}</b> holds the ${def.icon} ${def.name}.</p>
     <ul class="bearer-facts">
       <li>Gets the ${traitBadgeHtml(trait.id)} ${trait.name} unit bonus: <b>${bonus}</b>.</li>
@@ -731,6 +734,37 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
       ${aura ? `<li>Gives ${auraText(aura)}, to ${aura.receivers} unit${aura.receivers === 1 ? '' : 's'} now.</li>` : ''}
       ${def.forbidden ? `<li>${TRAITS[def.forbidden].name} units can't hold it.</li>` : ''}
     </ul>`,
+  );
+}
+
+// What an item does, who holds it and who can. `actions`: offer to equip or take it off (not in a fight).
+export function itemDetailHtml(p: Player, uid: number, actions: boolean, chosen: Record<string, string> = {}): string {
+  const it = p.items.find((i) => i.uid === uid)!;
+  const def = ITEMS[it.id];
+  const levels = playerTraits(p);
+  const tier = effectiveTier(it, levels);
+  const holder = [...p.board, ...p.bench].find((u) => u?.uid === it.holder);
+  const aura = auraGrants(p, levels, chosen).get(uid);
+  const trait = def.trait ? TRAITS[def.trait] : null;
+  const facts = [
+    holder ? `Held by <b>${UNIT_BY_ID[holder.defId].name} ${'★'.repeat(holder.star)}</b>.` : 'Not equipped.',
+    trait && !tier ? `<b>Inactive:</b> works once ${traitBadgeHtml(trait.id)} ${trait.name} is active.` : '',
+    def.membersOnly ? `Only ${traitBadgeHtml(trait!.id)} ${trait!.name} units can hold it.` : '',
+    def.forbidden ? `${traitBadgeHtml(def.forbidden)} ${TRAITS[def.forbidden].name} units can't hold it.` : '',
+    def.slots && def.slots > 1 ? `Takes ${def.slots} item slots.` : '',
+    aura ? `Gives ${auraText(aura)}, to ${aura.receivers} unit${aura.receivers === 1 ? '' : 's'} now.` : '',
+  ].filter(Boolean);
+  return modalHtml(
+    'closeItem',
+    'trait-popup',
+    `<h2 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name}${trait ? ` <small>tier ${tier || it.tier}</small>` : ''}</h2>
+    <p class="meta">${trait ? `${trait.name} item` : def.exclusive ? 'Commander item' : def.basic ? 'Basic item' : 'Equipment'} · ${def.kind}</p>
+    <p class="trait-desc">${itemText(def, tier || it.tier)}</p>
+    <ul class="bearer-facts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>
+    ${actions ? `<div class="item-actions">
+      <button class="primary" data-action="pickUpItem" data-item-uid="${uid}">${holder ? 'Move' : 'Equip'}</button>
+      ${holder ? `<button data-action="takeOffItem" data-item-uid="${uid}">Take off</button>` : ''}
+    </div>` : ''}`,
   );
 }
 
@@ -799,7 +833,7 @@ export function itemOfferHtml(p: Player): string {
     })
     .join('');
   return `<div class="overlay"><div class="dialog modal commander-pick">
-    <h2 class="trait-title">Choose a basic item</h2>
+    <h2 class="trait-title">${ITEMS[p.itemOffer?.[0] ?? '']?.basic ? 'Choose a basic item' : 'Equipment Chest: choose one'}</h2>
     <p class="meta">It goes to your items: equip it on any hero. Unpicked when the fight starts: the first one.</p>
     <div class="commander-options">${cards}</div>
   </div></div>`;
@@ -821,8 +855,17 @@ export function commanderPanelHtml(p: Player, hp: number): string {
     <p class="commander-text clamp" title="${c.desc.replace(/"/g, '&quot;')}">${c.desc}</p>
     ${markKinds(p).map((k) => markLineHtml(p, k)).join('')}
     ${powersOf(p).protect ? autoHaloLineHtml(p) : ''}
+    ${chestLineHtml(p)}
     ${card ? `<p class="commander-text"><b>${card.card.icon} ${card.card.name}</b>: ${cardFace(p, p.commanderCard!).desc}</p>` : p.cardOffer ? '<p class="meta">A commander card is waiting for your pick.</p>' : ''}
   </section>`;
+}
+
+// Progress toward the next Equipment Chest, once the player owns a chest item.
+function chestLineHtml(p: Player): string {
+  const rule = p.items.map((i) => ITEMS[i.id].chests).find(Boolean);
+  if (!rule) return '';
+  const { kills, earned } = p.chests ?? { kills: 0, earned: 0 };
+  return `<p class="commander-text">Equipment Chests: <b>${earned}/${rule.max}</b>${earned < rule.max ? ` · next at ${kills}/${rule.kills} kills` : ''}</p>`;
 }
 
 // Who holds a commander mark (Kagura's umbrella or dance), or a nudge to place it.

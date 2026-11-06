@@ -177,7 +177,7 @@ export function orbBlock(p: Player, uid: number): string | null {
   if (!unit) return 'No such unit';
   if (UNIT_BY_ID[unit.defId].piece) return `The ${UNIT_BY_ID[unit.defId].name} can't hold an orb`;
   if (p.orb?.defId === unit.defId) return 'It already has the Magic Orb';
-  if (p.mistOrbs?.some((o) => o.holder === uid)) return 'It already holds a Mist orb';
+  if (p.mistOrbs?.some((o) => o.holder === uid)) return 'It already holds a faction or role orb';
   return null;
 }
 

@@ -144,6 +144,21 @@ export function enemyDeaths(result: CombatResult, side: Side): number {
   return result.events.filter((e) => e.type === 'death' && enemies.has(e.id)).length;
 }
 
+// Enemies killed by `killers` (fighter ids) or the summons they made: whoever dealt the first hit that
+// left a target at 0 hp. Kills by trait effects, which have no dealer, count for nobody.
+export function killsBy(result: CombatResult, killers: number[]): number {
+  const ids = new Set(killers);
+  const dead = new Set<number>();
+  let kills = 0;
+  for (const e of result.events) {
+    if (e.type === 'summon' && ids.has(e.owner)) ids.add(e.fighter.id);
+    if ((e.type !== 'attack' && e.type !== 'cast' && e.type !== 'effect') || e.hp > 0 || e.damage <= 0 || dead.has(e.target)) continue;
+    dead.add(e.target);
+    if (ids.has(e.type === 'effect' ? (e.by ?? -1) : e.id)) kills++;
+  }
+  return kills;
+}
+
 // Skills used (real ones and the placeholder cast) by a side's units that have `traitId`.
 export function memberSkills(result: CombatResult, side: Side, traitId: string): number {
   const members = new Set(result.fighters.filter((f) => f.side === side && UNIT_BY_ID[f.defId].traits.includes(traitId)).map((f) => f.id));

@@ -1,6 +1,6 @@
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { COMMANDERS, MARKS, pickGold, pieceBlock, powersOf, type MarkKind } from './commanders';
-import { equipBlock, takeBasicItem } from './inventory';
+import { COMMANDERS, MARKS, payCard, pieceBlock, powersOf, type MarkKind } from './commanders';
+import { equipBlock, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
@@ -171,7 +171,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!orbOptions(p.orbs[0], unit.defId).includes(action.trait)) return fail('That trait is not on offer');
       // A unit type holding a Mist orb (on any of its copies) can't take the Magic Orb.
       const copies = new Set([...p.board, ...p.bench].flatMap((u) => (u && u.defId === unit.defId ? [u.uid] : [])));
-      if (p.mistOrbs?.some((o) => o.holder !== null && copies.has(o.holder))) return fail('It already holds a Mist orb');
+      if (p.mistOrbs?.some((o) => o.holder !== null && copies.has(o.holder))) return fail('It already holds a faction or role orb');
       p.orbs.shift();
       p.orb = { defId: unit.defId, trait: action.trait };
       return OK;
@@ -188,13 +188,13 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!p.cardOffer?.includes(action.card)) return fail('That card is not on offer');
       p.commanderCard = action.card;
       p.cardOffer = undefined;
-      p.gold += pickGold(p, action.card);
+      payCard(state, p, action.card);
       return OK;
     }
 
     case 'pickItem': {
       if (!p.itemOffer?.includes(action.item)) return fail('That item is not on offer');
-      takeBasicItem(state, p, action.item);
+      takeOfferedItem(state, p, action.item);
       return OK;
     }
 

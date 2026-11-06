@@ -13,6 +13,7 @@ import { sheepStick } from './sheepStick';
 import { retribution } from './retribution';
 import { revitalize } from './revitalize';
 import { berserkerFury } from './berserkerFury';
+import { blackSash } from './blackSash';
 import { bladeOfDespair } from './bladeOfDespair';
 import { demonHunterSword } from './demonHunterSword';
 import { divineGlaive } from './divineGlaive';
@@ -41,6 +42,7 @@ export { JIMAT } from './jimat';
 export { KERIS } from './keris';
 export { OFFERING } from './offering';
 export { BERSERKER_FURY } from './berserkerFury';
+export { BLACK_SASH } from './blackSash';
 export { BLADE_OF_DESPAIR } from './bladeOfDespair';
 export { DEMON_HUNTER_SWORD } from './demonHunterSword';
 export { DIVINE_GLAIVE } from './divineGlaive';
@@ -53,11 +55,11 @@ export { WAR_AXE } from './warAxe';
 export { WINTER_CROWN } from './winterCrown';
 
 // Every item in the game. A new item is a new module plus one entry here.
-export const ITEMS: Record<string, ItemDef> = Object.fromEntries([keris, blangkon, jimat, offering, warAxe, haasClaw, goldenStaff, bladeOfDespair, berserkerFury, demonHunterSword, seaHalberd, iceQueenWand, glowingWand, holyCrystal, divineGlaive, winterCrown, spellbladeTalisman, purpleBuff, sheepStick, thiefTool, aegis, inspire, purify, retribution, revitalize].map((i) => [i.id, i]));
+export const ITEMS: Record<string, ItemDef> = Object.fromEntries([keris, blangkon, jimat, offering, blackSash, warAxe, haasClaw, goldenStaff, bladeOfDespair, berserkerFury, demonHunterSword, seaHalberd, iceQueenWand, glowingWand, holyCrystal, divineGlaive, winterCrown, spellbladeTalisman, purpleBuff, sheepStick, thiefTool, aegis, inspire, purify, retribution, revitalize].map((i) => [i.id, i]));
 
 // Equipment: the items no trait owns. Monster rounds drop them; they work on anyone.
 export const EQUIPMENT: string[] = Object.values(ITEMS)
-  .filter((i) => !i.trait && !i.basic)
+  .filter((i) => !i.trait && !i.basic && !i.exclusive)
   .map((i) => i.id);
 
 // Basic items: also trait-free, but only from the round-2 pick (see BASIC_ITEM_ROUND).

@@ -679,7 +679,7 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .item-chip.equipped { opacity: 0.55; }
 .item-chip.inactive { opacity: 0.45; }
 .item-chip.selected { box-shadow: 0 0 0 2px var(--accent); cursor: pointer; }
-.orb-chip { border-color: #c77dff; }
+.magic-chip { border-color: #c77dff; }
 
 /* A deployed hero: who it is, its orb slot, its equipment slots. */
 .gear-heroes { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
@@ -715,7 +715,9 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .gear-slot .orb-chip { border-radius: 50%; }
 .gear-slot .item-chip b { position: absolute; right: 0; bottom: -2px; font-size: 9px; text-shadow: 0 0 2px #000; }
 .gear-slot .item-chip .item-icon { font-size: 15px; }
-.magic-orb { font-size: 15px; line-height: 1; cursor: help; }
+.magic-orb { position: relative; font-size: 15px; line-height: 1; cursor: help; }
+/* Its trait, small in the corner: the 🔮 stays the main thing, so it can't pass for a faction or role orb. */
+.magic-orb .trait-badge { position: absolute; right: -5px; bottom: -4px; font-size: 7px; }
 /* While an item or orb is on the move, the slots that can take it light up. */
 .armory.picking-item .gear-slot:not(.orb-slot), .armory.picking-orb .orb-slot { border-style: solid; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); cursor: pointer; }
 
@@ -735,6 +737,8 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .trait-items li.owned { opacity: 1; }
 .trait-items li small { color: var(--muted); }
 .trait-items .trait-desc { margin-top: 2px; }
+.item-actions { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.bearer-facts { text-align: left; }
 .orb-line { margin: 6px 0 0; font-size: 12px; color: #c77dff; }
 .orb-use {
   width: 100%;

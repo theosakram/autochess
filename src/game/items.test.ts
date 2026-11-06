@@ -4,7 +4,7 @@ import { simulateCombat } from './combat';
 import { TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { effectiveTier, fieldStats, syncItems } from './inventory';
-import { BLANGKON, itemCard, JIMAT, KERIS, OFFERING } from './items';
+import { BLANGKON, itemCard, ITEMS, JIMAT, KERIS, OFFERING } from './items';
 import { returnShop } from './shop';
 import { CULT_OF_FIRE, GUSTIWANA, traitCounts } from './traits';
 import type { GameState, Player, Star } from './types';
@@ -35,6 +35,22 @@ function field(p: Player, units: [defId: string, star: Star, cell: number][]): n
 const gwBoard = (p: Player, n: number) => field(p, GW_UNITS.slice(0, n).map((d, i) => [d, 1, i] as [string, Star, number]));
 
 describe('Gustiwana items', () => {
+  test('only Gustiwana units can hold them, and not through an orb', () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    p.board[0] = { uid: 1, defId: 'kindler', star: 1 };
+    p.board[1] = { uid: 2, defId: 'penari', star: 1 };
+    p.orb = { defId: 'kindler', trait: 'gustiwana' };
+    for (const id of ['keris', 'blangkon', 'jimat']) {
+      const item = { uid: 500, id, tier: 1, holder: null };
+      p.items = [item];
+      expect(applyAction(state, p.id, { type: 'equip', item: 500, unit: 1 })).toEqual({ ok: false, error: `Only Gustiwana units can hold the ${ITEMS[id].name}` });
+      expect(applyAction(state, p.id, { type: 'equip', item: 500, unit: 2 }).ok).toBe(true);
+    }
+  });
+
   test('1 / 2 / 3 items at Gustiwana 2 / 4 / 6, random order, no repeats, kept when the trait drops', () => {
     const state = newGame();
     const p = state.players[0];

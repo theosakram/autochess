@@ -25,6 +25,8 @@ export const CARD_OFFER_SIZE = 4;
 // The round every player picks a basic item, out of this many random ones.
 export const BASIC_ITEM_ROUND = 2;
 export const BASIC_ITEM_OFFER = 3;
+// Equipment offered by an Equipment Chest (see ItemDef.chests): pick 1.
+export const CHEST_OFFER = 3;
 
 // The game's stage: 1 for rounds 1-10, 2 for 11-20, and so on.
 export const stageOf = (round: number) => Math.ceil(round / 10);

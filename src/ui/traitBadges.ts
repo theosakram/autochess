@@ -41,17 +41,30 @@ export const TRAIT_BADGES: Record<string, TraitBadge> = {
   weaponmaster: { color: 0x552a2a, ink: 0xf06b6e, d: 'M3 3H7L21 17L17 21L3 7Z M21 3H17L3 17L7 21L21 7Z' },
 };
 
+// Bearers get a trait's bonus without being members, so they must not look like members. By the
+// trait they carry: Plane Wanderers (Necromancer) and the Pyre Offering's bearer (Cult of Fire).
+export const BEARER_BADGES: Record<string, TraitBadge> = {
+  necromancer: {
+    color: 0x3a3f4f,
+    ink: 0xe8e2c8,
+    d: 'M12 3C17 3 21 7 21 12C21 17 17 21 12 21C7 21 3 17 3 12C3 7 7 3 12 3Z',
+    cut: 'M17 7L13.5 13.5L7 17L10.5 10.5Z',
+  },
+  cultoffire: { color: 0x6b3a00, ink: 0xffc46b, d: 'M6 3H18C18 9 16 12 13.5 13V18H17V21H7V18H10.5V13C8 12 6 9 6 3Z' },
+};
+
 const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 export const paths = (d: string) => d.split(/(?=M)/).map((s) => s.trim());
 
 // One badge as an SVG drawing, each shape its own path (Pixi would read shapes in one path as holes).
-export function traitIconSvg(id: string): string {
-  const b = TRAIT_BADGES[id];
+export function badgeSvg(b: TraitBadge): string {
   const draw = (d: string, fill: string) => paths(d).map((s) => `<path d="${s}" fill="${fill}"/>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">${draw(b.d, hex(b.ink ?? 0xffffff))}${b.cut ? draw(b.cut, hex(b.color)) : ''}</svg>`;
 }
 
-export function traitBadgeHtml(id: string): string {
-  return `<span class="trait-badge" style="background:${hex(TRAIT_BADGES[id].color)}" title="${TRAITS[id].name}">${traitIconSvg(id)}</span>`;
-}
+const badgeHtml = (b: TraitBadge, title: string) => `<span class="trait-badge" style="background:${hex(b.color)}" title="${title}">${badgeSvg(b)}</span>`;
+
+export const traitBadgeHtml = (id: string) => badgeHtml(TRAIT_BADGES[id], TRAITS[id].name);
+
+export const bearerBadgeHtml = (trait: string) => badgeHtml(BEARER_BADGES[trait], `${TRAITS[trait].name} bearer`);

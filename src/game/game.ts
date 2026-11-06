@@ -1,5 +1,5 @@
 import { runBot } from './bot';
-import { enemyDeaths, memberSkills, simulateCombat, type CombatResult } from './combat';
+import { enemyDeaths, killsBy, memberSkills, simulateCombat, type CombatResult } from './combat';
 import {
   BASE_DAMAGE,
   BASE_INCOME,
@@ -19,14 +19,15 @@ import {
   START_LEVEL,
 } from './config';
 import { copiesOf, mergeUnits } from './merge';
-import { stageItems, takeBasicItem } from './inventory';
+import { openChest, stageItems, takeOfferedItem } from './inventory';
 import { addXp, interest, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop } from './shop';
 import { claimShopSlot, canClaim } from './actions';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
-import { offerCards, pickGold } from './commanders';
+import { offerCards, payCard, powersOf } from './commanders';
+import type { Side } from './grid';
 import { BASIC_ITEMS, EQUIPMENT, isItemCard, ITEMS } from './items';
 import { MONSTER_ID, monsterSide } from './monsters';
 import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
@@ -120,6 +121,8 @@ export function startRound(state: GameState): RoundBonus[] {
   if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
   // The basic item round: a few random basic items, pick one.
   if (state.round === BASIC_ITEM_ROUND) for (const p of alive) p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
+  // Equipment Chests earned last fight (one at a time; the rest open as each is picked).
+  for (const p of alive) openChest(state, p);
   // Units deployed at the start of the round feed counting traits (before bots rearrange).
   for (const p of alive) roundStacks(p);
   const bonuses = alive.flatMap((p) =>
@@ -161,10 +164,10 @@ export function resolveCombat(state: GameState): Fight[] {
     if (p.cardOffer?.length) {
       p.commanderCard = p.cardOffer[0];
       p.cardOffer = undefined;
-      p.gold += pickGold(p, p.commanderCard);
+      payCard(state, p, p.commanderCard);
     }
-    // Likewise an unpicked basic item: the first on offer.
-    if (p.itemOffer?.length) takeBasicItem(state, p, p.itemOffer[0]);
+    // Likewise unpicked items: the first on offer, chest after chest.
+    while (p.itemOffer?.length) takeOfferedItem(state, p, p.itemOffer[0]);
     syncPlayer(state, p);
   }
   if (isMonsterRound(state.round)) return monsterRound(state);
@@ -188,11 +191,34 @@ export function resolveCombat(state: GameState): Fight[] {
     const tally = (side: 0 | 1) => (traitId: string) => ({ kills: enemyDeaths(result, side), memberSkills: memberSkills(result, side, traitId) });
     gainStacks(home, result.traits[0], tally(0));
     if (!ghost) gainStacks(away, result.traits[1], tally(1));
+    afterFight(home, result, 0);
+    if (!ghost) afterFight(away, result, 1);
     fights.push({ home: home.id, away: away.id, ghost, result, damage });
   }
 
   eliminate(state, alive.length);
   return fights;
+}
+
+// What a player gets from a fight of their own: commander gold for the result, and Equipment Chests.
+function afterFight(p: Player, result: CombatResult, side: Side): void {
+  const gold = powersOf(p).roundGold;
+  if (gold && result.winner !== null) p.gold += result.winner === side ? gold.win : gold.loss;
+  earnChests(p, result, side);
+}
+
+// Adds the kills of this side's chest item holder, and turns them into chests up to the item's limit.
+export function earnChests(p: Player, result: CombatResult, side: Side): void {
+  const holders = result.fighters.filter((f) => f.side === side && f.items.some((i) => ITEMS[i.id].chests));
+  if (holders.length === 0) return;
+  const rule = ITEMS[holders[0].items.find((i) => ITEMS[i.id].chests)!.id].chests!;
+  const chests = (p.chests ??= { kills: 0, earned: 0, waiting: 0 });
+  chests.kills += killsBy(result, holders.map((f) => f.id));
+  while (chests.kills >= rule.kills && chests.earned < rule.max) {
+    chests.kills -= rule.kills;
+    chests.earned++;
+    chests.waiting++;
+  }
 }
 
 // Everyone fights the round's monsters. Win or lose, each player gets random equipment; losing still
@@ -205,6 +231,7 @@ function monsterRound(state: GameState): Fight[] {
     const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
     if (result.winner === 1) p.hp -= damage;
     gainStacks(p, result.traits[0], (traitId: string) => ({ kills: enemyDeaths(result, 0), memberSkills: memberSkills(result, 0, traitId) }));
+    afterFight(p, result, 0);
     const drops = Array.from({ length: EQUIPMENT_DROPS }, () => EQUIPMENT[nextInt(state, EQUIPMENT.length)]).filter((id) => id in ITEMS);
     for (const id of drops) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
     return { home: p.id, away: MONSTER_ID, ghost: false, result, damage, monster: true, drops };

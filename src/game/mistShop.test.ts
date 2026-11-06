@@ -103,7 +103,7 @@ describe('Mist Shop', () => {
     p.mistShop[1] = 'pickfactionorb';
     buy(state, p, 1, 'mistbender');
     const second = p.mistOrbs![1];
-    expect(equip(9002, second.uid)).toEqual({ ok: false, error: 'It already holds a Mist orb' });
+    expect(equip(9002, second.uid)).toEqual({ ok: false, error: 'It already holds a faction or role orb' });
     p.orb = { defId: 'wisp', trait: 'spectre' };
     expect(equip(9003, second.uid)).toEqual({ ok: false, error: 'It already has the Magic Orb' });
     expect(equip(9001, second.uid).ok).toBe(true);
@@ -122,7 +122,7 @@ describe('Mist Shop', () => {
     expect(equip(9003, orb.uid).ok).toBe(true);
     p.orbs = [12345];
     const options = (await import('./orb')).orbOptions(12345, 'wisp');
-    expect(applyAction(state, p.id, { type: 'useOrb', unit: 9003, trait: options[0] })).toEqual({ ok: false, error: 'It already holds a Mist orb' });
+    expect(applyAction(state, p.id, { type: 'useOrb', unit: 9003, trait: options[0] })).toEqual({ ok: false, error: 'It already holds a faction or role orb' });
   });
 
   test('random 4- and 5-gold units, for 32 and 40', async () => {

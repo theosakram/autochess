@@ -4,7 +4,7 @@ import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
 import { traitBadgeHtml } from './traitBadges';
-import { armoryHtml, bearerDetailHtml, galleryHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
+import { armoryHtml, bearerDetailHtml, galleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
 
 describe('orb choice popup', () => {
   // Regression: options carried data-trait, which the click handler treats as "open trait popup",
@@ -184,6 +184,49 @@ describe('equipment panel', () => {
     expect(html).toContain('data-orb="magic"');
     const slot = html.slice(html.indexOf('data-orb-unit="1"'), html.indexOf('gear-slots'));
     expect(slot).toContain('data-orb="50"');
+  });
+
+  test('a faction or role orb shows its trait; the Magic Orb stays a 🔮', () => {
+    const p = setup();
+    p.mistOrbs = [{ uid: 50, trait: 'mage', holder: 1 }];
+    p.board[2] = { uid: 4, defId: 'polaris', star: 1 };
+    p.orb = { defId: 'polaris', trait: 'astral' };
+    const html = armoryHtml(p);
+    const slot = (uid: number) => html.slice(html.indexOf(`data-orb-unit="${uid}"`)).split('</div>')[0];
+    expect(slot(1)).toContain(traitBadgeHtml('mage'));
+    expect(slot(1)).not.toContain('🔮');
+    expect(slot(1)).toContain('Role Orb');
+    expect(slot(4)).toContain('🔮');
+    expect(slot(4)).toContain(traitBadgeHtml('astral'));
+  });
+});
+
+describe('item popup', () => {
+  const setup = () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    p.board[0] = { uid: 1, defId: 'penari', star: 1 };
+    p.items = [{ uid: 9, id: 'keris', tier: 1, holder: 1 }, { uid: 10, id: 'waraxe', tier: 1, holder: null }];
+    return p;
+  };
+
+  test('tells what the item does, who holds it and who may', () => {
+    const html = itemDetailHtml(setup(), 9, true);
+    expect(html).toContain('Keris');
+    expect(html).toContain('Mortal Strike');
+    expect(html).toContain('Penari');
+    expect(html).toContain('Only');
+    expect(html).toContain('data-action="takeOffItem"');
+    expect(html).toContain('data-action="closeItem"');
+  });
+
+  test('a loose item can be equipped; in a fight there are no buttons', () => {
+    const p = setup();
+    expect(itemDetailHtml(p, 10, true)).toContain('data-action="pickUpItem"');
+    expect(itemDetailHtml(p, 10, true)).not.toContain('takeOffItem');
+    expect(itemDetailHtml(p, 10, false)).not.toContain('pickUpItem');
   });
 });
 

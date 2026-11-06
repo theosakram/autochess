@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
+import { EQUIPMENT } from './items';
+import { openChest } from './inventory';
+import { killsBy, type CombatResult } from './combat';
+import { earnChests } from './game';
 import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, KAGURA, LUKAS, markedUid, markKinds, powersOf, protectedUids } from './commanders';
 import { ITEMS } from './items';
 import { fieldStats } from './inventory';
@@ -24,6 +28,114 @@ function game(): GameState {
 }
 const beastCell = (p: Player) => p.board.findIndex((u) => u?.defId === BEAST_PIECE);
 const row = (cell: number) => Math.floor(cell / BOARD_COLS);
+
+// A made-up fight: fighter 0 (holding the Black Sash) and 1 against 2..; each entry is a [dealer, target] kill.
+function killFight(kills: [number, number][]): CombatResult {
+  const fighter = (id: number, side: 0 | 1, items: { id: string; tier: number }[] = []) => ({ id, side, items });
+  return {
+    fighters: [fighter(0, 0, [{ id: 'blacksash', tier: 1 }]), fighter(1, 0), ...kills.map((_, i) => fighter(i + 2, 1))],
+    events: kills.map(([id, target]) => ({ t: 1, type: 'attack', id, target, damage: 50, hp: 0, mana: 0, targetMana: 0 })),
+  } as unknown as CombatResult;
+}
+
+describe('Kenzo', () => {
+  function kenzoGame() {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) applyAction(state, p.id, { type: 'pickCommander', commander: 'kenzo' });
+    return state;
+  }
+
+  test('a win pays 2 extra gold, a loss 3', () => {
+    const state = kenzoGame();
+    state.round = 3;
+    const [strong, weak] = state.players;
+    strong.board = strong.board.map(() => null);
+    weak.board = weak.board.map(() => null);
+    strong.board[3] = { uid: 901, defId: 'knight', star: 3 };
+    weak.board[3] = { uid: 902, defId: 'footman', star: 1 };
+    strong.gold = weak.gold = 0;
+    const [fight] = resolveCombat(state);
+    expect(fight.result.winner).not.toBeNull();
+    const winner = state.players.find((p) => p.id === (fight.result.winner === 0 ? fight.home : fight.away))!;
+    const loser = state.players.find((p) => p !== winner)!;
+    expect(winner.gold).toBe(2);
+    expect(loser.gold).toBe(3);
+  });
+
+  test('another commander taking the card gets the gold, not the sash', () => {
+    const state = game();
+    const p = state.players[0];
+    p.cardOffer = ['kenzo'];
+    applyAction(state, p.id, { type: 'pickCard', card: 'kenzo' });
+    expect(powersOf(p).roundGold).toEqual({ win: 2, loss: 3 });
+    expect(p.items.some((i) => i.id === 'blacksash')).toBe(false);
+  });
+
+  test('his own card hands over the sash and keeps his gold', () => {
+    const state = kenzoGame();
+    const p = state.players[0];
+    p.cardOffer = ['kenzo'];
+    applyAction(state, p.id, { type: 'pickCard', card: 'kenzo' });
+    expect(p.items.filter((i) => i.id === 'blacksash')).toHaveLength(1);
+    expect(powersOf(p).roundGold).toEqual({ win: 2, loss: 3 });
+  });
+
+  test('the sash is +60% attack and magic attack, and never drops', () => {
+    expect(EQUIPMENT).not.toContain('blacksash');
+    expect(ITEMS.blacksash.mods(1)).toEqual([{ stat: 'atk', pct: 0.6 }, { stat: 'ap', pct: 0.6 }]);
+  });
+
+  test('only kills by the holder or its summons count, once per target', () => {
+    const result = killFight([[0, 2], [1, 3], [0, 3], [0, 4]]);
+    expect(killsBy(result, [0])).toBe(2);
+    result.events.unshift({ t: 0, type: 'summon', owner: 0, fighter: { id: 9 } } as never, { t: 0, type: 'attack', id: 9, target: 7, damage: 5, hp: 0, mana: 0, targetMana: 0 });
+    expect(killsBy(result, [0])).toBe(3);
+  });
+
+  test('every 3 holder kills earn a chest, kept across fights, up to 4', () => {
+    const state = kenzoGame();
+    const p = state.players[0];
+    earnChests(p, killFight([[0, 2], [0, 3]]), 0);
+    expect(p.chests).toEqual({ kills: 2, earned: 0, waiting: 0 });
+    earnChests(p, killFight([[0, 2], [0, 3], [1, 4]]), 0);
+    expect(p.chests).toEqual({ kills: 1, earned: 1, waiting: 1 });
+    earnChests(p, killFight(Array.from({ length: 30 }, (_, i): [number, number] => [0, i + 2])), 0);
+    expect(p.chests!.earned).toBe(4);
+    expect(p.chests!.waiting).toBe(4);
+  });
+
+  test('a chest offers 3 equipment to pick from; the next opens after the pick; the fight picks for you', () => {
+    const state = kenzoGame();
+    const p = state.players[0];
+    p.chests = { kills: 0, earned: 3, waiting: 3 };
+    const before = p.items.length;
+    openChest(state, p);
+    expect(p.itemOffer).toHaveLength(3);
+    expect(new Set(p.itemOffer).size).toBe(3);
+    for (const id of p.itemOffer!) expect(EQUIPMENT).toContain(id);
+    expect(applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer![1] }).ok).toBe(true);
+    expect(p.items).toHaveLength(before + 1);
+    expect(p.itemOffer).toHaveLength(3);
+    expect(p.chests.waiting).toBe(1);
+    state.round = 3;
+    resolveCombat(state);
+    expect(p.items).toHaveLength(before + 3);
+    expect(p.itemOffer).toBeUndefined();
+  });
+
+  test('real fights count: a strong sash holder earns kills and chests', () => {
+    const state = kenzoGame();
+    state.round = 3;
+    const [a, b] = state.players;
+    a.board = a.board.map(() => null);
+    b.board = b.board.map(() => null);
+    a.board[3] = { uid: 901, defId: 'knight', star: 3 };
+    a.items.push({ uid: 903, id: 'blacksash', tier: 1, holder: 901 });
+    for (let c = 0; c < 4; c++) b.board[c] = { uid: 910 + c, defId: 'footman', star: 1 };
+    resolveCombat(state);
+    expect((a.chests?.kills ?? 0) + (a.chests?.earned ?? 0) * 3).toBeGreaterThan(0);
+  });
+});
 
 describe('commanders', () => {
   test('a commander is picked once; Lukas puts his beast on the back row, taking no slot', () => {

@@ -19,7 +19,7 @@ export function runBot(state: GameState, p: Player): void {
     applyAction(state, p.id, { type: 'pickCommander', commander: ids[nextInt(state, ids.length)] });
   }
   if (p.cardOffer?.length) applyAction(state, p.id, { type: 'pickCard', card: p.cardOffer[nextInt(state, p.cardOffer.length)] });
-  if (p.itemOffer?.length) applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[nextInt(state, p.itemOffer.length)] });
+  while (p.itemOffer?.length) applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[nextInt(state, p.itemOffer.length)] });
   placeMarks(state, p);
 
   for (let i = 0; i < p.shop.length; i++) {

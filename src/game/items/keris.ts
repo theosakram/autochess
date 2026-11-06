@@ -14,6 +14,7 @@ export const keris: ItemDef = {
   icon: '🗡️',
   kind: 'offense',
   trait: 'gustiwana',
+  membersOnly: true,
   maxTier: 4,
   desc: `+${pct(KERIS.attack)} attack and magic attack. Mortal Strike: every ${KERIS.every}s, hits all enemies for {strike} of attack as pure damage.`,
   values: () => ({ strike: KERIS.mortalStrike.map(pct) }),

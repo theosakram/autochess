@@ -1027,7 +1027,7 @@ describe('Mist Ward', () => {
     expect(b.log.hits).toEqual([]);
     b.log.shieldEnds[0]!();
     expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
-    expect(b.log.hits.every((h) => h.raw === MIST_WARD.shield[1] && h.effect === 'mistblast' && !h.basic)).toBe(true);
+    expect(b.log.hits.every((h) => h.raw === MIST_WARD.blast[1] && h.effect === 'mistblast' && !h.basic)).toBe(true);
   });
 
   test('in combat: the shield bursts when broken or run out, and it casts often', () => {
@@ -1386,14 +1386,15 @@ describe('Mage skills', () => {
 });
 
 describe('Starward', () => {
-  test('passive: whole-fight shields on the allies directly left and right, scaled to their own max hp', () => {
+  test('passive: whole-fight shields on itself and the allies directly left and right, scaled to their own max hp', () => {
     const b = fakeBattle([{ x: 3, y: 1 }]);
     b.caster.star = 2;
     // Caster at (3,5): (2,5) and (4,5) flank it; (3,4) is in front, not beside.
     b.allies.push({ ...b.caster, id: 70, x: 2, y: 5, maxHp: 800 }, { ...b.caster, id: 71, x: 4, y: 5, maxHp: 1200 }, { ...b.caster, id: 72, x: 3, y: 4 });
     b.atStart('starward');
-    expect(b.log.shieldTargets.sort()).toEqual([70, 71]);
-    expect(b.log.shields.map((s) => s.amount).sort((x, y) => x - y)).toEqual([800 * STARWARD.shield[1], 1200 * STARWARD.shield[1]]);
+    expect(b.log.shieldTargets.sort((x, y) => x - y)).toEqual([b.caster.id, 70, 71]);
+    const hp = [b.caster.maxHp, 800, 1200].sort((x, y) => x - y);
+    expect(b.log.shields.map((s) => s.amount).sort((x, y) => x - y)).toEqual(hp.map((h) => h * STARWARD.shield[1]));
     expect(b.log.shields.every((s) => s.seconds >= 45)).toBe(true);
   });
 

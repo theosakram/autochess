@@ -3,7 +3,7 @@ import { ITEMS } from '../../game/items';
 import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
 import { PORTRAITS } from '../portraits';
-import { TRAIT_BADGES, traitIconSvg } from '../traitBadges';
+import { badgeSvg, BEARER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
 import { COLORS, FONT, mix, STAR_COLORS, TIER_COLORS } from './theme';
 
 export interface TokenSpec {
@@ -30,18 +30,18 @@ export interface TokenView {
 const text = (value: string, size: number, fill: number, weight: '400' | '700' | '900' = '400') =>
   new Text({ text: value, style: { fontFamily: FONT, fontSize: size, fill, fontWeight: weight } });
 
-// One parsed drawing per trait, shared by every token: a board rebuilds its tokens on each action.
-const ICONS = new Map<string, GraphicsContext>();
-const iconOf = (id: string) => ICONS.get(id) ?? ICONS.set(id, new GraphicsContext().svg(traitIconSvg(id))).get(id)!;
+// One parsed drawing per badge, shared by every token: a board rebuilds its tokens on each action.
+const ICONS = new Map<TraitBadge, GraphicsContext>();
+const iconOf = (b: TraitBadge) => ICONS.get(b) ?? ICONS.set(b, new GraphicsContext().svg(badgeSvg(b))).get(b)!;
 
-// A trait's round badge, centred on (0, 0): the same one the HTML side shows.
-function traitBadge(id: string, size: number): Container {
+// A round badge, centred on (0, 0): the same one the HTML side shows.
+function drawBadge(b: TraitBadge, size: number): Container {
   const badge = new Container();
-  const icon = new Graphics(iconOf(id));
+  const icon = new Graphics(iconOf(b));
   const scale = (size * 0.72) / 24;
   icon.scale.set(scale);
   icon.position.set(-12 * scale);
-  badge.addChild(new Graphics().circle(0, 0, size / 2).fill(TRAIT_BADGES[id].color).stroke({ width: 1, color: 0x000000, alpha: 0.5 }), icon);
+  badge.addChild(new Graphics().circle(0, 0, size / 2).fill(b.color).stroke({ width: 1, color: 0x000000, alpha: 0.5 }), icon);
   return badge;
 }
 
@@ -131,8 +131,8 @@ export function makeToken(s: TokenSpec): TokenView {
   };
   if (w > 60) {
     const size = small * 1.3;
-    [...def.traits, ...(def.honorary ? [def.honorary.trait] : [])].forEach((id, i) => {
-      const badge = traitBadge(id, size);
+    [...def.traits.map((id) => TRAIT_BADGES[id]), ...(def.honorary ? [BEARER_BADGES[def.honorary.trait]] : [])].forEach((b, i) => {
+      const badge = drawBadge(b, size);
       badge.position.set(-half + 3 + size / 2 + i * (size + 1), -half + 3 + barSpace + size / 2);
       root.addChild(badge);
     });

@@ -72,6 +72,7 @@ export interface ItemDef {
   maxTier: number;
   tierFromTrait?: boolean; // works at its trait's level instead of an upgradable tier
   forbidden?: string; // members of this trait can't hold it
+  membersOnly?: true; // only members of its `trait` can hold it
   // One sentence for every tier; each {key} is filled from values(), one value per tier.
   desc: string;
   values(): Record<string, string[]>;
@@ -114,6 +115,10 @@ export interface ItemDef {
   // Unique: each fight, the holder also gets this many different random equipment copied from the pool
   // (never itself), for that fight only.
   copies?: number;
+  // Never dropped, offered or copied: only a commander card hands it out.
+  exclusive?: true;
+  // Unique: every `kills` enemies the holder kills, across fights, earn an Equipment Chest, up to `max` a game.
+  chests?: { kills: number; max: number };
   // A basic item: offered on BASIC_ITEM_ROUND (pick 1 of a few), never dropped by monsters.
   basic?: true;
   // Its tier is the game's stage (1 per 10 rounds: 1-10, 11-20, ...), up to maxTier; set every round.

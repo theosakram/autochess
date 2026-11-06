@@ -14,6 +14,7 @@ export const blangkon: ItemDef = {
   icon: '🧢',
   kind: 'defense',
   trait: 'gustiwana',
+  membersOnly: true,
   maxTier: 4,
   desc: `+{hp} max HP. At battle start, stuns enemies in the ${BLANGKON.area.width}×${BLANGKON.area.depth} tiles in front for {stun}.`,
   values: () => ({ hp: BLANGKON.hp.map(pct), stun: BLANGKON.stun.map((s) => `${s}s`) }),

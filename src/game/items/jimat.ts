@@ -14,6 +14,7 @@ export const jimat: ItemDef = {
   icon: '📿',
   kind: 'utility',
   trait: 'gustiwana',
+  membersOnly: true,
   maxTier: 4,
   desc: `${pct(JIMAT.lifesteal)} lifesteal and ${pct(JIMAT.spellLifesteal)} spell lifesteal. Deals +{amp} damage.`,
   values: () => ({ amp: JIMAT.damageAmp.map(pct) }),
