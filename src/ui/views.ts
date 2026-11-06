@@ -1,12 +1,13 @@
 import { BASE_INCOME, REROLL_COST, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, isItemCard, ITEMS, type ItemDef } from '../game/items';
+import { MIST_WARES, mistCoins, orbBlock } from '../game/mistShop';
 import { orbOptions } from '../game/orb';
 import { SKILLS } from '../game/skills';
 import { copiesOf, findCopies } from '../game/merge';
 import { boardCount, freeSlotCount, interest, levelUpCost, xpToNext } from '../game/player';
 import { attackInterval, type StatKey, type StatMod, type Stats } from '../game/stats';
-import { playerTraits, TRAITS, traitCounts, traitLevel, unitStats } from '../game/traits';
+import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
 import type { GameState, Item, Player, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS } from '../game/units';
 
@@ -17,7 +18,7 @@ const isChosen = (chosen: Record<string, string>, defId: string) => Object.value
 
 // Traits with at least one unit on the board, active first: icon plus count/next breakpoint.
 export function traitsPanelHtml(p: Player): string {
-  const counts = traitCounts(p.board, p.orb);
+  const counts = playerTraitCounts(p);
   const tiles = Object.entries(counts)
     .map(([id, n]) => ({ t: TRAITS[id], n, lvl: traitLevel(id, n) }))
     .sort((a, b) => b.lvl - a.lvl || b.n - a.n)
@@ -103,7 +104,7 @@ function traitItemsHtml(itemIds: string[], p: Player): string {
 function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string>, heading: 'h2' | 'h3'): string {
   const { board } = p;
   const t = TRAITS[traitId];
-  const n = traitCounts(board, p.orb)[traitId] ?? 0;
+  const n = playerTraitCounts(p)[traitId] ?? 0;
   const lvl = traitLevel(traitId, n);
   const owned = new Set(board.flatMap((u) => (u ? [u.defId] : [])));
   const bps = t.breakpoints.map((b, i) => `<span class="${i < lvl ? 'on' : ''}${i === lvl - 1 ? ' current' : ''}">${b}</span>`).join('');
@@ -160,18 +161,55 @@ function stacksHtml(traitId: string, p: Player): string {
   return `<p class="trait-stacks">${rule.label}: <b>${n}</b> / ${rule.max}</p>${rewards ? `<ul class="stack-rewards">${rewards}</ul>` : ''}`;
 }
 
-// Trait shops beside the board, open while any member is fielded. Wares come later.
+// The Mist Shop beside the board, while any Mistbender is fielded: coins, the 3 wares, what's been bought.
 export function sideShopsHtml(p: Player): string {
-  return Object.values(TRAITS)
-    .filter((t) => t.sideShop && p.board.some((u) => u && UNIT_BY_ID[u.defId].traits.includes(t.id)))
-    .map(
-      (t) => `<section class="side-shop">
-        <button class="side-shop-head" data-trait="${t.id}">${t.icon} ${t.sideShop!.title}</button>
-        <p class="side-shop-coins"><b>${p.stacks[t.id] ?? 0}</b> ${t.stacks?.label ?? ''}</p>
-        <p class="side-shop-empty">Wares coming soon</p>
-      </section>`,
-    )
+  const t = TRAITS.mistbender;
+  if (!p.mistShop || !p.board.some((u) => u && UNIT_BY_ID[u.defId].traits.includes(t.id))) return '';
+  const coins = mistCoins(p);
+  const wares = p.mistShop
+    .map((id, slot) => {
+      const w = MIST_WARES[id];
+      return `<button class="mist-ware" data-action="mistBuy" data-slot="${slot}" ${coins < w.price ? 'disabled' : ''} title="${w.desc}">
+        <span class="mist-ware-icon">${w.icon}</span>
+        <span class="mist-ware-name">${w.name}</span>
+        <b class="mist-ware-price">${w.price}</b>
+      </button>`;
+    })
     .join('');
+  const owned = [
+    p.mistBonus?.atk ? `🗡️ +${Math.round(p.mistBonus.atk * 100)}% atk & ap` : '',
+    p.mistBonus?.def ? `🛡️ +${Math.round(p.mistBonus.def * 100)}% def` : '',
+    ...(p.mistOrbs ?? []).map((o) => {
+      const holder = [...p.board, ...p.bench].find((u) => u?.uid === o.holder);
+      return `${TRAITS[o.trait].icon} ${holder ? `on ${UNIT_BY_ID[holder.defId].name}` : 'in inventory: open a unit to put it on'}`;
+    }),
+  ].filter(Boolean);
+  return `<section class="side-shop">
+    <button class="side-shop-head" data-trait="${t.id}">${t.icon} ${t.sideShop!.title}</button>
+    <p class="side-shop-coins"><b>${coins}</b> ${t.stacks?.label ?? ''}</p>
+    <div class="mist-wares">${wares}</div>
+    ${owned.length ? `<p class="mist-owned">${owned.join(' · ')}</p>` : ''}
+  </section>`;
+}
+
+// The pick for a Mist ware that needs one: one of your units (Mirror), or a faction / role (orbs).
+export function mistChoiceHtml(p: Player, slot: number): string {
+  const w = MIST_WARES[p.mistShop![slot]];
+  const options =
+    w.choose === 'unit'
+      ? [...p.board, ...p.bench]
+          .flatMap((u) => (u && UNIT_BY_ID[u.defId].shop !== false ? [u] : []))
+          .map((u) => `<button class="chip" data-action="mistPick" data-choice="${u.uid}">${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}</button>`)
+      : Object.values(TRAITS)
+          .filter((t) => t.kind === w.choose)
+          .map((t) => `<button class="chip" data-action="mistPick" data-choice="${t.id}">${t.icon} ${t.name}</button>`);
+  return modalHtml(
+    'closeMistPick',
+    'trait-popup',
+    `<h2 class="trait-title">${w.icon} ${w.name} <small>${w.price} Mist coins</small></h2>
+    <p class="trait-desc">${w.desc}</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">Nothing to pick.</p>'}</div>`,
+  );
 }
 
 // The grave beside the board: every counting trait with rewards, once it has shown up this game.
@@ -253,7 +291,7 @@ function crossoverGridHtml(p: Player): string {
   const head = (id: string | null) =>
     id === null ? '<span class="grid-none">none</span>' : `<button class="grid-head" data-trait="${id}" title="${TRAITS[id].name}">${TRAITS[id].icon}<span>${TRAITS[id].name}</span></button>`;
   const cell = (role: string | null, faction: string | null) =>
-    UNITS.filter((u) => has(traitsOf(u), role, 'role') && has(traitsOf(u), faction, 'faction'))
+    UNITS.filter((u) => !u.summon && has(traitsOf(u), role, 'role') && has(traitsOf(u), faction, 'faction'))
       .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name))
       .map((u) => {
         const bearer = u.honorary && u.honorary.trait === faction ? `${u.honorary.icon} ` : '';
@@ -273,7 +311,7 @@ function crossoverGridHtml(p: Player): string {
 }
 
 export function shopHtml(p: Player, locked: boolean, chosen: Record<string, string>): string {
-  const counts = traitCounts(p.board, p.orb);
+  const counts = playerTraitCounts(p);
   const cards = p.shop
     .map((id, slot) => {
       if (!id) return `<div class="shop-card empty"></div>`;
@@ -415,6 +453,21 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
     ${traits ? `<div class="chips">${traits}</div>` : ''}
     ${p.orb?.defId === def.id ? `<p class="orb-line">🔮 Orb: +1 ${TRAITS[p.orb.trait].icon} ${TRAITS[p.orb.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
     ${p.orbs.length ? `<button class="orb-use" data-action="openOrb" data-unit="${uid}">🔮 Use Magic Orb</button>` : ''}
+    ${(p.mistOrbs ?? [])
+      .filter((o) => o.holder === uid)
+      .map(
+        (o) => `<p class="orb-line">🌫️ Mist orb: +1 ${TRAITS[o.trait].icon} ${TRAITS[o.trait].name}${area === 'bench' ? ' (when fielded)' : ''}
+          <button class="chip" data-action="unequipMistOrb" data-orb="${o.uid}" title="Back to the inventory">✕</button></p>`,
+      )
+      .join('')}
+    ${(p.mistOrbs ?? [])
+      .filter((o) => o.holder !== uid)
+      .map((o) => {
+        const block = orbBlock(p, uid);
+        const from = [...p.board, ...p.bench].find((u) => u?.uid === o.holder);
+        return `<button class="orb-use" data-action="equipMistOrb" data-orb="${o.uid}" data-unit="${uid}" ${block ? `disabled title="${block}"` : ''}>🌫️ ${from ? 'Move' : 'Put'} Mist orb here: +1 ${TRAITS[o.trait].icon} ${TRAITS[o.trait].name}${from ? ` (from ${UNIT_BY_ID[from.defId].name})` : ''}</button>`;
+      })
+      .join('')}
     <dl>
       ${row('HP', 'hp')}
       ${row('Attack', 'atk')}
@@ -428,6 +481,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       ${row('Mana', 'maxMana')}
       ${optional('Mana regen', 'manaRegen', (n) => `${fmt(n)}/s`)}
       ${optional('Damage amp', 'damageAmp', (n) => `${fmt(n * 100)}%`)}
+      ${optional('Damage taken', 'damageTaken', (n) => `${fmt(n * 100)}%`)}
       ${optional('Armor shred', 'armorShred')}
       ${optional('Crit chance', 'critChance', (n) => `${fmt(n * 100)}%`)}
       ${optional('Skill damage', 'skillAmp', (n) => `${fmt(n * 100)}%`)}
@@ -449,11 +503,11 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
 export function orbChoiceHtml(p: Player, uid: number): string {
   const unit = [...p.board, ...p.bench].find((u) => u?.uid === uid)!;
   const def = UNIT_BY_ID[unit.defId];
-  const before = traitCounts(p.board, p.orb);
+  const before = playerTraitCounts(p);
   const rows = orbOptions(p.orbs[0], def.id)
     .map((id) => {
       const t = TRAITS[id];
-      const after = traitCounts(p.board, { defId: def.id, trait: id })[id] ?? 0;
+      const after = traitCounts(p.board, { defId: def.id, trait: id }, fieldedMistOrbs(p))[id] ?? 0;
       const from = before[id] ?? 0;
       const bp = traitLevel(id, after) > traitLevel(id, from) ? ` · reaches ${t.breakpoints[traitLevel(id, after) - 1]}!` : '';
       const own = def.traits.includes(id) ? 'counts double' : 'random pick';
@@ -564,7 +618,7 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
 
 // A player's active synergies, strongest first: icon and the breakpoint reached. Each opens its trait.
 function synergyChipsHtml(p: Player): string {
-  const counts = traitCounts(p.board, p.orb);
+  const counts = playerTraitCounts(p);
   const chips = Object.entries(playerTraits(p))
     .map(([id, lvl]) => ({ t: TRAITS[id], lvl, n: counts[id] ?? 0 }))
     .sort((a, b) => b.lvl - a.lvl || b.n - a.n || a.t.name.localeCompare(b.t.name))

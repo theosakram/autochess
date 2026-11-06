@@ -20,6 +20,7 @@ export interface UnitDef {
   locked?: true; // in a player's shop only once something unlocks it for them (Player.unlocked)
   shopTier?: Tier; // the shop odds column it's rolled under, if not its own tier
   freeSlot?: true; // doesn't count toward the board limit (level)
+  summon?: true; // only exists inside a fight, summoned by a skill: never owned, shown or sold
   // Gets this trait's member bonuses without being a member or counting toward it (like an item bearer).
   honorary?: { trait: string; icon: string };
   attackType?: 'physical' | 'magic'; // damage type of basic attacks; physical if unset
@@ -29,6 +30,12 @@ export interface Unit {
   uid: number;
   defId: string;
   star: Star;
+}
+
+export interface MistOrb {
+  uid: number;
+  trait: string;
+  holder: number | null; // unit uid
 }
 
 export interface Item {
@@ -63,6 +70,11 @@ export interface Player {
   promotions?: { defId: string; star: Star }[]; // merges since the last sync, for traits that react to them
   gifts?: string[]; // free units already taken from the pool, waiting for bench room
   unlocked?: string[]; // locked unit ids this player's shop may now offer
+  mistShop?: string[]; // the Mist Shop's 3 wares on offer (see mistShop.ts), once it has opened
+  mistBonus?: { atk: number; def: number }; // bought Blades / Shields: % attack and magic attack, % armor and mr, for every fielded unit
+  // Mist orbs (from the Mist Shop), held like items: +1 to `trait` while the holder is fielded. Back to
+  // the inventory (holder null) when the holder leaves; movable any time. See mistShop.ts.
+  mistOrbs?: MistOrb[];
   items: Item[];
   orbs: number[]; // unused Magic Orbs (each one's seed)
   orb: Orb | null; // the one in use

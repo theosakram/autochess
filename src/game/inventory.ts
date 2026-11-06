@@ -1,7 +1,7 @@
 import { MAX_ITEMS_PER_UNIT } from './config';
 import { ITEMS } from './items';
 import { nextInt } from './rng';
-import { applyMods, type StatKey, type Stats } from './stats';
+import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
 import { playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
 import type { GameState, Item, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
@@ -91,13 +91,22 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
   const stats = new Map<number, Stats>();
   const auras = new Map<number, AuraGrant>();
   const leaders = fieldLeaders(p, levels);
+  const bonus = p.mistBonus;
+  const extra: StatMod[] = bonus
+    ? [
+        { stat: 'atk', pct: bonus.atk },
+        { stat: 'ap', pct: bonus.atk },
+        { stat: 'armor', pct: bonus.def },
+        { stat: 'mr', pct: bonus.def },
+      ]
+    : [];
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
     const own = UNIT_BY_ID[u.defId].honorary;
     const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
     const leads = Object.keys(leaders).filter((id) => leaders[id] === u.uid);
-    stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads }));
+    stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads, extra }));
   });
   for (const holder of p.board) {
     if (!holder) continue;

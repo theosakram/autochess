@@ -60,7 +60,7 @@ export interface TraitDef {
   opener?(level: number): Opener; // members only
   // At game start, one member of these tiers is picked at random as the chosen unit, for every player, all game.
   chosen?: { tiers: number[] };
-  roundStart?(level: number): RoundStart;
+  roundStart?(level: number): RoundStart | undefined;
   // A member reached a new star by merging, while the trait is active: hand out a free unit
   // (one of `gift`, at random, from the pool) and/or unlock a locked unit for this player's shop.
   onPromote?(level: number, def: import('../types').UnitDef, star: import('../types').Star): { gift?: string[]; unlock?: string } | null;
@@ -90,5 +90,6 @@ export interface TraitDef {
     rewards?: { at: number; star: 1 | 2 | 3 }[];
     // The reward unit: one of these, rolled per player when the counter first appears, then fixed all game.
     rewardUnits?: string[];
+    fullAt?: number; // at this level the counter jumps to its max at once
   };
 }

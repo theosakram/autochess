@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { memberSkills } from './combat';
 import { createGame, resolveCombat } from './game';
-import { MISTBENDER } from './traits';
+import { syncPlayer } from './sync';
+import { MISTBENDER, TRAITS } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNITS } from './units';
 import { sideShopsHtml } from '../ui/views';
@@ -38,17 +39,19 @@ describe('Mistbender', () => {
     const p = state.players[0];
     expect(sideShopsHtml(p)).toBe('');
     field(p, [['hazeguard', 1, 3]]);
+    syncPlayer(state, p); // the shop opens on the next sync after a Mistbender is fielded
     expect(sideShopsHtml(p)).toContain('Mist Shop');
     p.bench[0] = p.board[3];
     p.board[3] = null;
     expect(sideShopsHtml(p)).toBe('');
   });
 
-  test('coins per Mistbender skill: 1 at 2 Mistbenders, 2 at 3; nothing with only one', () => {
+  test('coins per Mistbender skill: 1 from a single Mistbender (and 2), 2 at 3', () => {
+    expect(TRAITS.mistbender.breakpoints).toEqual([1, 3]);
     for (const [units, perSkill] of [
+      [['hazeguard'], MISTBENDER.coinsPerSkill[0]],
       [['hazeguard', 'fogfist'], MISTBENDER.coinsPerSkill[0]],
       [['hazeguard', 'fogfist', 'mistoracle'], MISTBENDER.coinsPerSkill[1]],
-      [['hazeguard'], 0],
     ] as const) {
       const state = newGame();
       const [a, b] = state.players;

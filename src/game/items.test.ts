@@ -107,7 +107,7 @@ describe('item effects in combat', () => {
       [['titan', 3, 3], ['paladin', 3, 6]],
     );
     const holder = r.fighters.find((f) => f.defId === 'prajurit')!;
-    const strikes = r.events.filter((e) => e.type === 'effect' && e.by === holder.id);
+    const strikes = r.events.filter((e) => e.type === 'effect' && e.effect === 'keris' && e.by === holder.id);
     const every = KERIS.every * TICKS_PER_SECOND;
     expect(strikes.length).toBeGreaterThan(0);
     expect(strikes.every((e) => e.t % every === 0)).toBe(true);
@@ -127,7 +127,7 @@ describe('item effects in combat', () => {
   });
 
   test('Jimat: every heal is lifesteal from a hit the holder just dealt', () => {
-    const r = duel({ id: 'jimat', tier: 1 }, [['prajurit', 2, 3], ['penari', 1, 20]], [['titan', 2, 3]]);
+    const r = duel({ id: 'jimat', tier: 1 }, [['prajurit', 2, 3], ['dalang', 1, 20]], [['titan', 2, 3]]); // no healer: every heal is lifesteal
     const holder = r.fighters.find((f) => f.defId === 'prajurit')!;
     const heals = r.events.filter((e) => e.type === 'heal' && e.id === holder.id);
     expect(heals.length).toBeGreaterThan(0);
@@ -137,10 +137,11 @@ describe('item effects in combat', () => {
       const hit = r.events
         .slice(0, r.events.indexOf(heal))
         .reverse()
-        .find((e) => (e.type === 'attack' || e.type === 'cast') && e.id === holder.id);
+        .find((e) => ((e.type === 'attack' || e.type === 'cast') && e.id === holder.id) || (e.type === 'effect' && e.by === holder.id));
       expect(hit?.t).toBe(heal.t);
-      if (hit?.type !== 'attack' && hit?.type !== 'cast') throw new Error('heal without a hit');
-      const rate = hit.type === 'attack' ? JIMAT.lifesteal : JIMAT.spellLifesteal;
+      if (hit?.type !== 'attack' && hit?.type !== 'cast' && hit?.type !== 'effect') throw new Error('heal without a hit');
+      // Basic attacks (and skills' enhanced basic hits) heal by lifesteal, the rest by spell lifesteal.
+      const rate = hit.type === 'cast' ? JIMAT.spellLifesteal : Math.max(JIMAT.lifesteal, JIMAT.spellLifesteal);
       expect(heal.amount).toBeLessThanOrEqual(Math.round(hit.damage * rate));
     }
   });
@@ -148,7 +149,7 @@ describe('item effects in combat', () => {
   test('items do nothing without Gustiwana active', () => {
     // A lone Gustiwana unit: trait inactive, so no Mortal Strike.
     const r = duel({ id: 'keris', tier: 3 }, [['prajurit', 3, 3]], [['titan', 3, 3]]);
-    expect(r.events.some((e) => e.type === 'effect')).toBe(false);
+    expect(r.events.some((e) => e.type === 'effect' && e.effect === 'keris')).toBe(false);
     expect(r.fighters[0].items).toEqual([]);
   });
 });

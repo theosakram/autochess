@@ -6,6 +6,7 @@ import { TRAITS } from '../game/traits';
 import type { GameState, Loc, Player } from '../game/types';
 import { UNIT_BY_ID } from '../game/units';
 import { createMeter, meterHtml, recordEvent, type Meter } from './meter';
+import { MIST_WARES } from '../game/mistShop';
 import { Stage, type Playback } from './stage/stage';
 import {
   armoryHtml,
@@ -14,6 +15,7 @@ import {
   type GalleryTab,
   gameOverHtml,
   graveHtml,
+  mistChoiceHtml,
   sideShopsHtml,
   hudHtml,
   orbChoiceHtml,
@@ -45,6 +47,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let openBearer: number | null = null;
   // Unit type whose info popup is open (from the gallery or a trait card).
   let openUnitInfo: string | null = null;
+  // Mist Shop slot whose ware is waiting for a pick (Mirror: a unit; picked orbs: a trait).
+  let mistPick: number | null = null;
   let galleryOpen = false;
   let galleryTab: GalleryTab = 'cards';
   // Own unit shown in the right column; cleared once it's no longer owned (sold, merged away).
@@ -168,6 +172,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
       orbFor !== null && p.orbs.length ? orbChoiceHtml(p, orbFor) : '',
+      mistPick !== null && p.mistShop ? mistChoiceHtml(p, mistPick) : '',
       over ? gameOverHtml(p, state.players.length) : '',
     ].join('');
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) {
@@ -278,7 +283,25 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (btn) {
       const a = btn.dataset.action;
       if (a === 'closeTrait') showTrait(null);
-      else if (a === 'closeUnitInfo') {
+      else if (a === 'mistBuy') {
+        const slot = Number(btn.dataset.slot);
+        const ware = MIST_WARES[me().mistShop![slot]];
+        if (ware.choose) {
+          mistPick = slot;
+          render();
+        } else dispatch({ type: 'mistBuy', slot });
+      } else if (a === 'equipMistOrb') {
+        dispatch({ type: 'equipMistOrb', orb: Number(btn.dataset.orb), unit: Number(btn.dataset.unit) });
+      } else if (a === 'unequipMistOrb') {
+        dispatch({ type: 'unequipMistOrb', orb: Number(btn.dataset.orb) });
+      } else if (a === 'mistPick') {
+        const slot = mistPick!;
+        mistPick = null;
+        dispatch({ type: 'mistBuy', slot, choice: btn.dataset.choice! });
+      } else if (a === 'closeMistPick') {
+        mistPick = null;
+        render();
+      } else if (a === 'closeUnitInfo') {
         openUnitInfo = null;
         render();
       }

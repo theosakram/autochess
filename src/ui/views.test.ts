@@ -139,7 +139,7 @@ describe('unit info popup', () => {
     for (const hp of [900, 1620, 2916]) expect(html).toContain(`<td>${hp}</td>`);
     expect(html).toContain('data-trait="spectre"');
     expect(unitInfoHtml('wanderingblade', p)).toContain('Not in the shop');
-    expect(unitInfoHtml('galekin', p)).toContain('placeholder');
+    expect(unitInfoHtml('eidolon', p)).toContain('Spectral Cataclysm');
   });
 });
 

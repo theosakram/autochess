@@ -18,6 +18,7 @@ export const commandersMark: SkillDef = {
     `Active: for ${COMMANDERS_MARK.seconds}s, gains +{as} attack speed and bursts at ${COMMANDERS_MARK.focusMarks} marks.`,
   values: () => ({ burst: COMMANDERS_MARK.burst.map(pct), as: COMMANDERS_MARK.attackSpeed.map(pct) }),
   onBasicHit(api, caster, target) {
+    if (target.hp <= 0) return;
     const key = `mark${target.id}`;
     const marks = (caster.skill[key] ?? 0) + 1;
     const needed = api.hasBuff(caster, 'commandersmark') ? COMMANDERS_MARK.focusMarks : COMMANDERS_MARK.marks;

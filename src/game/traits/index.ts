@@ -58,7 +58,8 @@ const hasTrait = (u: Unit, traitId: string) => UNIT_BY_ID[u.defId].traits.includ
 
 // Each distinct unit counts once, so duplicates don't stack a trait. An orb adds +1 to its trait
 // while its unit type is fielded.
-export function traitCounts(board: (Unit | null)[], orb: Orb | null = null): Record<string, number> {
+// The Magic Orb and any Mist orbs each add +1 to their trait while their unit type is fielded.
+export function traitCounts(board: (Unit | null)[], orb: Orb | null = null, more: Orb[] = []): Record<string, number> {
   const seen = new Set<string>();
   const counts: Record<string, number> = {};
   for (const u of board) {
@@ -66,7 +67,7 @@ export function traitCounts(board: (Unit | null)[], orb: Orb | null = null): Rec
     seen.add(u.defId);
     for (const t of UNIT_BY_ID[u.defId].traits) counts[t] = (counts[t] ?? 0) + 1;
   }
-  if (orb && seen.has(orb.defId)) counts[orb.trait] = (counts[orb.trait] ?? 0) + 1;
+  for (const o of orb ? [orb, ...more] : more) if (seen.has(o.defId)) counts[o.trait] = (counts[o.trait] ?? 0) + 1;
   return counts;
 }
 
@@ -75,9 +76,9 @@ export function traitLevel(traitId: string, count: number): number {
   return TRAITS[traitId].breakpoints.filter((b) => count >= b).length;
 }
 
-export function activeTraits(board: (Unit | null)[], orb: Orb | null = null): TraitLevels {
+export function activeTraits(board: (Unit | null)[], orb: Orb | null = null, more: Orb[] = []): TraitLevels {
   const levels: TraitLevels = {};
-  for (const [id, n] of Object.entries(traitCounts(board, orb))) {
+  for (const [id, n] of Object.entries(traitCounts(board, orb, more))) {
     const lvl = traitLevel(id, n);
     if (lvl > 0) levels[id] = lvl;
   }
@@ -92,13 +93,14 @@ export interface Field {
   stacks: Record<string, number>; // the owner's counters
   items: { id: string; tier: number }[]; // the unit's active items and their working tiers
   honorary: string[]; // traits it gets member bonuses for without being (or counting as) a member
+  extra: StatMod[]; // flat player-wide bonuses (e.g. Mist Shop Blades), on top of traits and items
   leads: string[]; // traits it's the leader of (see traitLeaders)
   scale: number; // hp/atk multiplier, for the balance tool
 }
 
 // Everything the active traits do to one unit.
 export function unitMods(def: UnitDef, field: Partial<Field> = {}): StatMod[] {
-  const { levels = {}, cell = -1, chosen = {}, stacks = {}, items = [], honorary = [], leads = [] } = field;
+  const { levels = {}, cell = -1, chosen = {}, stacks = {}, items = [], honorary = [], leads = [], extra = [] } = field;
   return [
     ...Object.entries(levels).flatMap(([id, level]) =>
       TRAITS[id].mods({
@@ -111,6 +113,7 @@ export function unitMods(def: UnitDef, field: Partial<Field> = {}): StatMod[] {
       }),
     ),
     ...items.flatMap((it) => ITEMS[it.id].mods(it.tier)),
+    ...extra,
   ];
 }
 
@@ -203,7 +206,16 @@ export function unitTriggers(levels: TraitLevels, def: UnitDef): { trait: string
 }
 
 // A player's active traits: their board plus their orb.
-export const playerTraits = (p: Pick<Player, 'board' | 'orb'>) => activeTraits(p.board, p.orb);
+export const playerTraits = (p: Pick<Player, 'board' | 'orb' | 'mistOrbs'>) => activeTraits(p.board, p.orb, fieldedMistOrbs(p));
+// A player's trait counts: board, Magic Orb and Mist orbs.
+export const playerTraitCounts = (p: Pick<Player, 'board' | 'orb' | 'mistOrbs'>) => traitCounts(p.board, p.orb, fieldedMistOrbs(p));
+// Mist orbs on fielded units, as orbs on their unit type. Each counts once, even on two copies of a type.
+export function fieldedMistOrbs(p: Pick<Player, 'board' | 'mistOrbs'>): Orb[] {
+  return (p.mistOrbs ?? []).flatMap((o) => {
+    const holder = p.board.find((u) => u && u.uid === o.holder);
+    return holder ? [{ defId: holder.defId, trait: o.trait }] : [];
+  });
+}
 
 // Round-start economy of every active trait for this player.
 export function roundStartEffects(p: Pick<Player, 'board' | 'orb'>): { trait: string; effect: RoundStart }[] {
@@ -223,10 +235,10 @@ export function unitOpeners(levels: TraitLevels, def: UnitDef): { source: string
 
 // Board swaps [from, to] that seat each tile trait's members on its tiles first,
 // then fill any tiles still empty with other units. Pure: the board isn't touched.
-export function tileSeating(board: (Unit | null)[], orb: Orb | null = null): [number, number][] {
+export function tileSeating(board: (Unit | null)[], orb: Orb | null = null, more: Orb[] = []): [number, number][] {
   const b = board.slice();
   const swaps: [number, number][] = [];
-  for (const [id, level] of Object.entries(activeTraits(board, orb))) {
+  for (const [id, level] of Object.entries(activeTraits(board, orb, more))) {
     const tiles = TRAITS[id].tiles?.(level) ?? [];
     for (const membersOnly of [true, false]) {
       for (const to of tiles) {

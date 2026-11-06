@@ -113,16 +113,39 @@ kbd {
 .side-shop-head { border: none; background: none; padding: 0; font-weight: 700; color: var(--text); }
 .side-shop-coins { margin: 6px 0 2px; font-size: 12px; color: var(--muted); }
 .side-shop-coins b { font-size: 18px; color: var(--text); }
-.side-shop-empty { margin: 0; font-size: 11px; color: var(--muted); font-style: italic; }
+.side-shop { width: 168px; }
+.mist-wares { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.mist-ware {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid #6f8fa6;
+  border-radius: 6px;
+  background: #1e2630;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+.mist-ware:disabled { opacity: 0.45; cursor: not-allowed; }
+.mist-ware:not(:disabled):hover { border-color: var(--accent); }
+.mist-ware-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mist-ware-price { color: #c8d6e5; }
+.mist-owned { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
 .grave-count { font-size: 20px; }
 .grave small { font-size: 10px; color: var(--muted); text-align: center; }
 .stack-rewards { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .stack-rewards .done { color: var(--accent); }
-@media (max-width: 1100px) {
-  .graves { position: static; flex-direction: row; justify-content: center; margin-bottom: 6px; }
+/* Beside the board only where there's room for it; otherwise a row under the board. */
+@media (max-width: 1700px) {
+  .graves { position: static; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start; margin: 6px 0; }
   .grave { flex-direction: row; width: auto; padding: 4px 12px; border-radius: 16px; gap: 8px; }
-  .side-shop { width: auto; display: flex; align-items: center; gap: 8px; padding: 4px 12px; }
-  .side-shop-coins, .side-shop-empty { margin: 0; }
+  .side-shop { width: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; }
+  .side-shop-coins { margin: 0; }
+  .mist-wares { flex-direction: row; margin: 0; }
+  .mist-ware { min-width: 140px; }
+  .mist-owned { margin: 0; flex-basis: 100%; text-align: center; }
 }
 .stage canvas { display: block; touch-action: none; }
 

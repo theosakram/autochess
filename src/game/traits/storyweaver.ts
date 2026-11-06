@@ -1,4 +1,3 @@
-import { CAST_MULT } from '../config';
 import { pct } from './format';
 import type { TraitDef } from './types';
 
@@ -6,7 +5,7 @@ import type { TraitDef } from './types';
 export const STORYWEAVER = {
   eligibleTiers: [4], // who can be rolled as the game's protagonist
   perStack: [0.04, 0.1], // protagonist damage per story stack
-  enhancedCast: 1, // placeholder enhanced skill until real abilities: +50% cast damage
+  enhancedCast: 1, // the protagonist's skill damage bonus (+100%): real skills and the placeholder cast alike
   stacksPerFight: 3, // enemy deaths that count, per fight
   maxStacks: 30,
 };
@@ -28,7 +27,7 @@ export const storyweaver: TraitDef = {
   mods: ({ level, chosen, stacks }) =>
     chosen
       ? [
-          { stat: 'castMult', add: CAST_MULT * STORYWEAVER.enhancedCast },
+          { stat: 'skillAmp', add: STORYWEAVER.enhancedCast },
           { stat: 'damageAmp', add: STORYWEAVER.perStack[level - 1] * stacks },
         ]
       : [],

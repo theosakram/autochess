@@ -1,5 +1,6 @@
 import { syncItems } from './inventory';
 import { mergeUnits } from './merge';
+import { openMistShop, syncMistOrbs } from './mistShop';
 import { nextInt } from './rng';
 import { playerTraits, TRAITS } from './traits';
 import type { GameState, Player } from './types';
@@ -9,14 +10,19 @@ import { UNIT_BY_ID } from './units';
 export function syncPlayer(state: GameState, p: Player): void {
   syncItems(state, p);
   // A counter appears (at 0) the first time its trait is active, and stays for the rest of the game.
-  for (const id of Object.keys(playerTraits(p))) {
+  const levels = playerTraits(p);
+  for (const id of Object.keys(levels)) {
     const rule = TRAITS[id].stacks;
-    if (!rule || p.stacks[id] !== undefined) continue;
-    p.stacks[id] = 0;
+    if (!rule) continue;
+    if (p.stacks[id] === undefined) p.stacks[id] = 0;
+    if (rule.fullAt && levels[id] >= rule.fullAt) p.stacks[id] = rule.max;
+    if (p.rewardUnit?.[id]) continue;
     rewardUnit(state, p, id);
   }
   claimRewards(state, p);
   handlePromotions(state, p);
+  if (p.board.some((u) => u && UNIT_BY_ID[u.defId].traits.includes('mistbender'))) openMistShop(state, p);
+  syncMistOrbs(p);
 }
 
 // Lets active traits react to this player's merges (free units, unlocks), then hands out gifts.

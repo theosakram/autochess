@@ -9,6 +9,7 @@ export interface SkillFighter extends Point {
   hp: number;
   maxHp: number;
   dealt: number; // damage it has dealt so far this fight
+  chosen: string | null; // id of the trait whose chosen unit (e.g. Storyweaver protagonist) this is, if active
   stats: Stats;
   skill: Record<string, number>; // the skill's own memory for this fight (e.g. casts so far)
 }
@@ -27,7 +28,10 @@ export interface SkillApi {
   dashTo(f: SkillFighter, to: Point): void;
   guard(f: SkillFighter, seconds: number, reduction: number): void; // takes less damage for a while
   // Absorbs the next `amount` damage (after armor/mr) for `seconds`. Replaces any shield it had.
-  shield(f: SkillFighter, amount: number, seconds: number): void;
+  // Adds a shield layer from `effect` on top of any others: damage eats the newest layer first. A new
+  // layer from the same effect replaces the old one. `onEnd`, if given, runs once when this layer ends:
+  // broken, run out, or replaced (not if the unit is dead by then).
+  shield(f: SkillFighter, amount: number, seconds: number, effect: string, onEnd?: () => void): void;
   // Runs `fn` every `seconds`, `times` times, first one `seconds` from now. Stops if `f` dies;
   // keeps going while it's stunned.
   repeat(f: SkillFighter, seconds: number, times: number, fn: () => void): void;
@@ -36,10 +40,39 @@ export interface SkillApi {
   // Adds flat stats to a unit for `seconds` (Infinity = the rest of the fight). Re-applying the same
   // effect to the same unit refreshes it instead of stacking.
   buff(target: SkillFighter, mods: { stat: StatKey; add: number }[], seconds: number, effect: string, by: SkillFighter): void;
+  // Takes a buff off early (e.g. one that lasts a number of attacks rather than seconds).
+  unbuff(f: SkillFighter, effect: string): void;
   // Whether `f` currently has a buff from `effect`.
   hasBuff(f: SkillFighter, effect: string): boolean;
   // Cosmetic: shows `count` marks from `effect` on `target` (0 clears them).
   showMarks(target: SkillFighter, count: number, effect: string): void;
+  // Puts a summon of `defId` on the side of `owner`, with `hpShare` of the owner's max hp, on a free cell
+  // beside `opts.at` (default: beside the owner), or null if there's no room. Two kinds:
+  //  - a mirror (`mirror` set): never acts on its own, repeats `mirror` x each of the owner's basic
+  //    attacks on the same target (crits included), and vanishes when the owner dies;
+  //  - a fighter (no `mirror`): moves and attacks on its own with `atk` (as attack and magic attack),
+  //    and stays when the owner dies.
+  summon(owner: SkillFighter, defId: string, opts: { hpShare: number; mirror?: number; atk?: number; at?: Point }): SkillFighter | null;
+  // `f`'s living summons.
+  minionsOf(f: SkillFighter): SkillFighter[];
+  // Taunts `target` for `seconds`: it must go after `by` (while `by` lives).
+  taunt(target: SkillFighter, by: SkillFighter, seconds: number): void;
+  // Links `targets`: while `by` lives, damage any of them takes is shared with the others
+  // (`share` of it, as pure damage credited to `by`). Shared damage isn't shared again.
+  link(by: SkillFighter, targets: SkillFighter[], share: number): void;
+  // Every enemy currently going after `f` drops it and picks a new target.
+  dropAggro(f: SkillFighter): void;
+  // Stuns `target` for `seconds` (a longer stun it already has wins).
+  stun(target: SkillFighter, seconds: number, by: SkillFighter): void;
+  // Restores up to `amount` hp (never past max). Returns how much it actually healed.
+  heal(target: SkillFighter, amount: number): number;
+  // `f` makes a full basic attack on `target` right now, at any range: it can crit, roll Fighter's
+  // hit-again, lifesteal and gain mana like any attack. Counters can't trigger counters.
+  counterAttack(f: SkillFighter, target: SkillFighter): void;
+  // Gives `f` mana (up to its max).
+  giveMana(f: SkillFighter, amount: number): void;
+  // A random integer in [0, n), from the fight's seeded randomness (fights still replay exactly).
+  random(n: number): number;
   // Living allies of `f` (itself included).
   alliesOf(f: SkillFighter): SkillFighter[];
   // While busy, a unit neither attacks nor walks (it can still be hit, and its skill effects keep going).
@@ -49,6 +82,8 @@ export interface SkillApi {
   burn(source: SkillFighter, cells: Point[], perSecond: number, type: DamageType, seconds: number, effect: string): void;
   // Purely cosmetic: tells the UI to draw `count` orbs circling `f` for `seconds`.
   showOrbit(f: SkillFighter, count: number, seconds: number, effect: string): void;
+  // Purely cosmetic: a projectile flying from one cell to another over `seconds`.
+  showProjectile(from: Point, to: Point, seconds: number, effect: string): void;
   // What its basic attacks hit with: attack as physical, or magic attack as magic for magic attackers.
   attackPower(f: SkillFighter): { amount: number; type: DamageType };
   debuff(target: SkillFighter, amount: { armor?: number; mr?: number }, seconds: number, effect: string): void;
@@ -64,6 +99,11 @@ export interface SkillDef {
   cast(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
   // A passive: runs once when the fight starts (positions are the starting ones).
   atStart?(api: SkillApi, caster: SkillFighter): void;
-  // A passive: runs after each of the unit's own basic attacks that leaves the target alive.
+  // A passive execute: an enemy on the tiles around it that is damaged and left below this share of
+  // its max hp (per star) dies on the spot, through shields.
+  executeBelow?: number[];
+  // A passive: runs when an enemy's basic attack hits this unit (and it survives). Not for counters.
+  onAttacked?(api: SkillApi, caster: SkillFighter, attacker: SkillFighter): void;
+  // A passive: runs after each of the unit's own basic attacks (the target may have died to it).
   onBasicHit?(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
 }

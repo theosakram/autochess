@@ -19,7 +19,7 @@ export const starfallAegis: SkillDef = {
   cast(api, caster) {
     const S = STARFALL_AEGIS;
     const i = caster.star - 1;
-    api.shield(caster, caster.maxHp * S.shield[i], S.seconds);
+    api.shield(caster, caster.maxHp * S.shield[i], S.seconds, 'starfallaegis');
     const raw = caster.stats.ap * S.ap[i];
     api.repeat(caster, S.every, Math.round(S.seconds / S.every), () => {
       for (const enemy of api.enemiesOf(caster)) api.hit(caster, enemy, raw, 'magic', 'starfall');

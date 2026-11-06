@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
 import { defenseMult, simulateCombat } from './combat';
-import { CAST_MULT } from './config';
+import { GRAVE_WHISPER } from './skills';
 import { createGame, resolveCombat, startRound } from './game';
 import { claimRewards, syncPlayer } from './sync';
 import { fieldStats } from './inventory';
@@ -93,9 +93,10 @@ describe('Necromancer', () => {
     fieldFoe(b);
     const r = simulateCombat({ rng: 1 }, a, b);
     const adept = r.fighters.find((f) => f.defId === 'boneadept')!.id;
-    const cast = r.events.find((e) => e.type === 'cast' && e.id === adept);
-    const raw = UNIT_BY_ID.boneadept.ap * CAST_MULT * (1 + 600 * NECROMANCER.skillAmp);
-    expect(cast?.type === 'cast' && cast.damage).toBe(Math.round(raw * defenseMult(UNIT_BY_ID.titan.mr)));
+    // Its skill (Grave Whisper) hits the Titan for its share of magic attack, boosted by the souls.
+    const hit = r.events.find((e) => e.type === 'effect' && e.effect === 'gravewhisper' && e.by === adept);
+    const raw = UNIT_BY_ID.boneadept.ap * GRAVE_WHISPER.ap[0] * (1 + 600 * NECROMANCER.skillAmp);
+    expect(hit?.type === 'effect' && hit.damage).toBe(Math.round(raw * defenseMult(UNIT_BY_ID.titan.mr)));
   });
 
   test('100 / 350 / 999 souls: a Plane Wanderer, then raised to 2 and 3 stars', () => {
@@ -216,3 +217,30 @@ describe('Plane Wanderer', () => {
     expect(stats.skillAmp).toBeCloseTo(400 * NECROMANCER.skillAmp);
   });
 });
+
+describe('Necromancer 10', () => {
+  test('fills the grave to 999 at once (all Plane Wanderer stars) and pays extra gold every round', () => {
+    const state = newGame();
+    const p = state.players[0];
+    p.level = 10;
+    p.stacks.necromancer = 40;
+    field(p, [['boneadept', 1, 0], ['banshee', 1, 1], ['shadewalker', 1, 2], ['cryptwarden', 1, 3], ['graverobber', 1, 4], ['revenant', 1, 5]]);
+    // 6 Necromancers + 4 Mist orbs on them = 10.
+    p.mistOrbs = [0, 1, 2, 3].map((i) => ({ uid: 80_000 + i, trait: 'necromancer', holder: p.board[i]!.uid }));
+    expect(playerTraits(p).necromancer).toBe(4);
+    syncPlayer(state, p);
+    expect(p.stacks.necromancer).toBe(NECROMANCER.maxSouls);
+    expect(wanderers(p).map((u) => u!.star)).toEqual([3]);
+    const gold = p.gold;
+    startRound(state);
+    expect(p.gold - gold).toBeGreaterThanOrEqual(NECROMANCER.goldPerRound[3]);
+    const without = newGame();
+    const q = without.players[0];
+    field(q, [['boneadept', 1, 0], ['banshee', 1, 1]]);
+    const before = q.gold;
+    startRound(without);
+    // Necromancer 2 pays nothing extra: the difference is just income.
+    expect(p.gold - gold - (q.gold - before)).toBe(NECROMANCER.goldPerRound[3]);
+  });
+});
+

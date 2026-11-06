@@ -30,3 +30,34 @@ describe('damage meter', () => {
     expect(meterHtml(m)).toContain(String(expected));
   });
 });
+
+describe('damage meter with summons', () => {
+  test("a summon's hits count for its owner, and trait damage on a summon doesn't crash", async () => {
+    const { createMeter, recordEvent } = await import('./meter');
+    const fight = {
+      home: 'a',
+      away: 'b',
+      ghost: false,
+      damage: 0,
+      result: {
+        fighters: [
+          { id: 0, side: 0, defId: 'arjuna', star: 1, x: 0, y: 5, hp: 1, maxHp: 1, mana: 0, maxMana: 1, onTile: false, chosen: null, leads: [], items: [], orb: null },
+          { id: 1, side: 1, defId: 'titan', star: 1, x: 0, y: 0, hp: 1, maxHp: 1, mana: 0, maxMana: 1, onTile: false, chosen: null, leads: [], items: [], orb: null },
+        ],
+        traits: [{}, {}],
+        events: [],
+        ticks: 0,
+        winner: null,
+        survivors: [],
+      },
+    } as unknown as Parameters<typeof createMeter>[0];
+    const m = createMeter(fight, 'a');
+    const archer = { ...fight.result.fighters[0], id: 2, defId: 'spiritarcher' };
+    recordEvent(m, { t: 1, type: 'summon', owner: 0, fighter: archer });
+    recordEvent(m, { t: 2, type: 'attack', id: 2, target: 1, damage: 40, hp: 0, mana: 0, targetMana: 0 });
+    recordEvent(m, { t: 3, type: 'effect', effect: 'skybringer', target: 2, damage: 10, hp: 0 });
+    expect(m.byUnit.get(0)!.attack).toBe(40);
+    expect(m.byTrait.size).toBe(0); // landed on our side: not ours
+  });
+});
+

@@ -1,10 +1,11 @@
+import type { Fighter } from '../../game/combat';
 import { leadsOf } from '../../game/inventory';
 import { Application, Container, Graphics, Text, type FederatedPointerEvent } from 'pixi.js';
 import type { CombatEvent } from '../../game/combat';
 import { BOARD_COLS, BOARD_ROWS, MOVE_TICKS, TICKS_PER_SECOND } from '../../game/config';
 import type { Fight } from '../../game/game';
 import { boardToGrid, GRID_H, GRID_W, gridIndex, viewPoint, type Point, type Side } from '../../game/grid';
-import { activeTraits, traitTiles } from '../../game/traits';
+import { playerTraits, traitTiles } from '../../game/traits';
 import type { Loc, Player } from '../../game/types';
 import { PAD, stageLayout, type StageLayout } from './layout';
 import { COLORS, EFFECT_COLORS, FONT, TILE_COLORS, mix } from './theme';
@@ -152,7 +153,7 @@ export class Stage {
     const p = view.player;
 
     const tiles = new Map<number, string>();
-    for (const [cell, trait] of traitTiles(activeTraits(p.board, p.orb))) tiles.set(gridIndex(boardToGrid(0, cell)), trait);
+    for (const [cell, trait] of traitTiles(playerTraits(p))) tiles.set(gridIndex(boardToGrid(0, cell)), trait);
     const targets = new Set<string>();
     if (view.selectedUid !== null) {
       p.board.forEach((u, index) => !u && targets.add(key({ area: 'board', index })));
@@ -161,7 +162,7 @@ export class Stage {
     this.drawBoard(tiles, true, targets);
 
     const crowned = new Set(Object.values(view.chosen));
-    const levels = activeTraits(p.board, p.orb);
+    const levels = playerTraits(p);
     for (const area of ['board', 'bench'] as const) {
       (area === 'board' ? p.board : p.bench).forEach((u, index) => {
         if (!u) return;
@@ -253,9 +254,10 @@ export class Stage {
       stun?: Text;
       debuff?: Text;
       marks?: Text;
+      taunt?: Text;
     }
     const views = new Map<number, View>();
-    for (const f of result.fighters) {
+    const addView = (f: Fighter) => {
       const token = makeToken({
         defId: f.defId,
         star: f.star,
@@ -272,7 +274,9 @@ export class Stage {
       token.setBar('mana', f.mana / f.maxMana);
       this.layers.units.addChild(token.root);
       views.set(f.id, { ...token, maxHp: f.maxHp, maxMana: f.maxMana });
-    }
+      return token;
+    };
+    for (const f of result.fighters) addView(f);
 
     const moveTo = (id: number, p: Point, ms: number) => {
       const root = views.get(id)!.root;
@@ -305,11 +309,18 @@ export class Stage {
     const stunEnds = new Map<number, number>();
     const shieldEnds = new Map<number, number>();
     const debuffEnds = new Map<number, number>();
+    const tauntEnds = new Map<number, number>();
     // Timed buffs' rings, by unit and effect: taken off when the buff ends.
     const buffRings = new Map<string, { ring: Graphics; until: number }>();
     // Burning cells, by grid key: the patch drawn there and when it goes out.
     const fires = new Map<string, { patch: Graphics; until: number }>();
     const wakeUp = (all: boolean) => {
+      for (const [id, until] of tauntEnds) {
+        if (!all && tick < until) continue;
+        views.get(id)!.taunt?.destroy();
+        views.get(id)!.taunt = undefined;
+        tauntEnds.delete(id);
+      }
       for (const [key, b] of buffRings) {
         if (!all && tick < b.until) continue;
         if (!b.ring.destroyed) b.ring.destroy();
@@ -383,6 +394,26 @@ export class Stage {
           stunEnds.set(e.id, e.until);
           break;
         }
+        case 'link': {
+          for (const id of e.ids) {
+            const mark = new Text({ text: '🔗', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.18 } });
+            mark.anchor.set(0.5);
+            mark.position.set(this.L.boardCell * 0.32, this.L.boardCell * 0.3);
+            views.get(id)!.root.addChild(mark);
+          }
+          break;
+        }
+        case 'taunt': {
+          const v = views.get(e.id)!;
+          if (!v.taunt) {
+            v.taunt = new Text({ text: '❗', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.22 } });
+            v.taunt.anchor.set(0.5);
+            v.taunt.position.set(0, -this.L.boardCell * 0.5);
+            v.root.addChild(v.taunt);
+          }
+          tauntEnds.set(e.id, Math.max(tauntEnds.get(e.id) ?? 0, e.until));
+          break;
+        }
         case 'debuff': {
           const v = views.get(e.id)!;
           if (!v.debuff) {
@@ -398,6 +429,12 @@ export class Stage {
           setBar(e.id, 'shield', e.amount);
           shieldEnds.set(e.id, e.until);
           break;
+        case 'summon': {
+          const token = addView(e.fighter);
+          token.root.alpha = 0;
+          this.tweens.add(300, (k) => (token.root.alpha = k));
+          break;
+        }
         case 'mark': {
           const v = views.get(e.id)!;
           if (!e.count) {
@@ -428,6 +465,19 @@ export class Stage {
               fires.set(key, { patch, until: e.until });
             }
           }
+          break;
+        }
+        case 'projectile': {
+          const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
+          const orb = new Graphics().circle(0, 0, this.L.boardCell * 0.12).fill(color).stroke({ width: 2, color: 0xffffff, alpha: 0.7 });
+          const [from, to] = [at(e.from), at(e.to)];
+          orb.position.set(from.x, from.y);
+          this.layers.fx.addChild(orb);
+          this.tweens.add(
+            Math.max(1, e.until - e.t) * TICK_MS,
+            (k) => orb.destroyed || orb.position.set(lerp(from.x, to.x, k), lerp(from.y, to.y, k)),
+            () => orb.destroyed || orb.destroy(),
+          );
           break;
         }
         case 'orbit': {

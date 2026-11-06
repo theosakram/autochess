@@ -2,9 +2,9 @@ import { MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICK
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side, type Point } from './grid';
 import { activeItems, fieldStats, heldBy, leadsOf } from './inventory';
 import { ITEMS } from './items';
-import { nextFloat, shuffle } from './rng';
+import { nextFloat, nextInt, shuffle } from './rng';
 import { SKILLS, type SkillApi } from './skills';
-import { applyMods, attackInterval, type DamageType, type Stats, type StatKey } from './stats';
+import { applyMods, attackInterval, type DamageType, type Stats, type StatKey, baseStats } from './stats';
 import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -50,10 +50,18 @@ export type CombatEvent =
   | { t: number; type: 'heal'; id: number; amount: number; hp: number }
   // `until` is the tick the stun wears off.
   | { t: number; type: 'stun'; id: number; by: number; until: number }
+  // Units `ids` are linked by `by`: they share damage (see SkillApi.link).
+  | { t: number; type: 'link'; ids: number[]; by: number }
+  // Unit `id` must go after `by` until `until`.
+  | { t: number; type: 'taunt'; id: number; by: number; until: number }
+  // A unit appeared mid-fight, summoned by `owner` (its hits mirror the owner's, see SkillApi.summon).
+  | { t: number; type: 'summon'; owner: number; fighter: Fighter }
   // Cosmetic: `count` marks from `effect` now sit on unit `id` (0 = cleared).
   | { t: number; type: 'mark'; id: number; effect: string; count: number }
   // Burning ground from `effect` on these cells until `until` (its damage comes as effect events).
   | { t: number; type: 'ground'; effect: string; cells: Point[]; until: number }
+  // Cosmetic: a projectile from `from` to `to`, arriving at `until`.
+  | { t: number; type: 'projectile'; effect: string; from: Point; to: Point; until: number }
   // Cosmetic: `count` orbs circle the unit until `until` (their hits are separate effect events).
   | { t: number; type: 'orbit'; id: number; effect: string; count: number; until: number }
   // Armor/mr lowered by `effect` (cast by `by`) until `until`.
@@ -90,17 +98,20 @@ interface SimFighter extends Fighter {
   stats: Stats;
   shred: number; // armor and mr currently removed by enemy attacks
   dealt: number; // damage dealt so far this fight (Storm Pursuit hunts the top dealer)
+  owner: number | null; // summons: who summoned it
+  mirror: number; // mirror summons: share of the owner's basic attack it repeats on the same target (0: acts on its own)
   debuffs: { effect: string; armor: number; mr: number; until: number }[]; // timed, from skills
   triggers: { trait: string; trigger: Trigger; fired: boolean }[];
   pulses: { item: string; every: number; atkPct: number; type: DamageType }[]; // every in ticks
   openers: { source: string; width: number; depth: number; stunTicks: number; columnAttackSpeed: number }[];
   stunnedUntil: number;
+  taunt: { by: number; until: number } | null; // must go after this unit for now
   buffs: { effect: string; mods: { stat: StatKey; add: number }[]; until: number }[]; // timed, from skills
   busyUntil: number; // a skill is using it (e.g. a rampage): no attacking or walking before this tick
   guardUntil: number; // takes less damage before this tick
   guardReduction: number;
-  shield: number; // damage it absorbs before hp, until shieldUntil
-  shieldUntil: number;
+  // Shield layers, oldest first: damage eats the newest first (see SkillApi.shield).
+  shields: { effect: string; amount: number; until: number; onEnd: (() => void) | null }[];
   skill: Record<string, number>; // the unit skill's memory for this fight
   nextAttack: number;
   nextMove: number;
@@ -149,6 +160,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       stats,
       shred: 0,
       dealt: 0,
+      owner: null,
+      mirror: 0,
       debuffs: [],
       triggers: unitTriggers(levels, def).map((tr) => ({ ...tr, fired: false })),
       pulses: items.flatMap(({ id, tier }) => {
@@ -169,12 +182,12 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
         columnAttackSpeed: o.columnAttackSpeed ?? 0,
       })),
       stunnedUntil: 0,
+      taunt: null,
       buffs: [],
       busyUntil: 0,
       guardUntil: 0,
       guardReduction: 0,
-      shield: Math.round(stats.hp * stats.startShield),
-      shieldUntil: stats.startShield > 0 ? MAX_COMBAT_TICKS : 0,
+      shields: stats.startShield > 0 ? [{ effect: 'startShield', amount: Math.round(stats.hp * stats.startShield), until: MAX_COMBAT_TICKS, onEnd: null }] : [],
       skill: {},
       nextAttack: Math.floor(attackInterval(stats) / 2),
       nextMove: 0,
@@ -239,22 +252,48 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const lowered = target.debuffs.reduce((n, d) => n + (t < d.until ? d[stat] : 0), 0);
     const defense = type === 'pure' ? 0 : target.stats[stat] - target.shred - lowered;
     const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
-    const dealt = Math.round(raw * (1 + amp) * defenseMult(defense) * guard);
-    const absorbed = t < target.shieldUntil ? Math.min(target.shield, dealt) : 0;
-    if (absorbed > 0) {
-      target.shield -= absorbed;
-      events.push({ t, type: 'shield', id: target.id, amount: target.shield, until: target.shieldUntil });
+    const dealt = Math.round(raw * (1 + amp) * (1 + target.stats.damageTaken) * defenseMult(defense) * guard);
+    // Shield layers soak it first, newest first.
+    let absorbed = 0;
+    const broken: (() => void)[] = [];
+    for (let i = target.shields.length - 1; i >= 0 && absorbed < dealt; i--) {
+      const layer = target.shields[i];
+      if (t >= layer.until) continue;
+      const take = Math.min(layer.amount, dealt - absorbed);
+      layer.amount -= take;
+      absorbed += take;
+      if (layer.amount <= 0) {
+        target.shields.splice(i, 1);
+        if (layer.onEnd) broken.push(layer.onEnd);
+      }
     }
+    if (absorbed > 0) shieldEvent(target);
     target.hp = Math.max(0, target.hp - (dealt - absorbed));
     if (dealer) dealer.dealt += dealt;
+    if (target.hp > 0) for (const end of broken) end();
+    // Linked damage is shared once this hit has been logged (see afterDamage).
+    if (dealt - absorbed > 0 && links.length) pendingShares.push({ target, taken: dealt - absorbed });
     return dealt;
   }
 
   // Runs after every hit: either the target dies, or it may set off its own triggers.
   function afterDamage(target: SimFighter, t: number): void {
+    reactToDamage(target, t);
+    flushShares();
+  }
+
+  function reactToDamage(target: SimFighter, t: number): void {
+    if (target.hp > 0) checkExecute(target, t);
     if (target.hp <= 0) {
       occupied[gridIndex(target)] = -1;
       events.push({ t, type: 'death', id: target.id });
+      for (const m of fighters) {
+        // Mirror summons vanish with their owner; fighter summons fight on.
+        if (m.owner !== target.id || m.hp <= 0 || !m.mirror) continue;
+        m.hp = 0;
+        occupied[gridIndex(m)] = -1;
+        events.push({ t, type: 'death', id: m.id });
+      }
       return;
     }
     for (const tr of target.triggers) {
@@ -301,6 +340,56 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     return victim.hp <= 0;
   }
 
+  // Passive executes (see SkillDef.executeBelow): a living executor next to a damaged enemy that's
+  // under its threshold finishes it off, ignoring shields.
+  const executors = fighters.filter((f) => {
+    const skill = UNIT_BY_ID[f.defId].skill;
+    return skill && SKILLS[skill].executeBelow;
+  });
+  function checkExecute(target: SimFighter, t: number): void {
+    for (const ex of executors) {
+      if (ex.hp <= 0 || ex.side === target.side || dist(ex, target) > 1) continue;
+      const below = SKILLS[UNIT_BY_ID[ex.defId].skill!].executeBelow![ex.star - 1];
+      if (target.hp >= target.maxHp * below) continue;
+      const dealt = target.hp;
+      target.hp = 0;
+      ex.dealt += dealt;
+      events.push({ t, type: 'effect', effect: 'execute', by: ex.id, target: target.id, damage: dealt, hp: 0 });
+      reactToDamage(target, t);
+      return;
+    }
+  }
+
+  // Damage-sharing links (see SkillApi.link), and a guard so shared damage isn't shared again.
+  const links: { by: number; share: number; members: number[] }[] = [];
+  let sharing = false;
+  const pendingShares: { target: SimFighter; taken: number }[] = [];
+  function flushShares(): void {
+    while (pendingShares.length && !sharing) {
+      const { target, taken } = pendingShares.shift()!;
+      shareLinked(target, taken);
+    }
+  }
+  function shareLinked(target: SimFighter, taken: number): void {
+    if (sharing || taken <= 0 || !links.length) return;
+    sharing = true;
+    for (const link of links) {
+      const source = fighters[link.by];
+      if (source.hp <= 0 || !link.members.includes(target.id)) continue;
+      for (const id of link.members) {
+        const other = fighters[id];
+        if (id === target.id || other.hp <= 0) continue;
+        const dealt = damage(other, taken * link.share, 'pure', null);
+        source.dealt += dealt;
+        events.push({ t, type: 'effect', effect: 'fatelink', by: source.id, target: other.id, damage: dealt, hp: other.hp });
+        reactToDamage(other, t);
+      }
+    }
+    sharing = false;
+    // Shared damage is never shared again.
+    pendingShares.length = 0;
+  }
+
   // The fighter whose skill is running right now, for crediting effects like debuffs.
   let casting: SimFighter | null = null;
 
@@ -331,11 +420,16 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       f.guardUntil = t + Math.round(seconds * TICKS_PER_SECOND);
       f.guardReduction = reduction;
     },
-    shield: (who, amount, seconds) => {
+    shield: (who, amount, seconds, effect, onEnd) => {
       const f = fighters[who.id];
-      f.shield = Math.round(amount);
-      f.shieldUntil = t + Math.round(seconds * TICKS_PER_SECOND);
-      events.push({ t, type: 'shield', id: f.id, amount: f.shield, until: f.shieldUntil });
+      // Its own older layer is replaced: that one ends here.
+      const old = f.shields.findIndex((l) => l.effect === effect);
+      if (old >= 0) {
+        const [layer] = f.shields.splice(old, 1);
+        if (layer.onEnd && f.hp > 0) layer.onEnd();
+      }
+      f.shields.push({ effect, amount: Math.round(amount), until: t + Math.round(seconds * TICKS_PER_SECOND), onEnd: onEnd ?? null });
+      shieldEvent(f);
     },
     buff: (who, mods, seconds, effect, by) => {
       const f = fighters[who.id];
@@ -351,7 +445,116 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       events.push({ t, type: 'buff', id: f.id, by: by.id, effect, ...(until !== Infinity && { until }) });
     },
     alliesOf: (f) => fighters.filter((e) => e.side === f.side && e.hp > 0),
+    random: (n) => nextInt(rng, n),
+    giveMana: (who, amount) => gainMana(fighters[who.id], amount),
+    counterAttack: (who, at) => {
+      const f = fighters[who.id];
+      const target = fighters[at.id];
+      if (countering || f.hp <= 0 || target.hp <= 0) return;
+      countering = true;
+      fullBasicAttack(f, target, t);
+      countering = false;
+    },
+    dropAggro: (who) => {
+      for (const f of fighters) if (f.target?.id === who.id && f.side !== who.side) f.target = null;
+    },
+    link: (by, targets, share) => {
+      const group = { by: by.id, share, members: targets.map((x) => x.id) };
+      links.push(group);
+      events.push({ t, type: 'link', ids: group.members, by: by.id });
+    },
+    taunt: (who, by, seconds) => {
+      const f = fighters[who.id];
+      if (f.hp <= 0) return;
+      const until = t + Math.round(seconds * TICKS_PER_SECOND);
+      f.taunt = { by: by.id, until };
+      f.target = fighters[by.id];
+      events.push({ t, type: 'taunt', id: f.id, by: by.id, until });
+    },
+    stun: (who, seconds, by) => {
+      const f = fighters[who.id];
+      const until = t + Math.round(seconds * TICKS_PER_SECOND);
+      if (f.hp <= 0 || until <= f.stunnedUntil) return;
+      f.stunnedUntil = until;
+      events.push({ t, type: 'stun', id: f.id, by: by.id, until });
+    },
+    heal: (who, amount) => {
+      const f = fighters[who.id];
+      const healed = Math.min(f.maxHp - f.hp, Math.round(amount));
+      if (f.hp <= 0 || healed <= 0) return 0;
+      f.hp += healed;
+      events.push({ t, type: 'heal', id: f.id, amount: healed, hp: f.hp });
+      return healed;
+    },
+    minionsOf: (f) => fighters.filter((m) => m.owner === f.id && m.hp > 0),
+    summon: (who, defId, { hpShare, mirror, atk, at }) => {
+      const owner = fighters[who.id];
+      const around = at ?? owner;
+      let cell: Point | null = null;
+      // The spot itself if it's free (a drop), else the nearest free cell beside it.
+      if (at && occupied[gridIndex(at)] < 0) cell = { x: at.x, y: at.y };
+      for (let dx = -1; dx <= 1 && !cell; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const p = { x: around.x + dx, y: around.y + dy };
+          if ((!dx && !dy) || p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H || occupied[gridIndex(p)] >= 0) continue;
+          if (!cell || dist(around, p) < dist(around, cell)) cell = p;
+        }
+      }
+      if (!cell) return null;
+      const hp = Math.max(1, Math.round(owner.maxHp * hpShare));
+      const independent = !mirror;
+      const base = baseStats(UNIT_BY_ID[defId], owner.star);
+      // A fighter summon without a skill never casts: its mana bar never fills.
+      const silent = independent && !UNIT_BY_ID[defId].skill;
+      const stats = { ...base, hp, ...(atk !== undefined && { atk: Math.round(atk), ap: Math.round(atk) }), ...(silent && { maxMana: Infinity }) };
+      const m: SimFighter = {
+        id: fighters.length,
+        side: owner.side,
+        defId,
+        star: owner.star,
+        x: cell.x,
+        y: cell.y,
+        hp,
+        maxHp: hp,
+        mana: 0,
+        maxMana: stats.maxMana,
+        onTile: false,
+        chosen: null,
+        leads: [],
+        items: [],
+        orb: null,
+        stats,
+        shred: 0,
+        dealt: 0,
+        owner: owner.id,
+        mirror: mirror ?? 0,
+        debuffs: [],
+        triggers: [],
+        pulses: [],
+        openers: [],
+        stunnedUntil: 0,
+        taunt: null,
+        buffs: [],
+        busyUntil: independent ? 0 : Infinity, // a mirror never acts on its own: it only repeats its owner's hits
+        guardUntil: 0,
+        guardReduction: 0,
+        shields: [],
+        skill: {},
+        nextAttack: independent ? t + Math.floor(attackInterval(stats) / 2) : Infinity,
+        nextMove: independent ? t : Infinity,
+        target: null,
+      };
+      fighters.push(m);
+      occupied[gridIndex(m)] = m.id;
+      events.push({ t, type: 'summon', owner: owner.id, fighter: snapshot(m) });
+      return m;
+    },
     hasBuff: (who, effect) => fighters[who.id].buffs.some((b) => b.effect === effect && t < b.until),
+    unbuff: (who, effect) => {
+      const f = fighters[who.id];
+      for (const b of f.buffs.filter((b) => b.effect === effect)) f.stats = applyMods(f.stats, b.mods.map((m) => ({ stat: m.stat, add: -m.add })));
+      f.buffs = f.buffs.filter((b) => b.effect !== effect);
+    },
     showMarks: (who, count, effect) => {
       events.push({ t, type: 'mark', id: who.id, effect, count });
     },
@@ -365,6 +568,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         ground.set(key, { source: fighters[source.id], x: c.x, y: c.y, perSecond, type, until, effect });
       }
       events.push({ t, type: 'ground', effect, cells: cells.map(({ x, y }) => ({ x, y })), until });
+    },
+    showProjectile: (from, to, seconds, effect) => {
+      events.push({ t, type: 'projectile', effect, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, until: t + Math.round(seconds * TICKS_PER_SECOND) });
     },
     showOrbit: (who, count, seconds, effect) => {
       events.push({ t, type: 'orbit', id: who.id, effect, count, until: t + Math.round(seconds * TICKS_PER_SECOND) });
@@ -388,6 +594,24 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       repeats.push({ f: fighters[who.id], every, next: t + every, left: times, fn });
     },
   };
+
+  // The UI sees one shield: the layers' total, gone when the last one runs out.
+  function shieldEvent(f: SimFighter): void {
+    const live = f.shields.filter((l) => t < l.until);
+    const amount = live.reduce((n, l) => n + l.amount, 0);
+    const until = live.reduce((n, l) => Math.max(n, l.until), t);
+    events.push({ t, type: 'shield', id: f.id, amount, until });
+  }
+  // Layers that run out are removed, running their end effect (not for the dead).
+  function expireShields(t: number): void {
+    for (const f of fighters) {
+      const done = f.shields.filter((l) => t >= l.until);
+      if (!done.length) continue;
+      f.shields = f.shields.filter((l) => t < l.until);
+      shieldEvent(f);
+      if (f.hp > 0) for (const l of done) l.onEnd?.();
+    }
+  }
 
   // Timed buffs come off when they run out.
   function expireBuffs(t: number): void {
@@ -445,12 +669,20 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       hitEvent(f, target, t, 'cast', dealt, false);
       leech(f, dealt, false, t);
     } else {
-      basicAttack(f, target, t, false);
-      // Only roll when there's a chance, so fights without it replay exactly as before.
-      if (target.hp > 0 && f.hp > 0 && f.stats.hitAgain > 0 && nextFloat(rng) < f.stats.hitAgain) basicAttack(f, target, t, true);
+      fullBasicAttack(f, target, t);
     }
     f.nextAttack = t + attackInterval(f.stats);
   }
+
+  // A basic attack plus Fighter's chance to hit again.
+  function fullBasicAttack(f: SimFighter, target: SimFighter, t: number): void {
+    basicAttack(f, target, t, false);
+    // Only roll when there's a chance, so fights without it replay exactly as before.
+    if (target.hp > 0 && f.hp > 0 && f.stats.hitAgain > 0 && nextFloat(rng) < f.stats.hitAgain) basicAttack(f, target, t, true);
+  }
+
+  // True while a counter-attack is resolving, so counters never set off more counters.
+  let countering = false;
 
   function basicAttack(f: SimFighter, target: SimFighter, t: number, again: boolean): void {
     // Shred lands before the damage, so the first hit already benefits.
@@ -464,8 +696,17 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     gainMana(f, MANA_PER_ATTACK);
     hitEvent(f, target, t, 'attack', dealt, crit, again);
     leech(f, dealt, true, t);
+    // Its summons repeat the hit on the same target, crit and all. They copy the hit itself, not the
+    // owner's damage bonuses (those are the owner's alone).
+    for (const m of fighters) {
+      if (m.owner !== f.id || !m.mirror || m.hp <= 0 || target.hp <= 0) continue;
+      const raw = power * (1 + f.stats.basicAmp) * m.mirror * (crit ? f.stats.critDamage : 1);
+      hitEvent(m, target, t, 'attack', damage(target, raw, type, m), crit, again);
+    }
     const skill = UNIT_BY_ID[f.defId].skill;
-    if (skill && target.hp > 0) SKILLS[skill].onBasicHit?.(api, f, target);
+    if (skill) SKILLS[skill].onBasicHit?.(api, f, target);
+    const theirs = UNIT_BY_ID[target.defId].skill;
+    if (theirs && !countering && target.hp > 0) SKILLS[theirs].onAttacked?.(api, target, f);
   }
 
   // Logs an attack or placeholder cast, then lets the target react (mana, death, triggers).
@@ -564,9 +805,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     f.nextAttack = Math.max(f.nextAttack, t + MOVE_TICKS);
   }
 
-  for (const f of fighters) if (f.shield > 0) events.push({ t: 0, type: 'shield', id: f.id, amount: f.shield, until: f.shieldUntil });
   // The fight clock, in ticks. Declared before fight-start effects so skill passives can read it.
   let t = 0;
+  for (const f of fighters) if (f.shields.length) shieldEvent(f);
   if (alive(0) && alive(1)) {
     fireOpeners();
     // Skill passives, from the starting positions.
@@ -583,6 +824,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireRepeats(t);
     fireGround(t);
     expireBuffs(t);
+    expireShields(t);
 
     // Shuffled each tick so neither side always strikes first.
     for (const f of shuffle(rng, fighters.filter((f) => f.hp > 0))) {
@@ -590,8 +832,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0);
       if (enemies.length === 0) break;
 
-      // Stick with the current target while it's alive and in range.
-      if (!f.target || f.target.hp <= 0 || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
+      // A taunted unit goes after its taunter; otherwise it sticks with its target while alive and in range.
+      const taunter = f.taunt && t < f.taunt.until ? fighters[f.taunt.by] : null;
+      if (taunter && taunter.hp > 0) f.target = taunter;
+      else if (!f.target || f.target.hp <= 0 || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
       const target = f.target;
 
       if (dist(f, target) <= f.stats.range) {
@@ -605,6 +849,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   const a0 = alive(0);
   const a1 = alive(1);
   const winner: Side | null = a0 && !a1 ? 0 : a1 && !a0 ? 1 : null;
-  const survivors = winner === null ? [] : fighters.filter((f) => f.side === winner && f.hp > 0).map(snapshot);
+  // Summons don't count toward the damage the loser takes.
+  const survivors = winner === null ? [] : fighters.filter((f) => f.side === winner && f.hp > 0 && f.owner === null).map(snapshot);
   return { fighters: start, traits, events, ticks: t, winner, survivors };
 }

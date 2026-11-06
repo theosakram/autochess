@@ -165,7 +165,7 @@ describe('traits', () => {
     field(a, [['altarkeeper', 1, 15], ['chronicler', 1, 18]]);
     field(b, [['footman', 1, 3]]);
     const firstCast = (traits: [boolean, boolean]) =>
-      simulateCombat({ rng: 1 }, a, b, { traits }).events.find((e) => e.type === 'cast' && e.id === 0)?.t ?? Infinity;
+      simulateCombat({ rng: 1 }, a, b, { traits }).events.find((e) => (e.type === 'cast' || e.type === 'skill') && e.id === 0)?.t ?? Infinity;
     expect(firstCast([true, true])).toBeLessThan(firstCast([false, false]));
   });
 });
@@ -250,7 +250,7 @@ describe('magic damage and skybringer', () => {
     const state = newGame();
     const [a, b] = state.players;
     // Everyone sturdy enough to live past the third strike at 9s.
-    field(a, [['tempestknight', 3, 0], ['thunderlord', 3, 6]]);
+    field(a, [['tempestknight', 3, 0], ['thunderlord', 1, 6]]);
     field(b, [['titan', 3, 0], ['paladin', 3, 6]]);
     const r = simulateCombat({ rng: 1 }, a, b);
     const zaps = r.events.filter((e): e is Extract<CombatEvent, { type: 'effect' }> => e.type === 'effect' && e.effect === 'skybringer');
@@ -365,9 +365,9 @@ describe('storyweaver', () => {
     const hero = unitStats(UNIT_BY_ID.taleshield, 1, field);
     const extra = unitStats(UNIT_BY_ID.mythweaver, 1, field);
     expect(hero.damageAmp).toBeCloseTo(STORYWEAVER.perStack[1] * 10);
-    expect(hero.castMult).toBeCloseTo(CAST_MULT * (1 + STORYWEAVER.enhancedCast));
+    expect(hero.skillAmp).toBeCloseTo(STORYWEAVER.enhancedCast);
     expect(extra.damageAmp).toBe(0);
-    expect(extra.castMult).toBe(CAST_MULT);
+    expect(extra.skillAmp).toBe(0);
   });
 
   test('stories: +1 per enemy death, max 3 per fight and 30 total, only while active', () => {
@@ -499,7 +499,8 @@ describe('physical and magic attack', () => {
   });
 
   test('every unit has both stats, and magic attackers lean on magic attack', () => {
-    for (const u of Object.values(UNIT_BY_ID)) {
+    // Summons take their damage from whoever summoned them.
+    for (const u of Object.values(UNIT_BY_ID).filter((u) => !u.summon)) {
       expect(u.atk).toBeGreaterThan(0);
       expect(u.ap).toBeGreaterThan(0);
       if (u.attackType === 'magic') expect(u.ap).toBeGreaterThan(u.atk);
@@ -699,5 +700,11 @@ describe('phasewarper lineup', () => {
       .sort((a, b) => a.tier - b.tier || a.id.localeCompare(b.id));
     expect(units.map((u) => u.tier)).toEqual([2, 3, 3, 5]);
     expect(units.map((u) => u.traits.filter((t) => t !== 'phasewarper'))).toEqual([['necromancer'], ['mooneater', 'mage'], ['skybringer'], ['gustiwana']]);
+  });
+});
+
+describe('dauntless are frontliners', () => {
+  test('every Dauntless unit is melee: the shield belongs where the hits land', () => {
+    for (const u of Object.values(UNIT_BY_ID).filter((u) => u.traits.includes('dauntless'))) expect([u.id, u.range]).toEqual([u.id, 1]);
   });
 });

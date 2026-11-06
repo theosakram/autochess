@@ -1,5 +1,6 @@
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
 import { equipBlock } from './inventory';
+import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
@@ -21,7 +22,10 @@ export type Action =
   | { type: 'move'; from: Loc; to: Loc }
   | { type: 'equip'; item: number; unit: number } // uids
   | { type: 'unequip'; item: number }
-  | { type: 'useOrb'; unit: number; trait: string }; // unit uid
+  | { type: 'useOrb'; unit: number; trait: string } // unit uid
+  | { type: 'mistBuy'; slot: number; choice?: string } // choice: a unit uid (Mirror) or trait id (picked orbs)
+  | { type: 'equipMistOrb'; orb: number; unit: number } // uids; from the inventory or another unit
+  | { type: 'unequipMistOrb'; orb: number };
 
 export type Result = { ok: true } | { ok: false; error: string };
 
@@ -44,6 +48,12 @@ export function canClaim(p: Player, defId: string): boolean {
 export function claimShopSlot(state: GameState, p: Player, slot: number): void {
   const defId = p.shop[slot]!;
   p.shop[slot] = null;
+  gainUnit(state, p, defId);
+}
+
+// Puts a new 1★ copy on the bench (or straight into the pair it completes) and merges.
+// The copy must already be out of the pool. Check canClaim first.
+export function gainUnit(state: GameState, p: Player, defId: string): void {
   const free = p.bench.indexOf(null);
   if (free >= 0) {
     p.bench[free] = { uid: state.nextUid++, defId, star: 1 };
@@ -149,10 +159,22 @@ function perform(state: GameState, p: Player, action: Action): Result {
       const unit = [...p.board, ...p.bench].find((u) => u?.uid === action.unit);
       if (!unit) return fail('No such unit');
       if (!orbOptions(p.orbs[0], unit.defId).includes(action.trait)) return fail('That trait is not on offer');
+      // A unit type holding a Mist orb (on any of its copies) can't take the Magic Orb.
+      const copies = new Set([...p.board, ...p.bench].flatMap((u) => (u && u.defId === unit.defId ? [u.uid] : [])));
+      if (p.mistOrbs?.some((o) => o.holder !== null && copies.has(o.holder))) return fail('It already holds a Mist orb');
       p.orbs.shift();
       p.orb = { defId: unit.defId, trait: action.trait };
       return OK;
     }
+
+    case 'mistBuy':
+      return buyMistWare(state, p, action.slot, action.choice);
+
+    case 'equipMistOrb':
+      return equipMistOrb(p, action.orb, action.unit);
+
+    case 'unequipMistOrb':
+      return unequipMistOrb(p, action.orb);
 
     case 'unequip': {
       const item = p.items.find((i) => i.uid === action.item);

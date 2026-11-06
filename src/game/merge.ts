@@ -29,6 +29,9 @@ export function absorb(p: Player, keeper: Unit, loc: Loc): void {
     if (it.holder !== gone.uid) continue;
     if (p.items.filter((i) => i.holder === keeper.uid).length < MAX_ITEMS_PER_UNIT) it.holder = keeper.uid;
   }
+  for (const o of p.mistOrbs ?? []) {
+    if (o.holder === gone.uid && !p.mistOrbs!.some((x) => x.holder === keeper.uid)) o.holder = keeper.uid;
+  }
   slotsOf(p, loc.area)[loc.index] = null;
 }
 

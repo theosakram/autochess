@@ -15,6 +15,7 @@ export interface Stats {
   manaRegen: number; // per second
   armorShred: number; // armor and mr a basic attack removes from its target; doesn't stack
   damageAmp: number; // all damage this unit deals is multiplied by 1 + damageAmp
+  damageTaken: number; // all damage this unit takes is multiplied by 1 + damageTaken (e.g. Weak)
   critChance: number; // 0..1, basic attacks only
   critDamage: number; // multiplier on a critting basic attack
   basicAmp: number; // basic attacks (and enhanced ones) deal x (1 + basicAmp)
@@ -54,6 +55,7 @@ export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
     manaRegen: 0,
     armorShred: 0,
     damageAmp: 0,
+    damageTaken: 0,
     critChance: 0,
     critDamage: BASE_CRIT_DAMAGE,
     basicAmp: 0,

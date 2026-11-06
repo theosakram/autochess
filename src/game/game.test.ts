@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { formation } from './formation';
 import { applyAction, type Action } from './actions';
 import { BASE_INCOME, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
 import { boardCount, interest, levelUpCost } from './player';
@@ -44,7 +45,8 @@ function totalCopies(state: GameState): number {
   for (const p of state.players) {
     // Upgrade cards aren't units, so they hold no copies.
     n += p.shop.filter((id) => id && !isItemCard(id)).length;
-    for (const u of [...p.bench, ...p.board]) if (u) n += copiesOf(u);
+    // Units with no pool (Plane Wanderers, raised by the grave) were never copies of anything.
+    for (const u of [...p.bench, ...p.board]) if (u && u.defId in state.pool) n += copiesOf(u);
     n += p.gifts?.length ?? 0;
   }
   return n;
@@ -392,5 +394,18 @@ describe('shop lock', () => {
     applyAction(state, p.id, { type: 'toggleLock' });
     expect(applyAction(state, p.id, { type: 'reroll' }).ok).toBe(true);
     expect(p.shopLocked).toBe(true);
+  });
+});
+
+describe('formation', () => {
+  test('more melee than a row holds: the rest go to the next row, every cell different', () => {
+    const ids = ['hazeguard', 'thunderhawk', 'zodiacblade', 'dalang', 'pyromancer', 'wraithlord', 'footman', 'knight', 'archer'];
+    const cells = formation(ids);
+    expect(new Set(cells).size).toBe(ids.length);
+    expect(cells.every((c) => c >= 0 && c < BOARD_COLS * BOARD_ROWS)).toBe(true);
+    // 8 melee: 7 on the front row, 1 on the middle row; the archer on the back row.
+    const row = (c: number) => Math.floor(c / BOARD_COLS);
+    expect(cells.slice(0, 8).filter((c) => row(c) === 0)).toHaveLength(7);
+    expect(row(cells[8])).toBe(BOARD_ROWS - 1);
   });
 });
