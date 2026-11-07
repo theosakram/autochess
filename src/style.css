@@ -49,10 +49,11 @@ kbd {
 }
 
 .hud {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   flex: none;
   align-items: center;
-  gap: 28px;
+  gap: 20px;
   padding: 6px 16px;
   background: var(--panel);
   border-radius: 8px;
@@ -70,7 +71,6 @@ kbd {
 .xp-bar span { background: #7c6cf0; }
 .hp-bar span { background: #4ccb6d; }
 .hud-book {
-  margin-left: auto;
   padding: 6px 14px;
   border: 1px solid #3a3f4d;
   border-radius: 6px;
@@ -78,6 +78,20 @@ kbd {
   font-weight: 600;
 }
 .hud-book:hover { border-color: var(--accent); }
+
+/* The current stage's rounds, in the middle of the HUD: past dim, current gold, ahead grey. */
+.hud-side { display: flex; align-items: center; gap: 28px; min-width: 0; }
+.hud-right { justify-content: flex-end; }
+.stage-legend { display: flex; align-items: center; gap: 14px; padding: 4px 14px 4px 16px; border-radius: 999px; background: #00000033; cursor: default; }
+.legend-round-label { display: grid; grid-template-columns: auto auto; column-gap: 8px; align-items: baseline; }
+.legend-round-label small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.legend-round-label b { color: #ffc93c; }
+.legend-icons { display: flex; align-items: center; gap: 4px; }
+.legend-round { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #6b7184; }
+.legend-round svg { width: 18px; height: 18px; }
+.legend-round.past { color: #4a4f5e; opacity: 0.7; }
+.legend-round.current { color: #ffc93c; background: #ffc93c22; box-shadow: 0 0 0 1px #ffc93c88; }
+.legend-link { width: 10px; height: 2px; border-radius: 1px; background: #3a3f4d; }
 
 /* The left column is as wide as the sidebar and its open panel. */
 .layout {
@@ -91,7 +105,11 @@ kbd {
 .slot { display: contents; }
 .col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 /* Sidebar: icons only; the one that's open shows its panel to the right. */
-.col-left { display: flex; gap: 8px; min-height: 0; }
+/* The left column: the sidebar and its panel on top, cut short; your commander under them, above the gold. */
+.col-left { display: flex; flex-direction: column; gap: 8px; min-width: 290px; min-height: 0; }
+.col-left-top { display: flex; flex: 1; gap: 8px; min-height: 0; }
+/* width 0 + min-width 100%: it fills the column but never widens it (its long text would size the grid column). */
+.left-commander { flex: none; width: 0; min-width: 100%; max-height: 45vh; overflow-y: auto; border-radius: 8px; }
 .rail { display: flex; flex: none; flex-direction: column; gap: 6px; padding: 6px; background: var(--panel); border-radius: 8px; }
 .rail-btn {
   position: relative;
@@ -205,23 +223,75 @@ main { min-width: 0; min-height: 0; }
   border-radius: 8px;
   border: 2px dashed transparent;
 }
-.dock-side { display: flex; flex-direction: column; gap: 4px; }
-.dock-btn {
+.dock-side { position: relative; display: flex; flex-direction: column; gap: 4px; }
+/* The ? by the gold and its popover, opening upward from the dock's corner. */
+.income-help { flex: none; width: 18px; height: 18px; padding: 0; border: 1px solid #4a5060; border-radius: 50%; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer; }
+.income-help:hover, .income-help.on { border-color: #ffc93c; color: #ffc93c; }
+.income-pop {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: -8px;
+  z-index: 30;
   display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
+  flex-direction: column;
+  gap: 8px;
+  width: 290px;
+  padding: 12px;
   border: 1px solid #3a3f4d;
-  background: var(--cell);
-  font-size: 13px;
+  border-radius: 10px;
+  background: #1f232d;
+  box-shadow: 0 10px 30px #000a;
+  font-size: 12px;
 }
-.dock-btn:not(:disabled):hover { background: var(--cell-alt); border-color: var(--accent); }
-.dock-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.dock-btn.lock { justify-content: center; }
-.dock-btn.lock.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, var(--cell)); }
+.income-pop::after { content: ''; position: absolute; top: 100%; left: 22px; border: 8px solid transparent; border-top-color: #3a3f4d; }
+.income-pop header { display: flex; align-items: baseline; justify-content: space-between; }
+.income-pop header b { color: var(--text); font-size: 14px; }
+.income-pop header small { color: var(--muted); }
+.income-case { padding: 8px 10px; border-radius: 8px; background: #00000030; border-left: 3px solid #6b7184; }
+.income-case.win { border-left-color: #ffa56b; }
+.income-case.lose { border-left-color: #7cbcff; }
+.income-case h4 { display: flex; justify-content: space-between; margin: 0 0 6px; color: var(--text); font-size: 13px; }
+.income-case h4 b { color: #ffc93c; }
+.income-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; color: #c9ccd6; }
+.income-row span { display: flex; flex-direction: column; }
+.income-row small { color: var(--muted); font-size: 11px; }
+.income-row b { color: var(--text); font-weight: 600; }
+.income-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.dock-gold { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 2px 4px; cursor: default; }
+.dock-gold b { color: #ffc93c; font-size: 20px; line-height: 1.1; }
+.dock-gold small { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+.dock-icons { display: grid; flex: 1; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+/* Level up / reroll / lock: a tinted icon over its cost, key hint in the corner. */
+.dock-icon {
+  --tint: #9aa0b2;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 46px;
+  padding: 4px 0 3px;
+  border: 1px solid #353a47;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #2e3340, #22262f);
+  box-shadow: inset 0 1px 0 #ffffff0d, 0 1px 2px #0006;
+  color: var(--tint);
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.12s, background 0.12s;
+}
+.dock-icon svg { width: 20px; height: 20px; }
+.dock-icon small { color: var(--text); font-size: 11px; font-weight: 600; line-height: 1; }
+.dock-icon kbd { position: absolute; top: 3px; right: 3px; padding: 0 3px; border: none; border-radius: 3px; background: #00000040; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.dock-icon.level { --tint: #9d8ff5; }
+.dock-icon.reroll { --tint: #5fc4e8; }
+.dock-icon.lock { --tint: #9aa0b2; }
+.dock-icon:not(:disabled):hover { border-color: var(--tint); background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 18%, #2e3340), #22262f); transform: translateY(-1px); }
+.dock-icon:not(:disabled):active { transform: translateY(0); box-shadow: inset 0 1px 3px #0008; }
+.dock-icon:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.6); }
+.dock-icon.lock.on { --tint: var(--accent); border-color: var(--accent); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, #2e3340), color-mix(in srgb, var(--accent) 12%, #22262f)); }
+.dock-icon.lock.on small { color: var(--accent); }
 .fight-btn {
   border-radius: 8px;
   border: 2px solid var(--accent);
@@ -370,15 +440,9 @@ main { min-width: 0; min-height: 0; }
 
 .side { display: flex; flex-direction: column; gap: 8px; }
 
-/* Floats over the right column instead of pushing the players list off screen. */
+/* In the right column, under the players list (the commander moved left, so there's room for both). */
 .unit-detail {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  max-height: 100%;
-  overflow-y: auto;
+  position: relative;
   padding: 10px 12px;
   background: var(--panel);
   border-radius: 8px;
@@ -808,12 +872,12 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 @media (max-width: 1500px) {
   .layout { grid-template-columns: auto minmax(0, 1fr) 250px; }
   aside.traits, .col-left .meter, .armory { width: 262px; }
+  .col-left { min-width: 262px; }
   .dock { grid-template-columns: 120px minmax(0, 1fr) 110px; }
   .shop-card { gap: 6px; }
   .shop-face { width: 46px; font-size: 30px; }
   .shop-card .unit-name { font-size: 14px; }
   .shop-trait { font-size: 12px; }
-  .dock-btn { padding: 4px 6px; font-size: 12px; }
   .fight-btn { font-size: 16px; }
 }
 
@@ -822,7 +886,8 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 @media (max-width: 1100px), (max-height: 600px) {
   #app { height: auto; }
   .layout { grid-template-columns: minmax(0, 1fr); }
-  .col-left { order: 2; }
+  .col-left { order: 2; min-width: 0; }
+  .left-commander { max-height: none; width: auto; }
   aside.traits, .col-left .meter, .armory { flex: 1; width: auto; }
   .col-right { order: 3; }
   .col-scroll { height: auto; overflow: visible; }
@@ -872,3 +937,152 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .commander-hp { margin-left: auto; font-weight: 700; font-size: 16px; white-space: nowrap; }
 .commander-hpbar { height: 6px; margin-top: 8px; border-radius: 3px; background: #00000066; overflow: hidden; }
 .commander-hpbar span { display: block; height: 100%; background: #d65151; }
+/* The power and card descriptions fold behind these tabs. */
+.commander-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.commander-tab {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 1px solid #5a4d2c;
+  border-radius: 6px;
+  background: #00000040;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.commander-tab:hover { border-color: var(--accent); }
+.commander-tab.on { border-color: var(--accent); background: #b8963e33; }
+.commander-tab.waiting { color: var(--muted); font-style: italic; }
+.commander-tab .caret { float: right; color: var(--muted); }
+.commander-fold { margin-top: 4px; padding: 2px 8px 6px; border-left: 2px solid var(--accent); }
+
+/* Home screen and its gallery (before a game starts). */
+.home { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 32px; }
+.home-title { margin: 0; font-size: 64px; letter-spacing: 0.06em; color: var(--accent); }
+.home-buttons { display: flex; flex-direction: column; gap: 12px; width: 240px; }
+.home-btn { padding: 12px 20px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel); font-size: 18px; }
+.home-btn:hover { filter: brightness(1.25); }
+.home-btn.primary { background: var(--accent); color: #14161c; font-weight: 700; }
+.home-gallery { width: 100%; height: 100%; }
+.home-gallery-head { display: flex; align-items: center; gap: 16px; }
+.home-gallery-head h2 { margin: 0; }
+.home-gallery .meta { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
+.hero-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.dialog .hero-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #3a3f4d;
+  border-left: 3px solid var(--tier-color);
+  border-radius: 8px;
+  background: var(--cell);
+  text-align: left;
+}
+.dialog .hero-card:hover { border-color: var(--accent); filter: brightness(1.15); }
+.hero-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero-card-text small { color: var(--muted); font-size: 12px; }
+.hero-card-traits { font-size: 12px; color: #c9ccd6; }
+.commander-entry .commander-portrait { font-size: 32px; }
+.commander-entry .trait-desc { margin: 4px 0; font-size: 13px; }
+.item-entry .trait-desc { margin: 4px 0; font-size: 13px; }
+
+/* Kaela's Treasure Grove, in the commander panel. */
+.grove { margin-top: 6px; }
+.grove-track { display: flex; gap: 3px; margin: 4px 0; }
+.grove-track span { flex: 1; height: 6px; border-radius: 3px; background: var(--cell); }
+.grove-track span.on { background: #4caf50; }
+.grove-actions { display: flex; gap: 6px; }
+.grove-btn { flex: 1; margin-top: 4px; padding: 4px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--cell); font-size: 12px; }
+.grove-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* A commander's power and card texts, folded (pick screen, gallery). One open at a time per commander. */
+.commander-folds { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 6px; text-align: left; }
+.commander-folds details { border: 1px solid #3a3f4d; border-radius: 6px; background: #00000030; }
+.commander-folds details[open] { border-color: var(--accent); }
+.commander-folds summary { padding: 4px 8px; font-size: 12px; cursor: pointer; list-style: none; }
+.commander-folds summary::-webkit-details-marker { display: none; }
+.commander-folds summary::after { content: '▾'; float: right; color: var(--muted); }
+.commander-folds details[open] summary::after { content: '▴'; }
+.commander-folds .commander-text { margin: 0; padding: 0 8px 6px; }
+.commander-choice { cursor: default; justify-content: flex-start; }
+.commander-choice:hover { filter: none; }
+.dialog .commander-choose { margin-top: auto; padding: 6px 18px; background: var(--accent); color: #14161c; font-weight: 700; }
+.commander-choice .commander-folds { margin-bottom: 8px; }
+
+/* Dyroth's altar countdown: a rune per round of the cycle, lit as rounds pass; all lit and pulsing when ready. */
+.altar-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.altar-count { display: inline-flex; flex: none; align-items: center; gap: 8px; cursor: default; }
+.altar-runes { display: inline-flex; gap: 6px; padding: 3px 4px; }
+.altar-uses { min-width: 26px; padding: 1px 6px; border-radius: 999px; background: #2a1c20; color: #6b4a4a; font-size: 12px; text-align: center; }
+.altar-uses.ready { background: #d9452b; color: #fff; box-shadow: 0 0 8px #ff5a2d99; animation: altar-pulse 1.4s ease-in-out infinite; }
+.altar-runes i { width: 9px; height: 9px; transform: rotate(45deg); border: 1px solid #6b3a3a; background: #2a1c20; transition: background 0.2s, box-shadow 0.2s; }
+.altar-runes i.lit { border-color: #ff7a4d; background: #d9452b; box-shadow: 0 0 6px #ff5a2d99; }
+@keyframes altar-pulse { 50% { background: #ff8a4d; box-shadow: 0 0 10px #ff6a2dcc; } }
+
+/* The streak, right of the stage legend. */
+.hud-streak { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 74px; padding: 2px 10px; margin-left: 2px; border-left: 1px solid #3a3f4d; cursor: default; }
+.hud-streak small { color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.hud .hud-streak b { font-size: 18px; }
+.hud .hud-streak.win b { color: #ffa56b; text-shadow: 0 0 8px #ff7a3a66; }
+.hud .hud-streak.lose b { color: #7cbcff; text-shadow: 0 0 8px #3a8fe066; }
+.hud .hud-streak.none b { color: #4a4f5e; }
+
+.twilight-line { color: #c8b6ff; }
+
+/* Alice's Blood Pact heroes: red drawn stars, the last one filled part way. */
+.blood-stars { display: inline-flex; gap: 1px; vertical-align: -2px; }
+.bstar { position: relative; display: inline-block; width: 0.95em; height: 0.95em; }
+.bstar svg { display: block; width: 100%; height: 100%; fill: #e0203a; stroke: #000; stroke-width: 1.2; }
+.bstar.part > svg { fill: #3a1018; }
+.bstar .bfill { position: absolute; inset: 0 auto 0 0; overflow: hidden; z-index: 1; }
+.bstar .bfill svg { width: 0.95em; height: 0.95em; }
+
+/* Hero card: stats as icon + number, skill as an icon (details in a popover), items as slots. */
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 10px; }
+.stat-cell { display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 6px; background: #00000030; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; cursor: default; }
+.stat-cell i { font-style: normal; font-size: 12px; }
+.stat-cell.up { color: #7ee08a; }
+.stat-cell.down { color: #ff8a7a; }
+.stat-cell em { font-style: normal; font-size: 9px; color: #7ee08a; }
+.detail-kit { display: flex; gap: 14px; align-items: flex-end; margin-top: 10px; }
+.kit-part { display: flex; flex-direction: column; gap: 3px; }
+.kit-part > small { color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.kit-part .gear-slot { width: 34px; height: 34px; }
+.kit-part .gear-slot .item-chip .item-icon { font-size: 18px; }
+.skill-btn { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid #5a4a8a; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #3b3260, #1f1b33); font-size: 18px; cursor: pointer; }
+.skill-btn:hover, .skill-btn.on { border-color: #b9a6ff; box-shadow: 0 0 8px #8f7aff88; }
+.skill-pop { margin-top: 8px; padding: 8px 10px; border: 1px solid #3a3f4d; border-left: 3px solid #8f7aff; border-radius: 8px; background: #1f232d; box-shadow: 0 6px 18px #0008; }
+.skill-pop h4 { margin: 0 0 4px; }
+.skill-pop .skill { margin: 0; }
+.calc { color: #ffc93c; font-weight: 700; }
+
+/* Faction/role badges sit level with their label: flex-centre them wherever a badge is paired with text
+   (hero card chips, trait chips in popups, a popup's title icon). The badge's text-baseline nudge is off there. */
+.unit-detail .chip, .trait-chip { display: inline-flex; align-items: center; gap: 4px; line-height: 1.2; }
+.trait-icon { display: inline-flex; align-items: center; justify-content: center; }
+.unit-detail .chip .trait-badge, .trait-chip .trait-badge, .trait-icon .trait-badge { vertical-align: 0; }
+
+/* Home: bot difficulty, a segmented pick above Play. */
+.difficulty { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.difficulty > small { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center; }
+.difficulty-picks { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; padding: 3px; border: 1px solid #3a3f4d; border-radius: 8px; background: var(--panel); }
+.difficulty-btn { padding: 7px 0; border: none; border-radius: 6px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; }
+.difficulty-btn:hover { color: var(--text); }
+.difficulty-btn.on { background: color-mix(in srgb, var(--accent) 24%, var(--cell)); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.difficulty-hint { min-height: 2.6em; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.3; text-align: center; }
+
+/* Luo Yi's Essence Altar, beside the board. */
+.essence-altar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border: 1px solid #a0784a; border-radius: 8px; background: linear-gradient(#3a2e22, #26201a); font-size: 12px; }
+.essence-altar h4 { margin: 0; color: #e0b77a; font-size: 13px; }
+.essence-hero { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.essence-roles, .essence-holder, .essence-empty { margin: 0; color: var(--muted); line-height: 1.4; }
+.essence-roles .trait-badge { vertical-align: -0.3em; }
+.essence-actions { display: flex; gap: 6px; }
+.essence-actions button { flex: 1; padding: 5px 8px; border: 1px solid #7a5c38; border-radius: 6px; background: #2e251c; color: #e8d3b0; font-size: 12px; font-weight: 600; }
+.essence-actions button:hover { border-color: #e0b77a; background: #3d3024; }
+.essence-actions button.primary { border-color: #e0b77a; background: linear-gradient(#b88a4e, #8f6a3a); color: #1d1610; }
+.essence-actions button.primary:hover { filter: brightness(1.12); }

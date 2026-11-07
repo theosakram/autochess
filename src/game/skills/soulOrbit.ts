@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Soulreaper (3g Hunter). Per star, index 0 = 1★.
 export const SOUL_ORBIT = {
-  ap: [0.36, 0.4, 0.85], // of magic attack per orb hit, as magic damage
+  atk: [0.36, 0.4, 0.85], // of attack per orb hit, as physical damage
   orbs: 5,
   seconds: 4, // how long they orbit
   step: 0.5, // seconds per cell the orbs move
@@ -34,17 +34,17 @@ export const soulOrbit: SkillDef = {
   name: 'Soul Orbit',
   desc:
     `Releases ${SOUL_ORBIT.orbs} soul orbs that circle it for ${SOUL_ORBIT.seconds}s. ` +
-    `Every ${SOUL_ORBIT.step}s they move one cell, and each orb hits the enemy in its cell for {ap} of magic attack as magic damage.`,
-  values: () => ({ ap: SOUL_ORBIT.ap.map(pct) }),
+    `Every ${SOUL_ORBIT.step}s they move one cell, and each orb hits the enemy in its cell for {atk} of attack as physical damage.`,
+  values: () => ({ atk: SOUL_ORBIT.atk.map(pct) }),
   cast(api, caster) {
-    const raw = caster.stats.ap * SOUL_ORBIT.ap[caster.star - 1];
+    const raw = caster.stats.atk * SOUL_ORBIT.atk[caster.star - 1];
     api.showOrbit(caster, SOUL_ORBIT.orbs, SOUL_ORBIT.seconds, 'soulorbit');
     let step = 0;
     api.repeat(caster, SOUL_ORBIT.step, Math.round(SOUL_ORBIT.seconds / SOUL_ORBIT.step), () => {
       step++;
       for (const cell of orbCells(caster, step)) {
         const victim = api.occupant(cell);
-        if (victim && victim.side !== caster.side) api.hit(caster, victim, raw, 'magic', 'soulorbit');
+        if (victim && victim.side !== caster.side) api.hit(caster, victim, raw, 'physical', 'soulorbit');
       }
     });
   },

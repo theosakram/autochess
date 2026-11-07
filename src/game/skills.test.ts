@@ -427,7 +427,7 @@ describe('Soul Orbit', () => {
     expect(by(1)).toBe(5);
     expect(by(2)).toBe(5);
     expect(by(3)).toBe(0);
-    expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * SOUL_ORBIT.ap[0] && h.effect === 'soulorbit')).toBe(true);
+    expect(b.log.hits.every((h) => h.raw === b.caster.stats.atk * SOUL_ORBIT.atk[0] && h.effect === 'soulorbit')).toBe(true);
   });
 });
 
@@ -441,7 +441,7 @@ describe('Storm Pursuit', () => {
     b.cast('stormpursuit');
     expect(b.log.dashes).toHaveLength(1);
     expect(dist(b.log.dashes[0], { x: 6, y: 0 })).toBe(1);
-    expect(b.log.hits).toEqual([{ target: 2, raw: b.caster.stats.atk * STORM_PURSUIT.atk[0], effect: 'stormpursuit', basic: false }]);
+    expect(b.log.hits).toEqual([{ target: 2, raw: b.caster.stats.ap * STORM_PURSUIT.ap[0], effect: 'stormpursuit', basic: false }]);
   });
 
   test('before anyone has dealt damage, it goes for the nearest', () => {
@@ -1337,7 +1337,7 @@ describe('Gale Shot and Altar Spark', () => {
     b.cast('altarspark');
     expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
     expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * ALTAR_SPARK.ap[0])).toBe(true);
-    expect([UNIT_BY_ID.galekin.mana, UNIT_BY_ID.altarkeeper.mana]).toEqual([40, 40]);
+    expect([UNIT_BY_ID.galekin.mana, UNIT_BY_ID.altarkeeper.mana]).toEqual([40, 30]);
   });
 });
 
@@ -1903,7 +1903,7 @@ describe("Wanderer's Volley", () => {
   });
 });
 
-describe('Blade Descent', () => {
+describe('Meteor Fist', () => {
   test('leaps into the densest spot, stuns everyone around, charges the next attack and shields', () => {
     const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }, { x: 0, y: 4 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.wanderingblade, 1);

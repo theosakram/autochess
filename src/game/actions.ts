@@ -1,11 +1,16 @@
+import { bloodBless, grantBlood } from './blood';
+import { essenceIn, essenceOut } from './essence';
+import { bless } from './twilight';
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { COMMANDERS, MARKS, payCard, pieceBlock, powersOf, type MarkKind } from './commanders';
-import { equipBlock, takeOfferedItem } from './inventory';
+import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, type MarkKind } from './commanders';
+import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
+import { cardRolls, openTrove, rollTrove, useMirror } from './luckyDice';
+import { offer, type AltarKey } from './altar';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
-import { absorb, copiesOf, findCopies, mergeUnits, promote, slotsOf } from './merge';
+import { absorb, bloodMerge, bloodRoom, copiesOf, findCopies, mergeUnits, promote, slotsOf } from './merge';
 import { addXp, boardCount, isAlive, levelUpCost } from './player';
 import { refreshShop } from './shop';
 import { TRAITS } from './traits';
@@ -30,12 +35,21 @@ export type Action =
   | { type: 'pickCommander'; commander: string } // once, at the start of the game
   | { type: 'pickCard'; card: string } // one of the cards on offer (a commander id)
   | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
-  | { type: 'pickItem'; item: string }; // one of the basic items on offer
+  | { type: 'pickItem'; item: string } // one of the basic items on offer
+  | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (once a round)
+  | { type: 'openTrove' } // Kaela: cash in the Trove's points
+  | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device won from the dice
+  | { type: 'offer'; altar: AltarKey; unit: number } // Dyroth: offer a hero (uid) on one of his altars
+  | { type: 'bless'; unit: number } // Lunox: place the Twilight Blessing on a hero (uid)
+  | { type: 'bloodPact'; unit: number } // Alice: use a Blood Pact on a hero (uid)
+  | { type: 'essenceIn'; unit: number } // Luo Yi: put a hero (uid) on the Essence Altar (swapping out any there)
+  | { type: 'essenceOut' }; // Luo Yi: take the altar hero back to the bench
 
 export type Result = { ok: true } | { ok: false; error: string };
 
 const OK: Result = { ok: true };
 const fail = (error: string): Result => ({ ok: false, error });
+const result = (error: string | null): Result => (error ? fail(error) : OK);
 
 function slotsAt(p: Player, loc: Loc): (Unit | null)[] | null {
   if (loc.area !== 'bench' && loc.area !== 'board') return null;
@@ -46,7 +60,7 @@ function slotsAt(p: Player, loc: Loc): (Unit | null)[] | null {
 
 // A full bench is fine if this copy completes a merge.
 export function canClaim(p: Player, defId: string): boolean {
-  return p.bench.includes(null) || findCopies(p, defId, 1).length >= 2;
+  return p.bench.includes(null) || findCopies(p, defId, 1).length >= 2 || bloodRoom(p, defId) !== null;
 }
 
 // Moves a shop unit onto the bench (no payment) and merges. Check canClaim first.
@@ -59,6 +73,8 @@ export function claimShopSlot(state: GameState, p: Player, slot: number): void {
 // Puts a new 1★ copy on the bench (or straight into the pair it completes) and merges.
 // The copy must already be out of the pool. Check canClaim first.
 export function gainUnit(state: GameState, p: Player, defId: string): void {
+  // Alice's Blood Pact hero takes the copy straight in.
+  if (bloodRoom(p, defId)) return bloodMerge(p, defId, 1);
   const free = p.bench.indexOf(null);
   if (free >= 0) {
     p.bench[free] = { uid: state.nextUid++, defId, star: 1 };
@@ -181,6 +197,8 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (p.commander) return fail('You already have a commander');
       if (!COMMANDERS[action.commander]) return fail('No such commander');
       p.commander = action.commander;
+      payCommander(state, p);
+      grantBlood(state, p); // Alice picked on I-1: that round's Blood Pact
       return OK;
     }
 
@@ -189,6 +207,8 @@ function perform(state: GameState, p: Player, action: Action): Result {
       p.commanderCard = action.card;
       p.cardOffer = undefined;
       payCard(state, p, action.card);
+      openChest(state, p);
+      cardRolls(state, p);
       return OK;
     }
 
@@ -208,6 +228,30 @@ function perform(state: GameState, p: Player, action: Action): Result {
       (p.marks ??= {})[action.kind] = { uid: unit.uid, defId: unit.defId };
       return OK;
     }
+
+    case 'rollDice':
+      return result(rollTrove(state, p));
+
+    case 'openTrove':
+      return result(openTrove(state, p));
+
+    case 'useMirror':
+      return result(useMirror(state, p, action.unit));
+
+    case 'offer':
+      return result(offer(state, p, action.altar, action.unit));
+
+    case 'bless':
+      return result(bless(state, p, action.unit));
+
+    case 'bloodPact':
+      return result(bloodBless(state, p, action.unit));
+
+    case 'essenceIn':
+      return result(essenceIn(state, p, action.unit));
+
+    case 'essenceOut':
+      return result(essenceOut(p));
 
     case 'mistBuy':
       return buyMistWare(state, p, action.slot, action.choice);

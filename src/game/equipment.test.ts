@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { defenseMult, simulateCombat } from './combat';
-import { EQUIPMENT_DROPS, isMonsterRound } from './config';
+import { EQUIPMENT_DROPS, isEquipmentRound, isMonsterRound, roundAt } from './config';
 import { createGame, resolveCombat, startRound } from './game';
 import { effectiveTier, fieldStats } from './inventory';
-import { AEGIS, BASIC_ITEMS, BERSERKER_FURY, DIVINE_GLAIVE, GLOWING_WAND, HOLY_CRYSTAL, ICE_QUEEN_WAND, BLADE_OF_DESPAIR, DEMON_HUNTER_SWORD, EQUIPMENT, GOLDEN_STAFF, HAAS_CLAW, INSPIRE, ITEMS, PURIFY, PURPLE_BUFF, RETRIBUTION, REVITALIZE, SEA_HALBERD, SHEEP_STICK, SPELLBLADE_TALISMAN, THIEF_TOOL, WAR_AXE, WINTER_CROWN } from './items';
+import { AEGIS, BASIC_ITEMS, BERSERKER_FURY, DIVINE_GLAIVE, GLOWING_WAND, HOLY_CRYSTAL, ICE_QUEEN_WAND, DOMINANCE_ICE, ANTIQUE_CUIRASS, GUARDIAN_HELMET, BLADE_ARMOR, THUNDER_BELT, ORACLE, ANCIENT_WRATH, RED_CLOAK, SCYTHE, BLADE_OF_DESPAIR, DEMON_HUNTER_SWORD, EQUIPMENT, GOLDEN_STAFF, HAAS_CLAW, INSPIRE, ITEMS, PURIFY, PURPLE_BUFF, RETRIBUTION, REVITALIZE, SEA_HALBERD, SHEEP_STICK, SPELLBLADE_TALISMAN, THIEF_TOOL, WAR_AXE, WINTER_CROWN } from './items';
 import { stageItems } from './inventory';
 import { applyAction } from './actions';
 import { LUKAS } from './commanders';
@@ -19,13 +19,30 @@ const SEEDS = [
 ];
 
 describe('monster rounds', () => {
-  test('rounds 7, 17, 27 and on every 10', () => {
-    expect([1, 6, 7, 10, 17, 20, 27, 37].filter(isMonsterRound)).toEqual([7, 17, 27, 37]);
+  test('I-1 (creeps), then round 3 of every stage from II: II-3, III-3, IV-3, ...', () => {
+    const rounds = Array.from({ length: 30 }, (_, i) => i + 1);
+    expect(rounds.filter(isMonsterRound)).toEqual([1, roundAt(2, 3), roundAt(3, 3), roundAt(4, 3), roundAt(5, 3)]);
+    expect(rounds.filter(isEquipmentRound)).toEqual([7, 13, 19, 25]);
   });
 
-  test('everyone fights the monsters; win or lose, 2 equipment each, and a loss still costs hp', () => {
+  test('I-1: everyone fights creeps, no equipment (they drop the basic item pick on I-2); a loss costs hp', () => {
     const state = createGame(11, SEEDS);
-    while (state.round < 7) {
+    expect(state.round).toBe(1);
+    const before = new Map(state.players.map((p) => [p.id, { hp: p.hp, items: p.items.length }]));
+    const fights = resolveCombat(state);
+    for (const f of fights) {
+      expect(f.away).toBe(MONSTER_ID);
+      expect(f.loot).toBe(0);
+      const p = state.players.find((x) => x.id === f.home)!;
+      expect(p.hp).toBe(before.get(p.id)!.hp - (f.result.winner === 1 ? f.damage : 0));
+    }
+    startRound(state);
+    for (const p of state.players) expect(p.itemOffer?.every((id) => BASIC_ITEMS.includes(id)) ?? true).toBe(true);
+  });
+
+  test('II-3: everyone fights the monsters; win or lose, 2 loot picks each, and a loss still costs hp', () => {
+    const state = createGame(11, SEEDS);
+    while (state.round < roundAt(2, 3)) {
       resolveCombat(state);
       startRound(state);
     }
@@ -35,11 +52,28 @@ describe('monster rounds', () => {
     for (const f of fights) {
       expect(f.away).toBe(MONSTER_ID);
       expect(f.monster).toBe(true);
-      expect(f.drops).toHaveLength(EQUIPMENT_DROPS);
-      for (const id of f.drops!) expect(EQUIPMENT).toContain(id);
+      expect(f.loot).toBe(EQUIPMENT_DROPS);
       const p = state.players.find((x) => x.id === f.home)!;
-      expect(p.items.length).toBe(before.get(p.id)!.items + EQUIPMENT_DROPS);
+      expect(p.items.length).toBe(before.get(p.id)!.items);
       expect(p.hp).toBe(before.get(p.id)!.hp - (f.result.winner === 1 ? f.damage : 0));
+    }
+    // Next round: the picks open one at a time, each one physical, one magic or hybrid, one armor.
+    for (const p of state.players) p.isBot = false; // bots would pick on the spot
+    startRound(state);
+    for (const p of state.players) {
+      const items = p.items.length;
+      for (let pick = 0; pick < EQUIPMENT_DROPS; pick++) {
+        expect(p.offerFrom).toBe('loot');
+        const groups = p.itemOffer!.map((id) => ITEMS[id].group);
+        expect(groups).toHaveLength(3);
+        expect(groups[0]).toBe('physical');
+        expect(['magic', 'hybrid']).toContain(groups[1]!);
+        expect(groups[2]).toBe('armor');
+        for (const id of p.itemOffer!) expect(EQUIPMENT).toContain(id);
+        expect(applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer![1] }).ok).toBe(true);
+      }
+      expect(p.items.length).toBe(items + EQUIPMENT_DROPS);
+      expect(p.loot).toBe(0);
     }
   });
 });
@@ -180,7 +214,7 @@ describe('Aegis', () => {
 });
 
 describe('Inspire', () => {
-  test('+20/30/40/50% attack speed by stage (every 10 rounds), once per hero', () => {
+  test('+20/30/40/50% attack speed by stage (I, II, III, IV+), once per hero', () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
@@ -191,7 +225,7 @@ describe('Inspire', () => {
     ];
     const levels = playerTraits(p);
     const base = unitStats(UNIT_BY_ID.kindler, 1, { levels }).attackSpeed;
-    for (const [round, bonus] of [[1, 0.2], [10, 0.2], [11, 0.3], [25, 0.4], [31, 0.5], [55, 0.5]] as const) {
+    for (const [round, bonus] of [[1, 0.2], [4, 0.2], [5, 0.3], [10, 0.3], [11, 0.4], [16, 0.4], [17, 0.5], [55, 0.5]] as const) {
       state.round = round;
       stageItems(state, p);
       expect(fieldStats(p, levels, {}).get(900)!.attackSpeed - base).toBeCloseTo(bonus);
@@ -212,7 +246,7 @@ describe('Purify', () => {
     }
     a.board[3] = { uid: 1, defId: 'knight', star: 3 };
     if (withPurify) a.items = [{ uid: 97, id: 'purify', tier: 1, holder: 1 }];
-    // The Ash Warden taunts; the Wandering Blade leaps in and stuns.
+    // The Ash Warden taunts; the Wandering Fist leaps in and stuns.
     b.board[3] = { uid: 2, defId: 'ashwarden', star: 1 };
     b.board[4] = { uid: 3, defId: 'wanderingblade', star: 1 };
     return simulateCombat({ rng: 1 }, a, b);
@@ -240,7 +274,7 @@ describe('Retribution', () => {
     ];
     const levels = playerTraits(p);
     const base = unitStats(UNIT_BY_ID.kindler, 1, { levels }).damageAmp;
-    for (const [round, bonus] of [[2, 0.2], [12, 0.3], [21, 0.4], [40, 0.5]] as const) {
+    for (const [round, bonus] of [[2, 0.2], [roundAt(2, 1), 0.3], [roundAt(3, 6), 0.4], [roundAt(4, 1), 0.5], [40, 0.5]] as const) {
       state.round = round;
       stageItems(state, p);
       expect(fieldStats(p, levels, {}).get(900)!.damageAmp - base).toBeCloseTo(bonus);
@@ -589,7 +623,7 @@ describe('Winter Crown, lethal hit', () => {
       p.items = [];
     }
     // Lukas's beast on b's back row, tuned to a sure kill for this test.
-    applyAction(state, b.id, { type: 'pickCommander', commander: 'lukas' });
+    b.commander = 'lukas'; // set, not picked: a bot already rolled a random commander
     b.board.fill(null);
     b.board[17] = { uid: 9, defId: 'divinebeast', star: 1 };
     b.board[3] = { uid: 8, defId: 'knight', star: 1 };
@@ -747,5 +781,451 @@ describe('Cult of Fire burn', () => {
     for (const e of burns) if (e.type === 'effect') expect(e.damage).toBeLessThanOrEqual(Math.round(raw)); // magic resist trims it
     const knight = r.fighters.find((f) => f.defId === 'knight' && f.side === 0)!.id;
     expect(burns.some((e) => e.type === 'effect' && e.by === knight)).toBe(true); // the bearer burns too
+  });
+});
+
+describe('Dominance Ice', () => {
+  const setup = (withItem: boolean) => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'knight', star: 3 }; // front row middle
+    if (withItem) a.items = [{ uid: 84, id: 'dominanceice', tier: 1, holder: 1 }];
+    b.board[3] = { uid: 2, defId: 'footman', star: 1 }; // walks up to it
+    b.board[20] = { uid: 3, defId: 'archer', star: 1 }; // back corner: 3 cells away, in range, never moves
+    return { a, b };
+  };
+
+  test('+50 magic resist, +10% max HP', () => {
+    const { a } = setup(true);
+    const levels = playerTraits(a);
+    const s = fieldStats(a, levels, {}).get(1)!;
+    const base = unitStats(UNIT_BY_ID.knight, 3, { levels });
+    expect(s.mr - base.mr).toBe(DOMINANCE_ICE.mr);
+    expect(Math.abs(s.hp - base.hp * (1 + DOMINANCE_ICE.hp))).toBeLessThanOrEqual(1);
+  });
+
+  test('Arctic Cold: enemies within 2 cells lose 20% attack speed; farther ones are untouched', () => {
+    const { a, b } = setup(true);
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const me = r.fighters.find((f) => f.side === 0)!.id;
+    const footman = r.fighters.find((f) => f.defId === 'footman')!.id;
+    const archer = r.fighters.find((f) => f.defId === 'archer')!.id;
+    const chills = r.events.filter((e) => e.type === 'buff' && e.effect === 'arcticcold');
+    expect(chills.some((e) => e.type === 'buff' && e.id === footman)).toBe(true);
+    // The archer stays put 3 cells away: no chill until the footman falls and the holder walks over.
+    const footmanDies = r.events.find((e) => e.type === 'death' && e.id === footman)!.t;
+    expect(chills.some((e) => e.type === 'buff' && e.id === archer && e.t <= footmanDies)).toBe(false);
+    for (const e of chills) if (e.type === 'buff') {
+      expect(e.by).toBe(me);
+      expect(e.until! - e.t).toBe(DOMINANCE_ICE.linger * TICKS_PER_SECOND);
+    }
+    // Slowed: the footman attacks less often than it does against a holder without the item.
+    const attacks = (withItem: boolean) => {
+      const s = setup(withItem);
+      const fight = simulateCombat({ rng: 1 }, s.a, s.b);
+      const id = fight.fighters.find((f) => f.defId === 'footman')!.id;
+      return fight.events.filter((e) => e.type === 'attack' && e.id === id && e.t < 200).length;
+    };
+    expect(attacks(true)).toBeLessThan(attacks(false));
+  });
+
+  test('the holder gains 25% more mana from taking hits', () => {
+    const firstHitMana = (withItem: boolean) => {
+      const { a, b } = setup(withItem);
+      const r = simulateCombat({ rng: 1 }, a, b);
+      const me = r.fighters.find((f) => f.side === 0)!.id;
+      const hit = r.events.find((e) => e.type === 'attack' && e.target === me && !r.events.some((x) => x.type === 'attack' && x.id === me && x.t <= e.t))!;
+      return hit.type === 'attack' ? hit.targetMana : 0;
+    };
+    expect(firstHitMana(false)).toBe(5);
+    expect(firstHitMana(true)).toBe(Math.floor(5 * (1 + DOMINANCE_ICE.hurtMana)));
+  });
+});
+
+describe('Antique Cuirass', () => {
+  const setup = (withItem: boolean) => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'titan', star: 1 };
+    if (withItem) a.items = [{ uid: 85, id: 'antiquecuirass', tier: 1, holder: 1 }];
+    b.board[3] = { uid: 2, defId: 'paladin', star: 3 }; // tanky: lives through many hits
+    return { a, b };
+  };
+
+  test('+10% max HP, 10% damage reduction', () => {
+    const { a } = setup(true);
+    const levels = playerTraits(a);
+    const s = fieldStats(a, levels, {}).get(1)!;
+    const base = unitStats(UNIT_BY_ID.titan, 1, { levels });
+    expect(Math.abs(s.hp - base.hp * (1 + ANTIQUE_CUIRASS.hp))).toBeLessThanOrEqual(1);
+    expect(s.damageTaken - base.damageTaken).toBeCloseTo(-ANTIQUE_CUIRASS.reduction);
+  });
+
+  test('Deter: each hit on the holder takes 4% attack and magic attack off the attacker for 3s, up to 5 stacks', () => {
+    const { a, b } = setup(true);
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const me = r.fighters.find((f) => f.side === 0)!.id;
+    const foe = r.fighters.find((f) => f.side === 1)!.id;
+    const deters = r.events.filter((e) => e.type === 'buff' && e.effect === 'deter');
+    // One per paladin hit on the holder: attacks and casts alike.
+    const damaging = r.events.filter((e) => (e.type === 'attack' || e.type === 'cast') && e.id === foe && e.target === me && e.damage > 0);
+    expect(deters.length).toBe(damaging.length);
+    const hits = damaging.filter((e) => e.type === 'attack');
+    for (const e of deters) if (e.type === 'buff') {
+      expect(e.id).toBe(foe);
+      expect(e.by).toBe(me);
+      expect(e.until! - e.t).toBe(ANTIQUE_CUIRASS.seconds * TICKS_PER_SECOND);
+    }
+    expect(deters.length).toBeGreaterThan(ANTIQUE_CUIRASS.max);
+    // Damage drops as stacks build, then holds at 5 stacks (20% less attack): compare first and later hits.
+    const first = hits[0].type === 'attack' ? hits[0].damage : 0;
+    const later = hits.slice(ANTIQUE_CUIRASS.max, ANTIQUE_CUIRASS.max + 3).map((e) => (e.type === 'attack' && !e.crit ? e.damage : 0)).filter(Boolean);
+    for (const d of later) expect(d / first).toBeCloseTo(1 - ANTIQUE_CUIRASS.perStack * ANTIQUE_CUIRASS.max, 1);
+  });
+
+  test('takes 10% less damage', () => {
+    const firstHit = (withItem: boolean) => {
+      const { a, b } = setup(withItem);
+      const r = simulateCombat({ rng: 1 }, a, b);
+      const hit = r.events.find((e) => e.type === 'attack' && e.id === r.fighters.find((f) => f.side === 1)!.id && !e.crit)!;
+      return hit.type === 'attack' ? hit.damage : 0;
+    };
+    expect(firstHit(true) / firstHit(false)).toBeCloseTo(1 - ANTIQUE_CUIRASS.reduction, 1);
+  });
+});
+
+describe('Guardian Helmet', () => {
+  test('+15% max HP; heals 1.5% of max HP every second', () => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'knight', star: 1 };
+    a.items = [{ uid: 86, id: 'guardianhelmet', tier: 1, holder: 1 }];
+    b.board[3] = { uid: 2, defId: 'paladin', star: 2 };
+    const levels = playerTraits(a);
+    const s = fieldStats(a, levels, {}).get(1)!;
+    const base = unitStats(UNIT_BY_ID.knight, 1, { levels });
+    expect(Math.abs(s.hp - base.hp * (1 + GUARDIAN_HELMET.hp))).toBeLessThanOrEqual(1);
+
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const me = r.fighters.find((f) => f.side === 0)!;
+    const heals = r.events.filter((e) => e.type === 'heal' && e.id === me.id);
+    expect(heals.length).toBeGreaterThan(1);
+    for (const e of heals) if (e.type === 'heal') {
+      expect(e.t % TICKS_PER_SECOND).toBe(0);
+      expect(e.amount).toBeLessThanOrEqual(Math.round(me.maxHp * GUARDIAN_HELMET.regen));
+    }
+    // A full tick of regen once it's hurt enough.
+    expect(heals.some((e) => e.type === 'heal' && e.amount === Math.round(me.maxHp * GUARDIAN_HELMET.regen))).toBe(true);
+  });
+});
+
+describe('Blade Armor', () => {
+  const fight = (withItem: boolean) => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'knight', star: 1 };
+    if (withItem) a.items = [{ uid: 87, id: 'bladearmor', tier: 1, holder: 1 }];
+    b.board[3] = { uid: 2, defId: 'paladin', star: 2 };
+    return { a, b, r: simulateCombat({ rng: 1 }, a, b) };
+  };
+
+  test('+50 armor; every basic attack on the holder sends 30% of its damage back, physical', () => {
+    const { a, r } = fight(true);
+    const levels = playerTraits(a);
+    expect(fieldStats(a, levels, {}).get(1)!.armor - unitStats(UNIT_BY_ID.knight, 1, { levels }).armor).toBe(BLADE_ARMOR.armor);
+
+    const me = r.fighters.find((f) => f.side === 0)!.id;
+    const foe = r.fighters.find((f) => f.side === 1)!.id;
+    const hits = r.events.filter((e) => e.type === 'attack' && e.id === foe && e.target === me && e.damage > 0);
+    const back = r.events.filter((e) => e.type === 'effect' && e.effect === 'vengeance');
+    expect(back.length).toBe(hits.length);
+    hits.forEach((h, i) => {
+      const v = back[i];
+      if (h.type !== 'attack' || v.type !== 'effect') return;
+      expect(v.t).toBe(h.t);
+      expect(v.by).toBe(me);
+      expect(v.target).toBe(foe);
+      // The paladin's armor trims it below 30% of the hit.
+      expect(v.damage).toBeGreaterThan(0);
+      expect(v.damage).toBeLessThan(h.damage * BLADE_ARMOR.reflect);
+    });
+    // Casts aren't basic attacks: no vengeance at those ticks unless a basic attack landed too.
+    const casts = r.events.filter((e) => e.type === 'cast' && e.id === foe);
+    for (const c of casts) expect(back.filter((v) => v.t === c.t).length).toBe(hits.filter((h) => h.t === c.t).length);
+  });
+});
+
+describe('Thunder Belt', () => {
+  test('+30 armor and magic resist; every 3s the next basic attack blasts the target and its neighbours for 8% of max HP, magic', () => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'paladin', star: 2 };
+    a.items = [{ uid: 88, id: 'thunderbelt', tier: 1, holder: 1 }];
+    // Three footmen in a row: the middle one is in front, its neighbours stand next to it.
+    b.board[2] = { uid: 2, defId: 'footman', star: 2 };
+    b.board[3] = { uid: 3, defId: 'footman', star: 2 };
+    b.board[4] = { uid: 4, defId: 'footman', star: 2 };
+    b.board[17] = { uid: 5, defId: 'archer', star: 1 }; // back row: far from any target
+    const levels = playerTraits(a);
+    const s = fieldStats(a, levels, {}).get(1)!;
+    const base = unitStats(UNIT_BY_ID.paladin, 2, { levels });
+    expect(s.armor - base.armor).toBe(THUNDER_BELT.defense);
+    expect(s.mr - base.mr).toBe(THUNDER_BELT.defense);
+
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const me = r.fighters.find((f) => f.side === 0)!;
+    const archer = r.fighters.find((f) => f.defId === 'archer')!.id;
+    const blasts = r.events.filter((e) => e.type === 'effect' && e.effect === 'thunder');
+    const times = [...new Set(blasts.map((e) => e.t))];
+    expect(times.length).toBeGreaterThan(1);
+    // Each blast rides on one of its basic attacks, at least 3s apart.
+    for (const t of times) expect(r.events.some((e) => e.type === 'attack' && e.id === me.id && e.t === t)).toBe(true);
+    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(THUNDER_BELT.every * TICKS_PER_SECOND);
+    // The first one splashes onto a neighbour too, never the faraway archer; magic resist trims it.
+    expect(blasts.filter((e) => e.t === times[0]).length).toBeGreaterThan(1);
+    expect(blasts.some((e) => e.type === 'effect' && e.target === archer && e.t === times[0])).toBe(false);
+    for (const e of blasts) if (e.type === 'effect') expect(e.damage).toBeLessThan(me.maxHp * THUNDER_BELT.share);
+  });
+});
+
+describe('Oracle', () => {
+  test('+30 armor and magic resist; at the start, every other ally in its row gains +20 of each for the fight', () => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'knight', star: 1 }; // holder, front row
+    a.board[0] = { uid: 2, defId: 'footman', star: 1 }; // same row, far end
+    a.board[6] = { uid: 3, defId: 'footman', star: 1 }; // same row, other end
+    a.board[10] = { uid: 4, defId: 'archer', star: 1 }; // the row behind: no buff
+    a.items = [{ uid: 89, id: 'oracle', tier: 1, holder: 1 }];
+    b.board[3] = { uid: 5, defId: 'footman', star: 1 };
+    const levels = playerTraits(a);
+    const s = fieldStats(a, levels, {}).get(1)!;
+    const base = unitStats(UNIT_BY_ID.knight, 1, { levels });
+    expect(s.armor - base.armor).toBe(ORACLE.defense);
+    expect(s.mr - base.mr).toBe(ORACLE.defense);
+
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const holder = r.fighters.find((f) => f.side === 0 && f.defId === 'knight')!.id;
+    const archer = r.fighters.find((f) => f.defId === 'archer')!.id;
+    const resist = r.events.filter((e) => e.type === 'buff' && e.effect === 'resist');
+    const ids = resist.map((e) => (e.type === 'buff' ? e.id : -1)).sort();
+    const rowmates = r.fighters.filter((f) => f.side === 0 && f.defId === 'footman').map((f) => f.id).sort();
+    expect(ids).toEqual(rowmates);
+    for (const e of resist) if (e.type === 'buff') {
+      expect(e.t).toBe(0);
+      expect(e.by).toBe(holder);
+      expect(e.until).toBeUndefined(); // the whole fight
+    }
+    expect(ids).not.toContain(archer);
+    expect(ids).not.toContain(holder);
+  });
+});
+
+describe('Ancient Wrath', () => {
+  test('+15% max HP; taunts enemies within 2 cells at the start; more armor and magic resist the more enemies target it', () => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'knight', star: 2 }; // holder, front middle
+    a.board[0] = { uid: 2, defId: 'footman', star: 1 }; // an ally the enemies could go for instead
+    a.items = [{ uid: 90, id: 'ancientwrath', tier: 1, holder: 1 }];
+    b.board[2] = { uid: 3, defId: 'footman', star: 1 };
+    b.board[3] = { uid: 4, defId: 'footman', star: 1 };
+    b.board[4] = { uid: 5, defId: 'footman', star: 1 };
+    b.board[20] = { uid: 6, defId: 'archer', star: 1 }; // back corner: out of reach
+    const levels = playerTraits(a);
+    expect(Math.abs(fieldStats(a, levels, {}).get(1)!.hp - unitStats(UNIT_BY_ID.knight, 2, { levels }).hp * (1 + ANCIENT_WRATH.hp))).toBeLessThanOrEqual(1);
+
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const holder = r.fighters.find((f) => f.side === 0 && f.defId === 'knight')!.id;
+    const foes = r.fighters.filter((f) => f.side === 1 && f.defId === 'footman').map((f) => f.id).sort();
+    const archer = r.fighters.find((f) => f.defId === 'archer')!.id;
+    const taunts = r.events.filter((e) => e.type === 'taunt' && e.by === holder);
+    expect(taunts.map((e) => (e.type === 'taunt' ? e.id : -1)).sort()).toEqual(foes);
+    for (const e of taunts) if (e.type === 'taunt') {
+      expect(e.t).toBe(0);
+      expect(e.until - e.t).toBe(ANCIENT_WRATH.seconds * TICKS_PER_SECOND);
+    }
+    expect(taunts.some((e) => e.type === 'taunt' && e.id === archer)).toBe(false);
+    // The bonus is on from the start (3 taunted enemies), and changes as they fall.
+    const bonus = r.events.filter((e) => e.type === 'buff' && e.effect === 'provocation' && e.id === holder);
+    expect(bonus[0].t).toBe(0);
+    expect(bonus.length).toBeGreaterThan(1);
+  });
+
+  test('the bonus is worth 10 armor and magic resist per enemy targeting the holder', () => {
+    // Taunted enemies hit a holder with more armor: compare the first hit against a holder without it.
+    const firstHit = (withItem: boolean) => {
+      const state = createGame(1, SEEDS);
+      const [a, b] = state.players;
+      for (const p of state.players) {
+        p.board.fill(null);
+        p.bench.fill(null);
+        p.items = [];
+      }
+      a.board[3] = { uid: 1, defId: 'knight', star: 2 };
+      if (withItem) a.items = [{ uid: 90, id: 'ancientwrath', tier: 1, holder: 1 }];
+      b.board[2] = { uid: 3, defId: 'footman', star: 1 };
+      b.board[3] = { uid: 4, defId: 'footman', star: 1 };
+      const r = simulateCombat({ rng: 1 }, a, b);
+      const hit = r.events.find((e) => e.type === 'attack' && r.fighters[e.id].side === 1 && !e.crit)!;
+      return hit.type === 'attack' ? hit.damage : 0;
+    };
+    const armor = UNIT_BY_ID.knight.armor;
+    const expected = defenseMult(armor + 2 * ANCIENT_WRATH.perTargeter) / defenseMult(armor);
+    expect(firstHit(true) / firstHit(false)).toBeCloseTo(expected, 1);
+  });
+});
+
+describe('equipment groups', () => {
+  test('every equipment is physical, magic, hybrid or armor; nothing else has a group', () => {
+    for (const id of EQUIPMENT) expect(['physical', 'magic', 'hybrid', 'armor']).toContain(ITEMS[id].group!);
+    for (const def of Object.values(ITEMS)) if (!EQUIPMENT.includes(def.id)) expect(def.group).toBeUndefined();
+  });
+});
+
+describe("Ruby's Cloak and Scythe", () => {
+  const fresh = () => {
+    const state = createGame(1, SEEDS);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    return { a, b };
+  };
+
+  test('Cloak: +20% max HP; once a fight it gets back up with 30% HP instead of dying', () => {
+    const { a, b } = fresh();
+    a.board[3] = { uid: 1, defId: 'knight', star: 1 };
+    a.items = [{ uid: 91, id: 'redcloak', tier: 1, holder: 1 }];
+    b.board[3] = { uid: 2, defId: 'titan', star: 3 }; // kills it twice
+    const levels = playerTraits(a);
+    expect(Math.abs(fieldStats(a, levels, {}).get(1)!.hp - unitStats(UNIT_BY_ID.knight, 1, { levels }).hp * (1 + RED_CLOAK.hp))).toBeLessThanOrEqual(1);
+
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const me = r.fighters.find((f) => f.side === 0)!;
+    const up = r.events.filter((e) => e.type === 'buff' && e.effect === 'mastery' && e.id === me.id);
+    expect(up.length).toBe(1);
+    const heal = r.events.find((e) => e.type === 'heal' && e.id === me.id && e.t === up[0].t)!;
+    expect(heal.type === 'heal' && heal.hp).toBe(Math.round(me.maxHp * RED_CLOAK.revive));
+    // Never dies at that moment; the second time it's down for good.
+    const deaths = r.events.filter((e) => e.type === 'death' && e.id === me.id);
+    expect(deaths.length).toBe(1);
+    expect(deaths[0].t).toBeGreaterThan(up[0].t);
+  });
+
+  test('Cloak: basic attacks move the Rage Mark to their target; the marked enemy dying heals up to 10% of max HP', () => {
+    const { a, b } = fresh();
+    a.board[3] = { uid: 1, defId: 'paladin', star: 3 };
+    a.items = [{ uid: 91, id: 'redcloak', tier: 1, holder: 1 }];
+    b.board[2] = { uid: 2, defId: 'footman', star: 1 };
+    b.board[3] = { uid: 3, defId: 'footman', star: 1 };
+    b.board[4] = { uid: 4, defId: 'footman', star: 1 };
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const me = r.fighters.find((f) => f.side === 0)!;
+    const marks = r.events.filter((e) => e.type === 'buff' && e.effect === 'ragemark' && e.until === undefined);
+    expect(marks.length).toBeGreaterThan(0);
+    for (const m of marks) if (m.type === 'buff') {
+      expect(m.by).toBe(me.id);
+      // Put on by one of its basic attacks on that enemy.
+      expect(r.events.some((e) => e.type === 'attack' && e.id === me.id && e.target === m.id && e.t === m.t)).toBe(true);
+    }
+    // A marked enemy's death heals it (when it's hurt): a heal on the same tick, never more than 10%.
+    const markedDeaths = r.events.filter((e) => e.type === 'death' && marks.some((m) => m.type === 'buff' && m.id === e.id));
+    expect(markedDeaths.length).toBeGreaterThan(0);
+    const heals = r.events.filter((e) => e.type === 'heal' && e.id === me.id);
+    for (const h of heals) if (h.type === 'heal') expect(h.amount).toBeLessThanOrEqual(Math.round(me.maxHp * RED_CLOAK.markHeal));
+    expect(heals.some((h) => markedDeaths.some((d) => d.t === h.t))).toBe(true);
+  });
+
+  test('Scythe: +20% attack and magic attack; every 2s it strikes the Rage Marked enemy, anywhere', () => {
+    const { a, b } = fresh();
+    a.board[3] = { uid: 1, defId: 'knight', star: 2 };
+    a.board[17] = { uid: 2, defId: 'archer', star: 1 }; // back row
+    a.items = [
+      { uid: 91, id: 'redcloak', tier: 1, holder: 1 },
+      { uid: 92, id: 'scythe', tier: 1, holder: 2 },
+    ];
+    b.board[3] = { uid: 3, defId: 'paladin', star: 2 };
+    b.board[20] = { uid: 4, defId: 'archer', star: 1 };
+    const levels = playerTraits(a);
+    const s = fieldStats(a, levels, {}).get(2)!;
+    const base = unitStats(UNIT_BY_ID.archer, 1, { levels });
+    expect(Math.abs(s.atk - base.atk * (1 + SCYTHE.hybridAtk))).toBeLessThanOrEqual(1);
+
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const cloak = r.fighters.find((f) => f.side === 0 && f.defId === 'knight')!.id;
+    const reaper = r.fighters.find((f) => f.side === 0 && f.defId === 'archer')!.id;
+    const strikes = r.events.filter((e) => e.type === 'effect' && e.effect === 'hunt');
+    expect(strikes.length).toBeGreaterThan(1);
+    for (let i = 1; i < strikes.length; i++) expect(strikes[i].t - strikes[i - 1].t).toBeGreaterThanOrEqual(SCYTHE.every * TICKS_PER_SECOND);
+    // Each strike lands on whoever the Cloak marked last.
+    for (const e of strikes) if (e.type === 'effect') {
+      expect(e.by).toBe(reaper);
+      const mark = r.events.filter((m) => m.type === 'buff' && m.effect === 'ragemark' && m.until === undefined && m.by === cloak && m.t <= e.t).at(-1)!;
+      expect(mark.type === 'buff' && mark.id).toBe(e.target);
+      expect(e.damage).toBeGreaterThan(0);
+    }
+  });
+
+  test("when the Cloak's wearer gets back up, the Scythe's wearer gains +55% attack and magic attack", () => {
+    const { a, b } = fresh();
+    a.board[3] = { uid: 1, defId: 'knight', star: 1 };
+    a.board[17] = { uid: 2, defId: 'archer', star: 2 };
+    a.items = [
+      { uid: 91, id: 'redcloak', tier: 1, holder: 1 },
+      { uid: 92, id: 'scythe', tier: 1, holder: 2 },
+    ];
+    b.board[3] = { uid: 3, defId: 'titan', star: 3 };
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const reaper = r.fighters.find((f) => f.side === 0 && f.defId === 'archer')!.id;
+    const up = r.events.find((e) => e.type === 'buff' && e.effect === 'mastery')!;
+    const fury = r.events.filter((e) => e.type === 'buff' && e.effect === 'huntfury');
+    expect(fury.length).toBe(1);
+    expect(fury[0].t).toBe(up.t);
+    expect(fury[0].type === 'buff' && fury[0].id).toBe(reaper);
+    // Strikes on the titan after it hit harder than the ones before.
+    const strikes = r.events.filter((e) => e.type === 'effect' && e.effect === 'hunt');
+    const before = strikes.filter((e) => e.t < up.t).map((e) => (e.type === 'effect' ? e.damage : 0));
+    const after = strikes.filter((e) => e.t > up.t).map((e) => (e.type === 'effect' ? e.damage : 0));
+    expect(before.length).toBeGreaterThan(0);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after[0] / before[0]).toBeCloseTo(1 + SCYTHE.fury, 1);
   });
 });

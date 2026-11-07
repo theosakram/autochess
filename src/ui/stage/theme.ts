@@ -22,6 +22,8 @@ export const COLORS = {
 
 // One star is silver, two gold, three blazing: a merge should be unmissable.
 export const STAR_COLORS: Record<number, number> = { 1: 0xcfd3dc, 2: 0xffc93c, 3: 0xff5ac8 };
+// Alice's Blood Pact heroes: blood-red stars, whatever their count.
+export const BLOOD_STAR = 0xe0203a;
 
 export const TIER_COLORS: Record<number, number> = { 1: 0xf2f4f8, 2: 0x3fae5a, 3: 0x3a84d6, 4: 0xa457d6, 5: 0xe0a63a, 7: 0xe0475e }; // by tier
 
@@ -107,6 +109,18 @@ export const EFFECT_COLORS: Record<string, number> = {
   engulf: 0xb04cff,
   lifebane: 0x3fa7ff,
   icebound: 0x9fe6ff,
+  arcticcold: 0x7fd4ff,
+  deter: 0xc9a26b,
+  vengeance: 0xd9dde6,
+  thunder: 0xffe14d,
+  resist: 0xb98cff,
+  provocation: 0xff4d4d,
+  ragemark: 0xd7263d,
+  mastery: 0xff6b81,
+  huntfury: 0xb3001b,
+  hunt: 0xd7263d,
+  icearrow: 0x9fe6ff,
+  frostmercy: 0x7ff0d0,
   scorch: 0xff9d2e,
   cultburn: 0xff6a1f,
   freeze: 0xbfefff,

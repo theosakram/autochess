@@ -1,3 +1,4 @@
+import { payTwilight } from './twilight';
 import { syncBeast, syncMarks } from './commanders';
 import { syncItems } from './inventory';
 import { EQUIPMENT } from './items';
@@ -12,6 +13,7 @@ import { UNIT_BY_ID } from './units';
 // Run after anything that changes a player's units, and at round start: items, counters, rewards.
 export function syncPlayer(state: GameState, p: Player): void {
   syncBeast(state, p);
+  payTwilight(p);
   syncMarks(p);
   syncItems(state, p);
   // A counter appears (at 0) the first time its trait is active, and stays for the rest of the game.

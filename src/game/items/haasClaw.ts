@@ -13,6 +13,7 @@ export const haasClaw: ItemDef = {
   name: "Haas's Claw",
   icon: '🐾',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc:
     `+${pct(HAAS_CLAW.atk)} physical attack, +${pct(HAAS_CLAW.critChance)} crit chance. ` +

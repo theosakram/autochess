@@ -1,4 +1,5 @@
-import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type WardPower } from './commanders';
+import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type IceArrowPower, type WardPower } from './commanders';
+import { essenceTriggers } from './essence';
 import { BOARD_COLS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side, type Point } from './grid';
 import { activeItems, fieldStats, heldBy, leadsOf } from './inventory';
@@ -30,6 +31,7 @@ export interface Fighter {
   items: { id: string; tier: number }[]; // active items and the tier each works at
   orb: string | null; // trait its player's Magic Orb boosts through this unit type
   mistOrbs: string[]; // traits of the Mist orbs it holds
+  copies?: number; // Alice's Blood Pact hero: copies piled in (its red stars)
 }
 
 // Mana values are after the event, rounded for display. Regen between events isn't logged.
@@ -112,6 +114,25 @@ interface SimFighter extends Fighter {
   ward: WardPower | null; // Kagura's umbrella, until it opens (see checkWard)
   refund: number; // Angela's protection: share of max mana regained after each cast
   castMana: number; // flat mana regained after each cast (Purple Buff)
+  chill: { effect: string; radius: number; attackSpeed: number; linger: number } | null; // Dominance Ice aura
+  hurtMana: number; // Dominance Ice: extra share of mana from taking hits
+  deter: { effect: string; perStack: number; max: number; seconds: number } | null; // Antique Cuirass
+  deterStacks: { n: number; until: number }; // Deter stacks on this unit (as an attacker)
+  regen: number; // Guardian Helmet: share of max hp healed every second
+  revive: number; // Ruby's Cloak: share of max hp it gets back up with, until used (0: none)
+  rageMark: { effect: string; heal: number } | null; // Ruby's Cloak: its basic attacks mark their target
+  marked: number | null; // the enemy its Rage Mark is on
+  hunt: { effect: string; every: number; mult: number; fury: number } | null; // Ruby's Scythe
+  iceArrow: IceArrowPower | null; // Miya's blessing: every few basic attacks, a volley
+  arrows: number; // basic attacks toward the next volley
+  killHeal: number; // Ice Longbow: a kill heals the lowest ally this share of its max hp
+  killer: number | null; // the fighter whose hit first left it at 0 hp
+  huntNext: number; // tick its next Hunt strike is ready
+  vengeance: number; // Blade Armor: share of basic-attack damage sent back to the attacker
+  thunder: { effect: string; every: number; share: number; radius: number } | null; // Thunder Belt
+  thunderReady: number; // tick its next charge is ready
+  provoke: { effect: string; radius: number; seconds: number; perTargeter: number } | null; // Ancient Wrath
+  provoked: number; // enemies targeting it, as its Provocation bonus last counted
   sheep: { opening: number; onHit: number; cooldown: number } | null; // Sheep Stick
   sheepReady: number; // tick its next on-hit sheep is ready
   ccImmuneUntil: number; // no stuns, taunts or enemy displacement before this tick (Purify)
@@ -200,6 +221,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       side,
       defId: u.defId,
       star: u.star,
+      ...(u.copies !== undefined && { copies: u.copies }),
       ...boardToGrid(side, cell),
       hp: stats.hp,
       maxHp: stats.hp,
@@ -218,7 +240,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       owner: null,
       mirror: 0,
       debuffs: [],
-      triggers: unitTriggers(levels, def).map((tr) => ({ ...tr, fired: false })),
+      triggers: [...unitTriggers(levels, def), ...essenceTriggers(p, u.uid)].map((tr) => ({ ...tr, fired: false })),
       spring: items.map(({ id }) => ITEMS[id].spring).find((s) => s) ?? null,
       fury: items.map(({ id }) => ITEMS[id].lowHpFury).find((s) => s) ?? null,
       engulf: Math.max(0, ...items.map(({ id }) => ITEMS[id].engulf ?? 0)),
@@ -253,6 +275,25 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       ward: u.uid === markedUid(p, 'ward') ? (powersOf(p).ward ?? null) : null,
       refund: protectedUids(p).has(u.uid) ? (powersOf(p).protect?.refund ?? 0) : 0,
       castMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].castMana ?? 0)),
+      chill: items.map(({ id }) => ITEMS[id].chill).find((s) => s) ?? null,
+      hurtMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].hurtMana ?? 0)),
+      deter: items.map(({ id }) => ITEMS[id].deter).find((s) => s) ?? null,
+      deterStacks: { n: 0, until: 0 },
+      regen: Math.max(0, ...items.map(({ id }) => ITEMS[id].regen ?? 0)),
+      revive: Math.max(0, ...items.map(({ id }) => ITEMS[id].revive ?? 0)),
+      rageMark: items.map(({ id }) => ITEMS[id].rageMark).find((s) => s) ?? null,
+      marked: null,
+      hunt: items.map(({ id }) => ITEMS[id].hunt).find((s) => s) ?? null,
+      iceArrow: u.uid === markedUid(p, 'iceArrow') ? (powersOf(p).iceArrow ?? null) : null,
+      arrows: 0,
+      killHeal: Math.max(0, ...items.map(({ id }) => ITEMS[id].killHeal ?? 0)),
+      killer: null,
+      huntNext: Math.round((items.map(({ id }) => ITEMS[id].hunt).find((s) => s)?.every ?? 0) * TICKS_PER_SECOND),
+      vengeance: Math.max(0, ...items.map(({ id }) => ITEMS[id].vengeance ?? 0)),
+      thunder: items.map(({ id }) => ITEMS[id].thunder).find((s) => s) ?? null,
+      thunderReady: 0,
+      provoke: items.map(({ id }) => ITEMS[id].provoke).find((s) => s) ?? null,
+      provoked: 0,
       sheep: items.map(({ id }) => ITEMS[id].sheep).find((s) => s) ?? null,
       sheepReady: 0,
       taunt: null,
@@ -269,7 +310,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
   });
 }
 
-const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTile, chosen, leads, items, orb, mistOrbs }: Fighter): Fighter => ({
+const snapshot = ({ id, side, defId, star, x, y, hp, maxHp, mana, maxMana, onTile, chosen, leads, items, orb, mistOrbs, copies }: Fighter): Fighter => ({
+  ...(copies !== undefined && { copies }),
   id,
   side,
   defId,
@@ -352,9 +394,11 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Winter Crown: a lethal hit freezes it at 1 hp instead.
     const lethal = target.freeze !== null && dealt - absorbed >= target.hp;
     target.hp = lethal ? 1 : Math.max(0, target.hp - (dealt - absorbed));
+    if (target.hp <= 0 && dealer && target.killer === null) target.killer = dealer.id;
     if (lethal) freezeNow(target);
     if (dealer) dealer.dealt += dealt;
     if (dealer && dealt > 0) stackUp(dealer, 'damage');
+    if (dealer && dealt > 0 && target.deter && dealer.side !== target.side && dealer.hp > 0) deterHit(target, dealer);
     if (dealer?.lifebane && dealt > 0) {
       const active = t < target.antiHeal.until;
       target.antiHeal = { cut: Math.max(active ? target.antiHeal.cut : 0, dealer.lifebane.cut), until: t + Math.round(dealer.lifebane.seconds * TICKS_PER_SECOND) };
@@ -373,6 +417,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   function reactToDamage(target: SimFighter, t: number): void {
+    if (target.hp <= 0 && target.revive > 0) getUp(target, t);
     if (target.hp > 0) checkExecute(target, t);
     if (target.hp > 0) checkWard(target, t);
     if (target.hp > 0) checkSpring(target, t);
@@ -380,6 +425,23 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     if (target.hp <= 0) {
       occupied[gridIndex(target)] = -1;
       events.push({ t, type: 'death', id: target.id });
+      // Ice Longbow: its wearer's kill heals the lowest ally.
+      const killer = fighters.find((f) => f.id === target.killer);
+      if (killer && killer.hp > 0 && killer.killHeal > 0 && killer.side !== target.side) {
+        const low = fighters
+          .filter((f) => f.side === killer.side && f.hp > 0)
+          .sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp || x.id - y.id)[0];
+        if (low) {
+          events.push({ t, type: 'effect', effect: 'frostmercy', by: killer.id, target: low.id, damage: 0, hp: low.hp });
+          api.heal(low, low.maxHp * killer.killHeal);
+        }
+      }
+      // Ruby's Cloak: its marked enemy fell.
+      for (const f of fighters) {
+        if (f.marked !== target.id) continue;
+        f.marked = null;
+        if (f.hp > 0 && f.rageMark) api.heal(f, f.maxHp * f.rageMark.heal);
+      }
       for (const m of fighters) {
         // Mirror summons vanish with their owner; fighter summons fight on.
         if (m.owner !== target.id || m.hp <= 0 || !m.mirror) continue;
@@ -514,6 +576,48 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     leech(f, dealt, true, t);
   }
 
+  // Thunder Belt: a charged basic attack also blasts its target and the enemies around it with a share of
+  // the holder's max hp, magic. The next charge comes `every` seconds after.
+  function thunderStrike(f: SimFighter, target: SimFighter): void {
+    if (!f.thunder || t < f.thunderReady) return;
+    const th = f.thunder;
+    f.thunderReady = t + Math.round(th.every * TICKS_PER_SECOND);
+    const hit = fighters.filter((e) => e.side !== f.side && e.hp > 0 && dist(e, target) <= th.radius);
+    for (const e of hit) {
+      const dealt = damage(e, f.maxHp * th.share, 'magic', f);
+      events.push({ t, type: 'effect', effect: th.effect, by: f.id, target: e.id, damage: dealt, hp: e.hp });
+      leech(f, dealt, false, t);
+    }
+    for (const e of hit) afterDamage(e, t);
+  }
+
+  // Miya's Ice Arrow Blessing: every `every`th basic attack, arrows at the nearest enemies (the target among
+  // them), each a share of that enemy's max hp, physical.
+  function iceVolley(f: SimFighter, target: SimFighter): void {
+    const ice = f.iceArrow;
+    if (!ice || ++f.arrows < ice.every) return;
+    f.arrows = 0;
+    const hit = fighters
+      .filter((e) => e.side !== f.side && e.hp > 0 && t >= e.frozen.until)
+      .sort((x, y) => (x === target ? -1 : y === target ? 1 : dist(f, x) - dist(f, y) || x.id - y.id))
+      .slice(0, ice.targets);
+    for (const e of hit) {
+      events.push({ t, type: 'projectile', effect: 'icearrow', from: { x: f.x, y: f.y }, to: { x: e.x, y: e.y }, until: t + Math.round(0.3 * TICKS_PER_SECOND) });
+      const dealt = damage(e, e.maxHp * ice.share, 'physical', f);
+      events.push({ t, type: 'effect', effect: 'icearrow', by: f.id, target: e.id, damage: dealt, hp: e.hp });
+      leech(f, dealt, false, t);
+    }
+    for (const e of hit) afterDamage(e, t);
+  }
+
+  // Blade Armor: a basic attack on the holder sends a share of its damage back, physical.
+  function vengeance(holder: SimFighter, attacker: SimFighter, taken: number): void {
+    if (!holder.vengeance || taken <= 0 || attacker.hp <= 0) return;
+    const dealt = damage(attacker, taken * holder.vengeance, 'physical', holder);
+    events.push({ t, type: 'effect', effect: 'vengeance', by: holder.id, target: attacker.id, damage: dealt, hp: attacker.hp });
+    afterDamage(attacker, t);
+  }
+
   // Item passives that build up with every damaging hit (e.g. War Axe's Fighting Spirit): one more
   // stack (up to max), all of them lasting from this hit; at max stacks the extra kicks in too.
   function stackUp(f: SimFighter, on: 'damage' | 'basic'): void {
@@ -534,6 +638,20 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     }
   }
 
+  // Antique Cuirass's Deter: hitting the holder costs the attacker a stack (up to max) of lower attack and
+  // magic attack, all lasting from this hit. Each stack is a share of what it has without Deter.
+  function deterHit(holder: SimFighter, attacker: SimFighter): void {
+    const d = holder.deter!;
+    const st = attacker.deterStacks;
+    if (t >= st.until) st.n = 0;
+    st.n = Math.min(d.max, st.n + 1);
+    st.until = t + Math.round(d.seconds * TICKS_PER_SECOND);
+    const live = attacker.buffs.find((b) => b.effect === d.effect);
+    const without = (stat: StatKey) => attacker.stats[stat] - (live?.mods.find((m) => m.stat === stat)?.add ?? 0);
+    const mods = (['atk', 'ap'] as const).map((stat) => ({ stat, add: -without(stat) * d.perStack * st.n }));
+    api.buff(attacker, mods, d.seconds, d.effect, holder);
+  }
+
   // Winter Crown's Freeze: once per fight. Enemies going after it let go.
   function freezeNow(f: SimFighter): void {
     const s = f.freeze!;
@@ -547,6 +665,66 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const f of fighters) if (f.hp > 0 && t < f.frozen.until) api.heal(f, f.frozen.healPerTick);
   }
   const frozen = (f: SimFighter) => t < f.frozen.until;
+
+  // Dominance Ice: every living holder slows the enemies around it. The slow is a timed buff renewed once it's
+  // half spent (one event per renewal, so the stage keeps its ring), so it lingers a moment after an enemy
+  // leaves the radius or the holder falls.
+  const chillers = fighters.filter((f) => f.chill);
+  function fireChills(t: number): void {
+    for (const f of chillers) {
+      if (f.hp <= 0 || !f.chill) continue;
+      const c = f.chill;
+      for (const e of fighters) {
+        if (e.side === f.side || e.hp <= 0 || dist(f, e) > c.radius) continue;
+        const on = e.buffs.find((b) => b.effect === c.effect);
+        if (on && on.until - t > (c.linger * TICKS_PER_SECOND) / 2) continue;
+        api.buff(e, [{ stat: 'attackSpeed', add: -c.attackSpeed }], c.linger, c.effect, f);
+      }
+    }
+  }
+
+  // Guardian Helmet: living holders heal a share of their max hp once a second (not on the first tick).
+  const regenerators = fighters.filter((f) => f.regen > 0);
+  function fireRegen(t: number): void {
+    if (t === 0 || t % TICKS_PER_SECOND !== 0) return;
+    for (const f of regenerators) if (f.hp > 0) api.heal(f, f.maxHp * f.regen);
+  }
+
+  // Ruby's Cloak: once a fight, a death is undone: back up with a share of max hp. Every Scythe on its side
+  // (its own included) flies into a fury for the rest of the fight.
+  function getUp(f: SimFighter, t: number): void {
+    f.hp = Math.max(1, Math.round(f.maxHp * f.revive));
+    f.revive = 0;
+    events.push({ t, type: 'heal', id: f.id, amount: f.hp, hp: f.hp });
+    events.push({ t, type: 'buff', id: f.id, by: f.id, effect: 'mastery', until: t + TICKS_PER_SECOND });
+    for (const a of fighters) {
+      if (a.side !== f.side || a.hp <= 0 || !a.hunt || api.hasBuff(a, 'huntfury')) continue;
+      api.buff(a, [{ stat: 'atk', add: a.stats.atk * a.hunt.fury }, { stat: 'ap', add: a.stats.ap * a.hunt.fury }], Infinity, 'huntfury', f);
+    }
+  }
+
+  // Ruby's Cloak: a basic attack moves its Rage Mark onto the target (if it's still standing).
+  function rage(f: SimFighter, target: SimFighter): void {
+    if (!f.rageMark || target.hp <= 0 || f.marked === target.id) return;
+    if (f.marked !== null) events.push({ t, type: 'buff', id: f.marked, by: f.id, effect: f.rageMark.effect, until: t });
+    f.marked = target.id;
+    events.push({ t, type: 'buff', id: target.id, by: f.id, effect: f.rageMark.effect });
+  }
+
+  // Ruby's Scythe: when ready, strikes the enemy its side's Cloak has marked, wherever it is. Waits for a mark.
+  const hunters = fighters.filter((f) => f.hunt);
+  function fireHunts(t: number): void {
+    for (const f of hunters) {
+      if (f.hp <= 0 || t < f.huntNext) continue;
+      const marker = fighters.find((m) => m.side === f.side && m.marked !== null && fighters[m.marked].hp > 0 && !frozen(fighters[m.marked]));
+      if (!marker) continue;
+      const prey = fighters[marker.marked!];
+      f.huntNext = t + Math.round(f.hunt!.every * TICKS_PER_SECOND);
+      const dealt = damage(prey, Math.max(f.stats.atk, f.stats.ap) * f.hunt!.mult, 'physical', f);
+      events.push({ t, type: 'effect', effect: f.hunt!.effect, by: f.id, target: prey.id, damage: dealt, hp: prey.hp });
+      afterDamage(prey, t);
+    }
+  }
 
   // Revitalize: the first drop under the threshold leaves a healing spring on the holder's tile.
   const springs: { side: Side; cells: Point[]; heal: number; every: number; next: number; left: number; effect: string }[] = [];
@@ -779,6 +957,25 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         ward: null,
         refund: 0,
         castMana: 0,
+        chill: null,
+        hurtMana: 0,
+        deter: null,
+        deterStacks: { n: 0, until: 0 },
+        regen: 0,
+        revive: 0,
+        rageMark: null,
+        marked: null,
+        hunt: null,
+        huntNext: 0,
+        iceArrow: null,
+        arrows: 0,
+        killHeal: 0,
+        killer: null,
+        vengeance: 0,
+        thunder: null,
+        thunderReady: 0,
+        provoke: null,
+        provoked: 0,
         sheep: null,
         sheepReady: 0,
         ccImmuneUntil: 0,
@@ -962,6 +1159,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     hitEvent(f, target, t, 'attack', dealt, crit, again);
     leech(f, dealt, true, t);
     engulf(f, target);
+    rage(f, target);
+    thunderStrike(f, target);
+    iceVolley(f, target);
+    vengeance(target, f, dealt);
     ignite(f, target);
     if (dealt > 0) sheepOnHit(f, target);
     // Its summons repeat the hit on the same target, crit and all. They copy the hit itself, not the
@@ -979,7 +1180,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // Logs an attack or placeholder cast, then lets the target react (mana, death, triggers).
   function hitEvent(f: SimFighter, target: SimFighter, t: number, type: 'attack' | 'cast', dealt: number, crit: boolean, again = false): void {
-    gainMana(target, MANA_PER_HIT_TAKEN);
+    gainMana(target, MANA_PER_HIT_TAKEN * (1 + target.hurtMana));
     events.push({
       t,
       type,
@@ -1075,6 +1276,44 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     }
   }
 
+  // Oracle: when the fight starts, every other ally in the holder's row is buffed for the whole fight.
+  function fireRowBuffs(): void {
+    for (const f of fighters) {
+      const held = new Map(f.items.flatMap(({ id }) => (ITEMS[id].rowBuff ? [[ITEMS[id].rowBuff!.effect, ITEMS[id].rowBuff!] as const] : [])));
+      for (const b of held.values()) {
+        for (const ally of fighters) {
+          if (ally === f || ally.side !== f.side || ally.hp <= 0 || ally.y !== f.y || api.hasBuff(ally, b.effect)) continue;
+          api.buff(ally, b.mods, Infinity, b.effect, f);
+        }
+      }
+    }
+  }
+
+  // Ancient Wrath: when the fight starts, the holder taunts the enemies around it.
+  const provokers = fighters.filter((f) => f.provoke);
+  function fireProvoke(): void {
+    for (const f of provokers) {
+      for (const e of fighters) if (e.side !== f.side && e.hp > 0 && dist(e, f) <= f.provoke!.radius) api.taunt(e, f, f.provoke!.seconds);
+    }
+    updateProvoked(t);
+  }
+  // ...and has more armor and magic resist for every enemy after it, recounted each tick. The buff (and its
+  // ring) changes only when the count does; at zero it's taken off, its ring with it.
+  function updateProvoked(t: number): void {
+    for (const f of provokers) {
+      const n = f.hp > 0 ? fighters.filter((e) => e.side !== f.side && e.hp > 0 && e.target === f).length : 0;
+      if (n === f.provoked) continue;
+      f.provoked = n;
+      const p = f.provoke!;
+      if (n === 0) {
+        api.unbuff(f, p.effect);
+        events.push({ t, type: 'buff', id: f.id, by: f.id, effect: p.effect, until: t });
+      } else {
+        api.buff(f, [{ stat: 'armor', add: p.perTargeter * n }, { stat: 'mr', add: p.perTargeter * n }], Infinity, p.effect, f);
+      }
+    }
+  }
+
   // Commander beasts (see commanders/): each fires once from where it stands, then is gone.
   function fireBeasts(): void {
     [home, away].forEach((p, side) => {
@@ -1155,6 +1394,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   if (alive(0) && alive(1)) {
     fireOpeners();
     fireSideShields();
+    fireRowBuffs();
+    fireProvoke();
     fireBeasts();
     fireSheep();
     // Skill passives, from the starting positions.
@@ -1173,6 +1414,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireSprings(t);
     fireBurns(t);
     fireFrozen(t);
+    fireChills(t);
+    fireRegen(t);
+    fireHunts(t);
+    updateProvoked(t);
     expireBuffs(t);
     expireShields(t);
 

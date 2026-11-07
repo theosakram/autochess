@@ -12,6 +12,7 @@ export const purpleBuff: ItemDef = {
   name: 'Purple Buff',
   icon: '🟣',
   kind: 'utility',
+  group: 'hybrid',
   maxTier: 1,
   desc: `+${pct(PURPLE_BUFF.hybridAtk)} attack and magic attack. Elemental Power (unique): gains ${PURPLE_BUFF.castMana} mana after casting a skill.`,
   values: () => ({}),

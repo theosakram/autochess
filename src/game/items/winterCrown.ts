@@ -15,6 +15,7 @@ export const winterCrown: ItemDef = {
   name: 'Winter Crown',
   icon: '🧊',
   kind: 'defense',
+  group: 'hybrid',
   maxTier: 1,
   desc:
     `+${pct(WINTER_CROWN.hybridAtk)} attack and magic attack, +${pct(WINTER_CROWN.hp)} max HP. ` +

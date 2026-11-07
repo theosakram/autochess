@@ -3,8 +3,8 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const MOONEATER = {
-  stun: [1, 1.5], // seconds, every enemy in the Mooneater's column ahead of it
-  attackSpeed: [0.35, 0.7], // every ally in its column, for the fight
+  stun: [0.8, 1], // seconds, every enemy in the Mooneater's column ahead of it
+  attackSpeed: [0.25, 0.4], // every ally in its column, for the fight
 };
 
 export const mooneater: TraitDef = {

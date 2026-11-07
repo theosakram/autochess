@@ -13,6 +13,7 @@ export const berserkerFury: ItemDef = {
   name: "Berserker's Fury",
   icon: '😡',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc: `+${pct(BERSERKER_FURY.atk)} physical attack, +${pct(BERSERKER_FURY.critChance)} crit chance, +${pct(BERSERKER_FURY.critDamage)} crit damage.`,
   values: () => ({}),

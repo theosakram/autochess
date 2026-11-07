@@ -4,7 +4,8 @@ import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
 import { PORTRAITS } from '../portraits';
 import { badgeSvg, BEARER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
-import { COLORS, FONT, mix, STAR_COLORS, TIER_COLORS } from './theme';
+import { bloodStars } from '../../game/blood';
+import { BLOOD_STAR, COLORS, FONT, mix, STAR_COLORS, TIER_COLORS } from './theme';
 
 export interface TokenSpec {
   defId: string;
@@ -19,6 +20,7 @@ export interface TokenSpec {
   foe?: boolean;
   selected?: boolean;
   bars?: boolean; // hp and mana bars, for combat
+  copies?: number; // Alice's Blood Pact hero: red stars, the last one partly filled
 }
 
 export interface TokenView {
@@ -141,13 +143,37 @@ export function makeToken(s: TokenSpec): TokenView {
   if (badges) corner(badges, half - 3, -half + 3 + barSpace, 1, 0);
   if (s.itemIds?.length) corner(s.itemIds.map((id) => ITEMS[id].icon).join(''), -half + 3, ribbonTop - 1, 0, 1);
 
-  const stars = new Text({
-    text: '★'.repeat(s.star),
-    style: { fontFamily: FONT, fontSize: Math.max(11, w * 0.17), fill: STAR_COLORS[s.star] ?? COLORS.accent, fontWeight: '900', stroke: { color: 0x000000, width: 3 } },
-  });
-  stars.anchor.set(1, 1);
-  stars.position.set(half - 3, ribbonTop + 2);
-  root.addChild(stars);
+  if (s.copies !== undefined) {
+    // Blood Pact: drawn stars, so the partial one can be filled part way (left to right).
+    const { full, frac } = bloodStars(s.copies);
+    const r = Math.max(5, w * 0.075);
+    const count = full + (frac > 0 ? 1 : 0);
+    const row = new Container();
+    for (let i = 0; i < count; i++) {
+      const fill = i < full ? 1 : frac;
+      const cx = -(count - 1 - i) * r * 2.05;
+      const pts = starPoints(cx, 0, r);
+      row.addChild(new Graphics().poly(pts).fill({ color: 0x2a0a10 }).stroke({ color: 0x000000, width: 2 }));
+      const lit = new Graphics().poly(pts).fill({ color: BLOOD_STAR });
+      if (fill < 1) {
+        const mask = new Graphics().rect(cx - r, -r, r * 2 * fill, r * 2).fill({ color: 0xffffff });
+        row.addChild(mask);
+        lit.mask = mask;
+      }
+      row.addChild(lit);
+      row.addChild(new Graphics().poly(pts).stroke({ color: 0xffb3b3, width: 1, alpha: 0.6 }));
+    }
+    row.position.set(half - 3 - r, ribbonTop - r + 1);
+    root.addChild(row);
+  } else {
+    const stars = new Text({
+      text: '★'.repeat(s.star),
+      style: { fontFamily: FONT, fontSize: Math.max(11, w * 0.17), fill: STAR_COLORS[s.star] ?? COLORS.accent, fontWeight: '900', stroke: { color: 0x000000, width: 3 } },
+    });
+    stars.anchor.set(1, 1);
+    stars.position.set(half - 3, ribbonTop + 2);
+    root.addChild(stars);
+  }
 
   // Combat bars along the top edge.
   const barW = w - 8;
@@ -186,4 +212,15 @@ export function makeToken(s: TokenSpec): TokenView {
   };
 
   return { root, setBar, flash };
+}
+
+// A five-pointed star's outline around (cx, cy), outer radius r, point up.
+function starPoints(cx: number, cy: number, r: number): number[] {
+  const pts: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    pts.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+  }
+  return pts;
 }

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { formation } from './formation';
 import { applyAction, type Action } from './actions';
-import { BASE_INCOME, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
-import { boardCount, interest, levelUpCost } from './player';
+import { BASE_REWARD, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
+import { boardCount, interest, levelUpCost, roundIncome } from './player';
 import { runBot } from './bot';
 import { createGame, resolveCombat, startRound } from './game';
 import { copiesOf } from './merge';
@@ -65,7 +65,7 @@ describe('game setup', () => {
     const state = newGame(42, true);
     const p = you(state);
     expect(p.level).toBe(START_LEVEL);
-    expect(p.gold).toBe(5);
+    expect(p.gold).toBe(BASE_REWARD[0]);
     expect(p.board.every((u) => u === null)).toBe(true);
     const starters = p.bench.filter((u) => u !== null);
     expect(starters.reduce((n, u) => n + copiesOf(u), 0)).toBe(FREE_UNITS);
@@ -303,11 +303,12 @@ describe('scavenger', () => {
   test('level 3 also pays 2 gold', () => {
     const { state, p } = setup(['wisp', 'penari', 'graverobber']);
     const gold = p.gold;
+    const income = roundIncome(p, state.round).total;
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
     expect(mine.gold).toBe(SCAVENGER.gold[1]);
     expect(mine.looted).not.toBeNull();
-    // +2 on top of normal income and interest
-    expect(p.gold).toBe(gold + BASE_INCOME + interest(gold) + SCAVENGER.gold[1]);
+    // +2 on top of the round's income
+    expect(p.gold).toBe(gold + income + SCAVENGER.gold[1]);
   });
 
   test('skipped when the bench is full and the unit would not merge', () => {

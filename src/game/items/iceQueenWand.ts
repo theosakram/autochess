@@ -14,6 +14,7 @@ export const iceQueenWand: ItemDef = {
   name: 'Ice Queen Wand',
   icon: '❄️',
   kind: 'offense',
+  group: 'magic',
   maxTier: 1,
   desc:
     `+${pct(ICE_QUEEN_WAND.ap)} magic attack, +${pct(ICE_QUEEN_WAND.spellVamp)} spell vamp. ` +

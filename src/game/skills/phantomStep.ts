@@ -3,7 +3,7 @@ import { pct } from '../traits/format';
 import { freeCellNextTo } from './dashStrike';
 import type { SkillDef } from './types';
 
-// Phantom Blade (3g Fighter). Per star, index 0 = 1★.
+// Phantom Fist (3g Fighter). Per star, index 0 = 1★.
 export const PHANTOM_STEP = {
   atk: [4, 5, 13], // of attack, physical
   stun: [1, 1.25, 1.75], // seconds

@@ -12,6 +12,7 @@ export const spellbladeTalisman: ItemDef = {
   name: 'Spellblade Talisman',
   icon: '🔋',
   kind: 'offense',
+  group: 'hybrid',
   maxTier: 1,
   desc: `+${pct(SPELLBLADE_TALISMAN.hybridAtk)} attack and magic attack. Recharge (unique): starts every fight with ${pct(SPELLBLADE_TALISMAN.startMana)} of its max mana.`,
   values: () => ({}),

@@ -16,6 +16,7 @@ export const warAxe: ItemDef = {
   name: 'War Axe',
   icon: '🪓',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc:
     `+${pct(WAR_AXE.atk)} physical attack, +${pct(WAR_AXE.spellLifesteal)} spell lifesteal. ` +

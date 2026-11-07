@@ -1,5 +1,4 @@
-import { ITEMS } from '../game/items';
-import type { MarkKind } from '../game/commanders';
+import { powersOf, type MarkKind } from '../game/commanders';
 import { applyAction, type Action } from '../game/actions';
 import type { CombatEvent } from '../game/combat';
 import { isGameOver, resolveCombat, startRound, type Fight } from '../game/game';
@@ -9,6 +8,7 @@ import type { GameState, Loc, Player } from '../game/types';
 import { UNIT_BY_ID } from '../game/units';
 import { createMeter, meterHtml, recordEvent, type Meter } from './meter';
 import { MIST_WARES } from '../game/mistShop';
+import type { AltarKey } from '../game/altar';
 import { Stage, type Playback } from './stage/stage';
 import {
   armoryHtml,
@@ -18,6 +18,12 @@ import {
   gameOverHtml,
   graveHtml,
   mistChoiceHtml,
+  mirrorPickHtml,
+  altarPickHtml,
+  blessPickHtml,
+  essenceAltarHtml,
+  essencePickHtml,
+  bloodPickHtml,
   sideShopsHtml,
   hudHtml,
   orbChoiceHtml,
@@ -31,6 +37,7 @@ import {
   itemDetailHtml,
   itemOfferHtml,
   commanderPanelHtml,
+  type CommanderSection,
   traitDetailHtml,
   traitsPanelHtml,
   unitInfoHtml,
@@ -61,6 +68,18 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let openUnitInfo: string | null = null;
   // Mist Shop slot whose ware is waiting for a pick (Mirror: a unit; picked orbs: a trait).
   let mistPick: number | null = null;
+  // The Mirror Device picker (Kaela's dice prizes) is open.
+  let mirrorOpen = false;
+  // Which of Dyroth's altars has its hero picker open.
+  let altarOpen: AltarKey | null = null;
+  let blessOpen = false; // Lunox's blessing picker
+  let essenceOpen = false; // Luo Yi's altar picker
+  let bloodOpen = false; // Alice's Blood Pact picker
+  // The unfolded part of the commander panel (its power's text or its card's), if any.
+  let commanderOpen: CommanderSection | null = null;
+  let incomeOpen = false; // the gold popover in the dock
+  let skillOpen = false; // the hero card's skill popover
+  let skillFor: number | null = null; // which hero it was opened on
   let galleryOpen = false;
   // What the sidebar shows beside its icons; null when collapsed.
   let railPanel: RailPanel | null = 'synergy';
@@ -78,8 +97,11 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     <div class="slot" data-slot="hud"></div>
     <div class="layout">
       <div class="col-left">
-        <div class="slot" data-slot="rail"></div>
-        <div class="slot" data-slot="panel"></div>
+        <div class="col-left-top">
+          <div class="slot" data-slot="rail"></div>
+          <div class="slot" data-slot="panel"></div>
+        </div>
+        <div class="slot" data-slot="commander"></div>
       </div>
       <main><section class="stage"></section></main>
       <div class="col col-right">
@@ -191,23 +213,26 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   function render(): void {
     const p = me();
     const opponent = combat && (combat.fight.monster ? { name: '👹 Monsters' } : state.players.find((o) => o.id === combat!.opponentId));
-    const over = !isAlive(p) || isGameOver(state);
+    // The fight is resolved before it plays: hold the end screen until its animation is done.
+    const over = !combat && (!isAlive(p) || isGameOver(state));
     if (selectedUid !== null && !unitLoc(selectedUid)) selectedUid = null;
+    if (skillFor !== selectedUid) skillOpen = false;
     if (picked?.kind === 'item' && !p.items.some((i) => i.uid === (picked as { uid: number }).uid)) picked = null;
 
-    slot('hud').innerHTML = hudHtml(state, p, shownHp(p), opponent?.name ?? null);
+    slot('hud').innerHTML = hudHtml(state, p, opponent?.name ?? null);
     slot('rail').innerHTML = railHtml(railPanel, p);
     renderPanel();
-    slot('shop').innerHTML = shopDockHtml(p, combat !== null, state.chosen);
-    slot('grave').innerHTML = `<div class="graves">${graveHtml(p)}${sideShopsHtml(p)}</div>`;
+    slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen);
+    slot('grave').innerHTML = `<div class="graves">${essenceAltarHtml(p)}${graveHtml(p)}${sideShopsHtml(p)}</div>`;
+    // You, bottom left, right above your gold.
+    slot('commander').innerHTML = `<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen)}</div>`;
     slot('side').innerHTML = `<div class="side">
-      ${commanderPanelHtml(p, shownHp(p))}
-      ${selectedUid !== null ? unitDetailHtml(p, selectedUid, state.chosen) : ''}
       ${playersHtml(
         state.players.filter((o) => o.id !== playerId),
         shownHp,
         combat?.opponentId ?? null,
       )}
+      ${selectedUid !== null ? unitDetailHtml(p, selectedUid, state.chosen, skillOpen) : ''}
     </div>`;
     // Later entries sit on top: a trait opened from the gallery shows over it.
     // Overlays are rebuilt on every render; keep where each scrollable one was scrolled to.
@@ -221,6 +246,11 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       openItem !== null && p.items.some((i) => i.uid === openItem) ? itemDetailHtml(p, openItem, !combat, state.chosen) : '',
       orbFor !== null && p.orbs.length ? orbChoiceHtml(p, orbFor) : '',
       mistPick !== null && p.mistShop ? mistChoiceHtml(p, mistPick) : '',
+      mirrorOpen && p.mirrors ? mirrorPickHtml(p) : '',
+      altarOpen ? altarPickHtml(p, altarOpen) : '',
+      blessOpen && p.twilight?.holder === null ? blessPickHtml(p) : '',
+      essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
+      bloodOpen && p.blood?.uses ? bloodPickHtml(p) : '',
       !p.commander ? commanderPickHtml() : '',
       p.commander && p.cardOffer?.length && !combat ? cardOfferHtml(p) : '',
       // One pick at a time: the basic item after the commander card.
@@ -257,7 +287,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   }
 
   function nextRound(): void {
-    const drops = combat?.fight.drops ?? [];
+    const loot = combat?.fight.loot ?? 0;
     if (meter) meter.live = false;
     combat = null;
     hpBefore = null;
@@ -265,7 +295,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const bonuses = isAlive(me()) && !isGameOver(state) ? startRound(state) : [];
     render();
     if (me().orbs.length > orbsBefore) toast('🔮 You got a Magic Orb! Open 🎒 Equipment to use it.', 'info');
-    if (drops.length) toast(`👹 Monster loot: ${drops.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name}`).join(', ')}. Equip it in 🎒 Equipment.`, 'info');
+    if (loot) toast(`👹 Monster loot: pick ${loot} equipment, one at a time.`, 'info');
     const mine = bonuses
       .filter((b) => b.playerId === playerId)
       .map((b) => {
@@ -295,6 +325,16 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
 
   root.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
+    // Likewise the skill popover.
+    if (skillOpen && !target.closest('.skill-pop, [data-action="toggleSkill"]')) {
+      skillOpen = false;
+      render();
+    }
+    // Any click outside the gold popover closes it (and still does what it was for).
+    if (incomeOpen && !target.closest('.income-pop, [data-action="toggleIncome"]')) {
+      incomeOpen = false;
+      render();
+    }
     // The stage handles its own clicks (units and cells).
     if (target.closest('.stage')) return;
     // An item shows its details; unless one is already picked up and this is a slot to put it in.
@@ -374,6 +414,55 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         const slot = mistPick!;
         mistPick = null;
         dispatch({ type: 'mistBuy', slot, choice: btn.dataset.choice! });
+      } else if (a === 'openMirror' || a === 'closeMirror') {
+        mirrorOpen = a === 'openMirror';
+        render();
+      } else if (a === 'useMirror') {
+        mirrorOpen = false;
+        dispatch({ type: 'useMirror', unit: Number(btn.dataset.unit) });
+      } else if (a === 'toggleSkill') {
+        skillOpen = !skillOpen;
+        skillFor = selectedUid;
+        render();
+      } else if (a === 'toggleIncome') {
+        incomeOpen = !incomeOpen;
+        render();
+      } else if (a === 'commanderSection') {
+        const section = btn.dataset.section as CommanderSection;
+        commanderOpen = commanderOpen === section ? null : section;
+        render();
+      } else if (a === 'openBlood' || a === 'closeBlood') {
+        bloodOpen = a === 'openBlood';
+        render();
+      } else if (a === 'bloodPact') {
+        bloodOpen = false;
+        dispatch({ type: 'bloodPact', unit: Number(btn.dataset.unit) });
+      } else if (a === 'openEssence' || a === 'closeEssence') {
+        essenceOpen = a === 'openEssence';
+        render();
+      } else if (a === 'essenceIn') {
+        essenceOpen = false;
+        dispatch({ type: 'essenceIn', unit: Number(btn.dataset.unit) });
+      } else if (a === 'essenceOut') {
+        dispatch({ type: 'essenceOut' });
+      } else if (a === 'openBless' || a === 'closeBless') {
+        blessOpen = a === 'openBless';
+        render();
+      } else if (a === 'bless') {
+        blessOpen = false;
+        dispatch({ type: 'bless', unit: Number(btn.dataset.unit) });
+      } else if (a === 'openAltar') {
+        altarOpen = btn.dataset.altar as AltarKey;
+        render();
+      } else if (a === 'closeAltar') {
+        altarOpen = null;
+        render();
+      } else if (a === 'offer') {
+        const altar = altarOpen!;
+        altarOpen = null;
+        dispatch({ type: 'offer', altar, unit: Number(btn.dataset.unit) });
+      } else if (a === 'rollDice' || a === 'openTrove') {
+        dispatch({ type: a });
       } else if (a === 'closeMistPick') {
         mistPick = null;
         render();
@@ -428,6 +517,14 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   window.addEventListener('keydown', (e) => {
     // Nothing else until a commander is picked.
     if (e.repeat || !me().commander) return;
+    if (e.key === 'Escape' && skillOpen) {
+      skillOpen = false;
+      return render();
+    }
+    if (e.key === 'Escape' && incomeOpen) {
+      incomeOpen = false;
+      return render();
+    }
     if (e.key === 'Escape' && openUnitInfo) {
       openUnitInfo = null;
       return render();

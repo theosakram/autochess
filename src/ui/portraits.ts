@@ -36,7 +36,7 @@ export const PORTRAITS: Record<string, string> = {
   ashwarden: '🏺',
   cryptwarden: '🗝️',
   fogfist: '✊',
-  phantomblade: '🔪',
+  phantomblade: '👊',
 
   drakerider: '🏇',
   wyrmfang: '🦷',
@@ -62,7 +62,7 @@ export const PORTRAITS: Record<string, string> = {
   wraithlord: '🧛',
   eidolon: '👽',
 
-  wanderingblade: '🤺',
+  wanderingblade: '🤜',
   wanderingeye: '🕶️',
   wanderinghunter: '🐆',
   wanderingbastion: '🏯',

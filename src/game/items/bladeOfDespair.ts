@@ -14,6 +14,7 @@ export const bladeOfDespair: ItemDef = {
   name: 'Blade of Despair',
   icon: '🩸',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc:
     `+${pct(BLADE_OF_DESPAIR.atk)} physical attack. Despair (unique): hitting a target below ${pct(BLADE_OF_DESPAIR.below)} HP ` +

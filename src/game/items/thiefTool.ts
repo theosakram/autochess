@@ -13,6 +13,7 @@ export const thiefTool: ItemDef = {
   name: 'Thief Tool',
   icon: '🗝️',
   kind: 'utility',
+  group: 'hybrid',
   maxTier: 1,
   desc:
     `+${pct(THIEF_TOOL.hybridAtk)} attack and magic attack. Neat Pick (unique): when a fight starts, copies ${THIEF_TOOL.copies} random equipment ` +

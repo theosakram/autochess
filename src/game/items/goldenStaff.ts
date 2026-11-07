@@ -13,6 +13,7 @@ export const goldenStaff: ItemDef = {
   name: 'Golden Staff',
   icon: '🦯',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc:
     `+${pct(GOLDEN_STAFF.attackSpeed)} attack speed. Impulsive (unique): each basic attack adds +${pct(GOLDEN_STAFF.perAttack)} attack speed ` +

@@ -1,8 +1,9 @@
+import { grantBlood } from './blood';
+import { essenceRound, payEcho, releaseEssence } from './essence';
 import { runBot } from './bot';
 import { enemyDeaths, killsBy, memberSkills, simulateCombat, type CombatResult } from './combat';
 import {
   BASE_DAMAGE,
-  BASE_INCOME,
   BENCH_SIZE,
   BOARD_COLS,
   BOARD_ROWS,
@@ -10,6 +11,8 @@ import {
   BASIC_ITEM_ROUND,
   COMMANDER_CARD_ROUND,
   EQUIPMENT_DROPS,
+  WIN_GOLD,
+  isEquipmentRound,
   isMonsterRound,
   FREE_UNITS,
   PASSIVE_XP,
@@ -20,25 +23,27 @@ import {
 } from './config';
 import { copiesOf, mergeUnits } from './merge';
 import { openChest, stageItems, takeOfferedItem } from './inventory';
-import { addXp, interest, isAlive } from './player';
+import { cardRolls } from './luckyDice';
+import { addXp, recordFight, roundIncome, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop } from './shop';
 import { claimShopSlot, canClaim } from './actions';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
-import { offerCards, payCard, powersOf } from './commanders';
+import { hurtPlayer, offerCards, payCard, powersOf } from './commanders';
 import type { Side } from './grid';
-import { BASIC_ITEMS, EQUIPMENT, isItemCard, ITEMS } from './items';
+import { BASIC_ITEMS, isItemCard, ITEMS } from './items';
 import { MONSTER_ID, monsterSide } from './monsters';
 import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
-import type { GameState, Player } from './types';
+import type { BotLevel, GameState, Player } from './types';
 import { UNITS } from './units';
 
 export interface PlayerSeed {
   id: string;
   name: string;
   isBot: boolean;
+  botLevel?: BotLevel;
 }
 
 export interface Fight {
@@ -49,7 +54,7 @@ export interface Fight {
   result: CombatResult;
   damage: number; // dealt to the loser
   monster?: true; // a monster round: away is MONSTER_ID
-  drops?: string[]; // equipment item ids the home player got from it
+  loot?: number; // monster loot picks the home player got from it (they open next round)
 }
 
 export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
@@ -112,7 +117,8 @@ export function startRound(state: GameState): RoundBonus[] {
   const alive = state.players.filter(isAlive);
   for (const p of alive) {
     if (state.round > 1) addXp(p, PASSIVE_XP);
-    p.gold += BASE_INCOME + interest(p.gold);
+    // The end of the round just played pays out (on round 1: stage I's basic reward, the starting gold).
+    p.gold += roundIncome(p, Math.max(1, state.round - 1)).total;
     // A locked shop keeps what's left in it for this round, then unlocks.
     if (p.shopLocked) p.shopLocked = false;
     else refreshShop(state, p);
@@ -120,7 +126,14 @@ export function startRound(state: GameState): RoundBonus[] {
   // The commander card round: everyone gets an offer to pick from.
   if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
   // The basic item round: a few random basic items, pick one.
-  if (state.round === BASIC_ITEM_ROUND) for (const p of alive) p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
+  if (state.round === BASIC_ITEM_ROUND) for (const p of alive) {
+    p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
+    p.offerFrom = 'basic';
+  }
+  // Alice: a Blood Pact on its rounds.
+  for (const p of alive) grantBlood(state, p);
+  // Kaela's card: its Lucky Dice rolls due this round.
+  for (const p of alive) cardRolls(state, p);
   // Equipment Chests earned last fight (one at a time; the rest open as each is picked).
   for (const p of alive) openChest(state, p);
   // Units deployed at the start of the round feed counting traits (before bots rearrange).
@@ -129,6 +142,11 @@ export function startRound(state: GameState): RoundBonus[] {
     roundStartEffects(p).map(({ trait, effect }) => ({ playerId: p.id, trait, ...payOut(state, p, effect) })),
   );
   for (const p of alive) stageItems(state, p);
+  // Luo Yi: her card's copies, and a Scavenger essence's free hero.
+  for (const p of alive) {
+    if (p.echo) payEcho(state, p);
+    essenceRound(state, p, (rule) => loot(state, p, rule));
+  }
   for (const p of alive) syncPlayer(state, p);
   for (const p of alive) {
     if (p.isBot) runBot(state, p);
@@ -165,6 +183,8 @@ export function resolveCombat(state: GameState): Fight[] {
       p.commanderCard = p.cardOffer[0];
       p.cardOffer = undefined;
       payCard(state, p, p.commanderCard);
+      openChest(state, p);
+      cardRolls(state, p);
     }
     // Likewise unpicked items: the first on offer, chest after chest.
     while (p.itemOffer?.length) takeOfferedItem(state, p, p.itemOffer[0]);
@@ -185,8 +205,10 @@ export function resolveCombat(state: GameState): Fight[] {
     }
     const result = simulateCombat(state, home, away, { chosen: state.chosen });
     const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
-    if (result.winner === 1) home.hp -= damage;
-    else if (result.winner === 0 && !ghost) away.hp -= damage;
+    if (result.winner === 1) hurtPlayer(home, damage);
+    else if (result.winner === 0 && !ghost) hurtPlayer(away, damage);
+    recordFight(home, result.winner === 0, WIN_GOLD);
+    if (!ghost) recordFight(away, result.winner === 1, WIN_GOLD);
     // A ghost is a copy, so its owner gains nothing from the fight.
     const tally = (side: 0 | 1) => (traitId: string) => ({ kills: enemyDeaths(result, side), memberSkills: memberSkills(result, side, traitId) });
     gainStacks(home, result.traits[0], tally(0));
@@ -204,7 +226,23 @@ export function resolveCombat(state: GameState): Fight[] {
 function afterFight(p: Player, result: CombatResult, side: Side): void {
   const gold = powersOf(p).roundGold;
   if (gold && result.winner !== null) p.gold += result.winner === side ? gold.win : gold.loss;
+  payBounty(p, result, side);
   earnChests(p, result, side);
+}
+
+// Ruby's card: gold for every Cloak and Scythe whose holder is still standing at the end, up to a limit a game.
+export function payBounty(p: Player, result: CombatResult, side: Side): void {
+  const rule = powersOf(p).survivorGold;
+  if (!rule) return;
+  const dead = new Set(result.events.flatMap((e) => (e.type === 'death' ? [e.id] : [])));
+  const standing = result.fighters
+    .filter((f) => f.side === side && !dead.has(f.id))
+    .reduce((n, f) => n + f.items.filter((i) => rule.items.includes(i.id)).length, 0);
+  const paid = p.survivorGold ?? 0;
+  const gold = Math.min(rule.gold * standing, rule.max - paid);
+  if (gold <= 0) return;
+  p.gold += gold;
+  p.survivorGold = paid + gold;
 }
 
 // Adds the kills of this side's chest item holder, and turns them into chests up to the item's limit.
@@ -221,7 +259,7 @@ export function earnChests(p: Player, result: CombatResult, side: Side): void {
   }
 }
 
-// Everyone fights the round's monsters. Win or lose, each player gets random equipment; losing still
+// Everyone fights the round's monsters. Win or lose, each player gets loot picks (equipment rounds); losing still
 // costs hp, as in any fight.
 function monsterRound(state: GameState): Fight[] {
   const alive = state.players.filter(isAlive);
@@ -229,12 +267,12 @@ function monsterRound(state: GameState): Fight[] {
     const { player: monsters, statMult } = monsterSide(state.round);
     const result = simulateCombat(state, p, monsters, { chosen: state.chosen, statMult: [1, statMult] });
     const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
-    if (result.winner === 1) p.hp -= damage;
+    if (result.winner === 1) hurtPlayer(p, damage);
     gainStacks(p, result.traits[0], (traitId: string) => ({ kills: enemyDeaths(result, 0), memberSkills: memberSkills(result, 0, traitId) }));
     afterFight(p, result, 0);
-    const drops = Array.from({ length: EQUIPMENT_DROPS }, () => EQUIPMENT[nextInt(state, EQUIPMENT.length)]).filter((id) => id in ITEMS);
-    for (const id of drops) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
-    return { home: p.id, away: MONSTER_ID, ghost: false, result, damage, monster: true, drops };
+    const loot = isEquipmentRound(state.round) ? EQUIPMENT_DROPS : 0;
+    p.loot = (p.loot ?? 0) + loot;
+    return { home: p.id, away: MONSTER_ID, ghost: false, result, damage, monster: true, loot };
   });
   eliminate(state, alive.length);
   return fights;
@@ -262,5 +300,6 @@ function releaseUnits(state: GameState, p: Player): void {
   }
   for (const id of p.gifts ?? []) state.pool[id]++;
   p.gifts = [];
+  releaseEssence(state, p, copiesOf);
   returnShop(state, p);
 }

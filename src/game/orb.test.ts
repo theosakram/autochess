@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
-import { ORB_ROUNDS } from './config';
+import { roundAt } from './config';
 import { createGame, startRound } from './game';
 import { orbOptions } from './orb';
 import { traitCounts } from './traits';
@@ -27,7 +27,7 @@ describe('Magic Orb', () => {
   test('handed out on the fixed rounds', () => {
     const state = newGame();
     const p = state.players[0];
-    while (state.round < ORB_ROUNDS[1]) startRound(state);
+    while (state.round < roundAt(3, 1)) startRound(state);
     expect(p.orbs).toHaveLength(2);
   });
 

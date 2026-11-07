@@ -4,7 +4,7 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const CULT_OF_FIRE = {
-  burn: [0.01, 0.018, 0.03, 0.08], // of the target's max hp per second, magic: Cult of Fire basic attacks (and the Offering's bearer)
+  burn: [0.01, 0.018, 0.025, 0.08], // of the target's max hp per second, magic: Cult of Fire basic attacks (and the Offering's bearer)
 };
 
 export const cultOfFire: TraitDef = {

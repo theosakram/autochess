@@ -1,18 +1,23 @@
+import { BASE_REWARD, baseReward, LOSE_STREAK_BONUS, WIN_GOLD, WIN_STREAK_BONUS } from './config';
+import { interest, recordFight, streakBonus } from './player';
 import { describe, expect, test } from 'bun:test';
 import { defenseMult, simulateCombat, type CombatEvent } from './combat';
 import { BASE_CRIT_DAMAGE, BASE_DAMAGE, CAST_MULT, START_HP } from './config';
-import { createGame, isGameOver, resolveCombat } from './game';
+import { createGame, isGameOver, resolveCombat, startRound } from './game';
 import { dist, GRID_H, GRID_W, gridIndex, safestCell } from './grid';
 import { activeTraits, DAUNTLESS, DEADEYE, DEFENDER, DRAGON_ALTAR, FIGHTER, gainStacks, MAGE, MOONEATER, PHASEWARPER, SKYBRINGER, STORYWEAVER, traitCounts, traitLevel, TRAITS, traitTiles, unitMods, unitStats, unitTriggers, WEAPON_MASTER } from './traits';
 import { attackInterval } from './stats';
 import { UNIT_BY_ID } from './units';
 import type { GameState, Player, Star } from './types';
 
+// A game on I-2, the first round players fight each other (I-1 is the creeps).
 function newGame(n = 2, seed = 42): GameState {
-  return createGame(
+  const state = createGame(
     seed,
     Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}`, isBot: false })),
   );
+  state.round = 2;
+  return state;
 }
 
 let uid = 10_000;
@@ -706,5 +711,62 @@ describe('phasewarper lineup', () => {
 describe('dauntless are frontliners', () => {
   test('every Dauntless unit is melee: the shield belongs where the hits land', () => {
     for (const u of Object.values(UNIT_BY_ID).filter((u) => u.traits.includes('dauntless'))) expect([u.id, u.range]).toEqual([u.id, 1]);
+  });
+});
+
+describe('economy', () => {
+  test('basic reward goes up each stage, then stays', () => {
+    expect([1, 4, 5, 10, 11, 17, 40].map(baseReward)).toEqual([4, 4, 5, 5, 6, 7, 7]);
+    expect(BASE_REWARD).toEqual([4, 5, 6, 7]);
+  });
+
+  test('interest: 10+ banked gives 2, 20+ gives 4 (cap)', () => {
+    expect([0, 9, 10, 19, 20, 55].map(interest)).toEqual([0, 0, 2, 2, 4, 4]);
+  });
+
+  test('streaks: +n wins / -n losses in a row; a draw counts as a loss; bonus from the tables', () => {
+    const state = newGame();
+    const [a] = state.players;
+    a.gold = 0;
+    recordFight(a, true, WIN_GOLD);
+    recordFight(a, true, WIN_GOLD);
+    expect(a.streak).toBe(2);
+    expect(a.gold).toBe(2 * WIN_GOLD);
+    recordFight(a, false, WIN_GOLD);
+    expect(a.streak).toBe(-1);
+    expect(a.gold).toBe(2 * WIN_GOLD);
+    expect([1, 2, 3, 9].map(streakBonus)).toEqual([WIN_STREAK_BONUS[1], WIN_STREAK_BONUS[2], WIN_STREAK_BONUS[3], WIN_STREAK_BONUS[WIN_STREAK_BONUS.length - 1]]);
+    expect([-1, -2, -3, -9].map(streakBonus)).toEqual([LOSE_STREAK_BONUS[1], LOSE_STREAK_BONUS[2], LOSE_STREAK_BONUS[3], LOSE_STREAK_BONUS[LOSE_STREAK_BONUS.length - 1]]);
+  });
+
+  test('a win pays +1 at once, counting toward interest; the round then pays basic + interest + streak', () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    field(a, [['titan', 3, 0]]);
+    field(b, [['footman', 1, 0]]);
+    a.gold = 19;
+    b.gold = 19;
+    a.streak = 2;
+    b.streak = -2;
+    resolveCombat(state);
+    expect(a.gold).toBe(19 + WIN_GOLD);
+    expect(b.gold).toBe(19);
+    expect(a.streak).toBe(3);
+    expect(b.streak).toBe(-3);
+    const round = state.round;
+    startRound(state);
+    expect(a.gold).toBe(20 + baseReward(round) + 4 + WIN_STREAK_BONUS[3]);
+    expect(b.gold).toBe(19 + baseReward(round) + 2 + LOSE_STREAK_BONUS[3]);
+  });
+
+  test('monster rounds leave streaks alone and pay no win gold', () => {
+    const state = newGame();
+    state.round = 1; // I-1, the creeps
+    const [a] = state.players;
+    a.streak = 2;
+    a.gold = 0;
+    resolveCombat(state);
+    expect(a.streak).toBe(2);
+    expect(a.gold).toBe(0);
   });
 });

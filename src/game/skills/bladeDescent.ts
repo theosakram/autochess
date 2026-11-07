@@ -3,7 +3,7 @@ import { around, enemiesOn } from './areas';
 import { densestDrop } from './mythMadeFlesh';
 import type { SkillDef } from './types';
 
-// Wandering Blade (Plane Wanderer, Fighter). Per star, index 0 = 1★.
+// Wandering Fist (Plane Wanderer, Fighter). Per star, index 0 = 1★.
 export const BLADE_DESCENT = {
   stun: [1, 1.25, 1.75], // seconds, everyone around where it lands
   bonus: [4.5, 5.5, 12], // its next basic attack: extra damage
@@ -13,7 +13,7 @@ export const BLADE_DESCENT = {
 
 export const bladeDescent: SkillDef = {
   id: 'bladedescent',
-  name: 'Blade Descent',
+  name: 'Meteor Fist',
   desc:
     'Leaps into the thick of the enemy (the spot with the most of them around it), stunning everyone around it for {stun}. ' +
     `Its next basic attack deals {bonus} more damage, and it gains a shield of {shield} of its max HP for ${BLADE_DESCENT.seconds}s.`,

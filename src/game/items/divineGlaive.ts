@@ -12,6 +12,7 @@ export const divineGlaive: ItemDef = {
   name: 'Divine Glaive',
   icon: '🌙',
   kind: 'offense',
+  group: 'magic',
   maxTier: 1,
   desc: `+${pct(DIVINE_GLAIVE.ap)} magic attack. Unique attribute: +${pct(DIVINE_GLAIVE.magicPen)} magic penetration (its magic damage ignores that much of the target's magic resist).`,
   values: () => ({}),

@@ -85,9 +85,9 @@ describe('Plane Wanderers in the gallery', () => {
     const html = galleryHtml(p, state.chosen);
     const necro = html.slice(html.indexOf('Necromancer <small>'), html.indexOf('</article>', html.indexOf('Necromancer <small>')));
     const bearers = necro.slice(necro.indexOf('Bearers'));
-    for (const name of ['Wandering Blade', 'Wandering Eye', 'Wandering Hunter', 'Wandering Bastion', 'Wandering Seer']) expect(bearers).toContain(name);
+    for (const name of ['Wandering Fist', 'Wandering Eye', 'Wandering Hunter', 'Wandering Bastion', 'Wandering Seer']) expect(bearers).toContain(name);
     const fighter = html.slice(html.indexOf('Fighter <small>'), html.indexOf('</article>', html.indexOf('Fighter <small>')));
-    const row = fighter.slice(fighter.indexOf('Wandering Blade'), fighter.indexOf('</li>', fighter.indexOf('Wandering Blade')));
+    const row = fighter.slice(fighter.indexOf('Wandering Fist'), fighter.indexOf('</li>', fighter.indexOf('Wandering Fist')));
     expect(row).toContain('bearer-chip');
     expect(row).toContain('data-trait="necromancer"');
   });
@@ -98,7 +98,7 @@ describe('Plane Wanderers in the gallery', () => {
     const cols = [...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map((m) => m[1]);
     const necro = cols.findIndex((c) => c.includes('data-trait="necromancer"'));
     const fighterRow = rows.find((r) => r.includes('data-trait="fighter"'))!;
-    expect([...fighterRow.matchAll(/<td>([\s\S]*?)<\/td>/g)][necro][1]).toContain('Wandering Blade');
+    expect([...fighterRow.matchAll(/<td>([\s\S]*?)<\/td>/g)][necro][1]).toContain('Wandering Fist');
   });
 });
 

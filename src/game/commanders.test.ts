@@ -1,20 +1,28 @@
+import { altarStatus } from './altar';
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
 import { EQUIPMENT } from './items';
 import { openChest } from './inventory';
 import { killsBy, type CombatResult } from './combat';
-import { earnChests } from './game';
-import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, KAGURA, LUKAS, markedUid, markKinds, powersOf, protectedUids } from './commanders';
+import { earnChests, payBounty } from './game';
+import { ALICE, LUNOX, MIYA } from './commanders';
+import { bloodStars } from './blood';
+import { copiesOf, mergeUnits } from './merge';
+import { STAR_MULT } from './config';
+import { ICE_LONGBOW } from './items';
+import { playerTraitCounts } from './traits';
+import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, DYROTH, hurtPlayer, KAELA, KAGURA, LUKAS, NANA, payCard, RUBY, markedUid, markKinds, powersOf, protectedUids } from './commanders';
 import { ITEMS } from './items';
 import { fieldStats } from './inventory';
 import { syncPlayer } from './sync';
-import { playerTraits, unitStats } from './traits';
+import { playerTraits, TRAITS, unitStats } from './traits';
 import { simulateCombat, defenseMult } from './combat';
-import { BOARD_COLS, COMMANDER_CARD_ROUND } from './config';
+import { BOARD_COLS, COMMANDER_CARD_ROUND, roundAt, WIN_GOLD } from './config';
 import { createGame, resolveCombat, startRound } from './game';
+import { cardRolls, payPrize, PRIZE_VALUES } from './luckyDice';
 import { boardCount } from './player';
 import type { GameState, Player } from './types';
-import { UNIT_BY_ID } from './units';
+import { UNIT_BY_ID, UNITS } from './units';
 
 const SEEDS = [
   { id: 'you', name: 'You', isBot: false },
@@ -58,7 +66,7 @@ describe('Kenzo', () => {
     expect(fight.result.winner).not.toBeNull();
     const winner = state.players.find((p) => p.id === (fight.result.winner === 0 ? fight.home : fight.away))!;
     const loser = state.players.find((p) => p !== winner)!;
-    expect(winner.gold).toBe(2);
+    expect(winner.gold).toBe(2 + WIN_GOLD); // plus the +1 any win pays
     expect(loser.gold).toBe(3);
   });
 
@@ -446,5 +454,643 @@ describe('Angela', () => {
     a.commander = 'lukas'; // no protection at all (no beast on the board either)
     const plain = manaAfterCast();
     expect(blessed.mana - plain.mana).toBe(Math.floor(blessed.max * ANGELA.innate.refund));
+  });
+});
+
+describe('Nana', () => {
+  function nanaGame(): { state: GameState; p: Player } {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'nana' }).ok).toBe(true);
+    return { state, p: state.players[0] };
+  }
+
+  test('survives the first knockout at 1 HP; the second one knocks her out', () => {
+    const { p } = nanaGame();
+    p.hp = 5;
+    hurtPlayer(p, 20);
+    expect(p.hp).toBe(1);
+    expect(p.deathsSaved).toBe(1);
+    hurtPlayer(p, 3);
+    expect(p.hp).toBeLessThanOrEqual(0);
+  });
+
+  test('every 10 damage taken pays 10 gold, 3 times at most; the third also gives an Equipment Chest', () => {
+    const { p } = nanaGame();
+    const gold = p.gold;
+    hurtPlayer(p, 7);
+    expect(p.gold).toBe(gold);
+    hurtPlayer(p, 7); // 14: one payout
+    expect(p.gold).toBe(gold + NANA.hurtGold.gold);
+    expect(p.chests?.waiting ?? 0).toBe(0);
+    hurtPlayer(p, 20); // 34: two more at once, the last with a chest
+    expect(p.gold).toBe(gold + 3 * NANA.hurtGold.gold);
+    expect(p.chests!.waiting).toBe(1);
+    hurtPlayer(p, 30); // capped
+    expect(p.gold).toBe(gold + 3 * NANA.hurtGold.gold);
+    expect(p.chests!.waiting).toBe(1);
+  });
+
+  test('a lost fight goes through it: damage gold and the 1 HP save', () => {
+    const { state, p } = nanaGame();
+    const [, b] = state.players;
+    p.board.fill(null);
+    p.bench.fill(null);
+    b.board[3] = { uid: 999, defId: 'titan', star: 3 };
+    p.hp = 2;
+    p.hurt = { taken: NANA.hurtGold.every - 1, paid: 0 }; // one point short of a payout
+    const gold = p.gold;
+    resolveCombat(state);
+    expect(p.hp).toBe(1);
+    expect(p.place).toBeNull();
+    expect(p.gold).toBeGreaterThan(gold);
+  });
+
+  test('Leaf Disguise on Nana: a chest offer right away, 8 gold, and two knockout saves', () => {
+    const { state, p } = nanaGame();
+    while (state.round < COMMANDER_CARD_ROUND) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    // Clear the round's basic item pick, so the chest can open straight away.
+    while (p.itemOffer?.length) expect(applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[0] }).ok).toBe(true);
+    const gold = p.gold;
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'nana' }).ok).toBe(true);
+    expect(p.gold).toBe(gold + NANA.card.gold);
+    expect(p.itemOffer?.every((id) => EQUIPMENT.includes(id))).toBe(true);
+    expect(powersOf(p).deathSaves).toBe(2);
+    expect(powersOf(p).hurtGold).toEqual(NANA.hurtGold); // kept from the innate
+    p.hp = 1;
+    hurtPlayer(p, 50);
+    expect(p.hp).toBe(1);
+    hurtPlayer(p, 50);
+    expect(p.hp).toBe(1);
+    hurtPlayer(p, 50);
+    expect(p.hp).toBeLessThanOrEqual(0);
+  });
+
+  test('on another commander, her card lends her innate power: one save and the damage gold', () => {
+    const { p } = nanaGame();
+    p.commander = 'lukas';
+    p.commanderCard = 'nana';
+    expect(cardFace(p, 'nana').self).toBe(false);
+    expect(powersOf(p).deathSaves).toBe(NANA.deathSaves.innate);
+    expect(powersOf(p).hurtGold).toEqual(NANA.hurtGold);
+  });
+});
+
+describe('Kaela', () => {
+  function kaelaGame(): { state: GameState; p: Player } {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'kaela' }).ok).toBe(true);
+    return { state, p: state.players[0] };
+  }
+  // What a prize handed over, in gold: gold itself, plus each kind of thing at its set value.
+  const worth = (p: Player) =>
+    p.gold +
+    p.items.length * PRIZE_VALUES.equipment +
+    (p.mistOrbs?.length ?? 0) * PRIZE_VALUES.factionorb +
+    (p.mirrors ?? 0) * PRIZE_VALUES.mirror +
+    [...p.bench, ...p.board].reduce((n, u) => n + (u && UNIT_BY_ID[u.defId].tier >= 4 ? PRIZE_VALUES[`hero${UNIT_BY_ID[u.defId].tier}`] : 0), 0);
+
+  test('roll once a round for 1-4 points; going past 8 drops back to 0', () => {
+    const { state, p } = kaelaGame();
+    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(true);
+    expect(p.trove!.points).toBeGreaterThanOrEqual(1);
+    expect(p.trove!.points).toBeLessThanOrEqual(KAELA.trove.die);
+    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(false); // once a round
+    // Next rounds: from 7, anything but a 1 goes bust.
+    for (let i = 0; i < 20; i++) {
+      state.round++;
+      p.trove!.points = 7;
+      expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(true);
+      expect(p.trove!.points).toBe(p.trove!.lastRoll === 1 ? 8 : 0);
+      expect(p.trove!.bust).toBe(p.trove!.lastRoll !== 1);
+    }
+  });
+
+  test('opening pays a prize worth its points, resets them, and works 3 times a game', () => {
+    const { state, p } = kaelaGame();
+    expect(applyAction(state, p.id, { type: 'openTrove' }).ok).toBe(false); // nothing to cash in
+    p.bench.fill(null);
+    p.board.fill(null);
+    for (let i = 0; i < KAELA.trove.opens; i++) {
+      p.trove!.points = KAELA.trove.max;
+      const before = worth(p);
+      expect(applyAction(state, p.id, { type: 'openTrove' }).ok).toBe(true);
+      expect(worth(p) - before).toBe(KAELA.trove.value[KAELA.trove.max]);
+      expect(p.trove!.points).toBe(0);
+      expect(p.luck!.last).toBeTruthy();
+    }
+    p.trove!.points = 3;
+    expect(applyAction(state, p.id, { type: 'openTrove' }).ok).toBe(false);
+    state.round++;
+    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(false); // spent
+  });
+
+  test('a prize too small for anything else is just gold', () => {
+    const { state, p } = kaelaGame();
+    for (let i = 0; i < 20; i++) {
+      const gold = p.gold;
+      const items = p.items.length;
+      payPrize(state, p, 3);
+      expect(p.gold - gold).toBe(3);
+      expect(p.items.length).toBe(items);
+    }
+  });
+
+  test('prizes come in every kind, each worth exactly its value', () => {
+    const { state, p } = kaelaGame();
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      p.bench.fill(null);
+      p.board.fill(null);
+      const before = worth(p);
+      const text = payPrize(state, p, 16);
+      expect(worth(p) - before).toBe(16);
+      seen.add(text.replace(/ \+ \d+ gold$/, '').replace(/^\d+ gold$/, 'gold').replace(/^.* orb$/, 'orb').replace(/^[^a-z]+ .*/, 'equipment'));
+    }
+    for (const kind of ['gold', 'a random 4-gold hero', 'a random 5-gold hero', 'orb', 'a Mirror Device', 'equipment']) expect(seen).toContain(kind);
+  });
+
+  test('a Mirror Device copies a unit', () => {
+    const { state, p } = kaelaGame();
+    p.bench.fill(null);
+    p.board.fill(null);
+    p.board[0] = { uid: 500, defId: 'kindler', star: 1 };
+    p.mirrors = 1;
+    expect(applyAction(state, p.id, { type: 'useMirror', unit: 500 }).ok).toBe(true);
+    expect(p.mirrors).toBe(0);
+    expect([...p.bench, ...p.board].filter((u) => u?.defId === 'kindler').length).toBe(2);
+    expect(applyAction(state, p.id, { type: 'useMirror', unit: 500 }).ok).toBe(false);
+  });
+
+  test('Lucky Streak on Kaela: a prize on the pick (I-2) and another on III-1, 21-35 gold worth in all', () => {
+    const { state, p } = kaelaGame();
+    while (state.round < COMMANDER_CARD_ROUND) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    p.bench.fill(null);
+    p.board.fill(null);
+    let before = worth(p);
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'kaela' }).ok).toBe(true);
+    const first = worth(p) - before;
+    expect(first).toBeGreaterThanOrEqual(KAELA.rolls[0].min);
+    expect(first).toBeLessThanOrEqual(KAELA.rolls[0].max);
+    expect(p.luck!.rolled).toEqual([2]);
+    expect(powersOf(p).trove).toEqual(KAELA.trove); // the Grove stays
+    // III-1's roll, by itself (the round's own income and fight left out).
+    state.round = KAELA.rolls[1].round - 1;
+    p.bench.fill(null);
+    p.board.fill(null);
+    before = worth(p);
+    state.round = KAELA.rolls[1].round;
+    cardRolls(state, p);
+    const second = worth(p) - before;
+    expect(second).toBeGreaterThanOrEqual(KAELA.rolls[1].min);
+    expect(second).toBeLessThanOrEqual(KAELA.rolls[1].max);
+    expect(p.luck!.rolled).toEqual([2, roundAt(3, 1)]);
+    cardRolls(state, p); // never twice
+    expect(worth(p) - before).toBe(second);
+  });
+
+  test('on another commander, her card lends the Treasure Grove, not the free rolls', () => {
+    const { p } = kaelaGame();
+    p.commander = 'lukas';
+    p.commanderCard = 'kaela';
+    expect(powersOf(p).trove).toEqual(KAELA.trove);
+    expect(powersOf(p).luckyRolls).toBeUndefined();
+  });
+});
+
+describe('Ruby', () => {
+  test('picking her hands over the Cloak and the Scythe', () => {
+    const state = createGame(5, SEEDS);
+    const p = state.players[0];
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'ruby' }).ok).toBe(true);
+    expect(p.items.map((i) => i.id).sort()).toEqual(['redcloak', 'scythe']);
+    expect(p.items.every((i) => i.holder === null)).toBe(true);
+  });
+
+  test('on another commander, her card lends them both items, handed over with the card', () => {
+    const state = createGame(5, SEEDS);
+    const p = state.players[0];
+    p.commander = 'lukas';
+    const before = p.items.length;
+    payCard(state, p, 'ruby');
+    expect(p.items.slice(before).map((i) => i.id).sort()).toEqual(['redcloak', 'scythe']);
+    expect(powersOf(p).survivorGold).toBeUndefined();
+  });
+
+  test("Hunter's Bounty: +2 gold per Cloak and Scythe wearer standing after a fight, 35 gold a game at most", () => {
+    const state = createGame(5, SEEDS);
+    const p = state.players[0];
+    p.commander = 'ruby';
+    p.commanderCard = 'ruby';
+    // Fighter 0 holds both, 1 a Cloak, 2 a Scythe (dies in the first fight); the enemy's Scythe doesn't count.
+    const fight = (deadIds: number[]) =>
+      ({
+        fighters: [
+          { id: 0, side: 0, items: [{ id: 'redcloak' }, { id: 'scythe' }] },
+          { id: 1, side: 0, items: [{ id: 'redcloak' }] },
+          { id: 2, side: 0, items: [{ id: 'scythe' }] },
+          { id: 3, side: 1, items: [{ id: 'scythe' }] },
+        ],
+        events: deadIds.map((id) => ({ t: 1, type: 'death', id })),
+      }) as unknown as CombatResult;
+    const gold = p.gold;
+    payBounty(p, fight([2]), 0);
+    expect(p.gold - gold).toBe(3 * RUBY.survivorGold.gold);
+    for (let i = 0; i < 20; i++) payBounty(p, fight([]), 0);
+    expect(p.gold - gold).toBe(RUBY.survivorGold.max);
+    expect(p.survivorGold).toBe(RUBY.survivorGold.max);
+  });
+});
+
+describe('Dyroth', () => {
+  function dyrothGame(): { state: GameState; p: Player } {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'dyroth' }).ok).toBe(true);
+    const p = state.players[0];
+    p.bench.fill(null);
+    p.board.fill(null);
+    return { state, p };
+  }
+  const owned = (p: Player) => [...p.bench, ...p.board].filter((u) => u !== null).map((u) => u!.defId);
+
+  test('the Demon Altar opens on round 3: a 4-gold Gustiwana Deadeye gives a 5-gold Gustiwana and a 5-gold Deadeye', () => {
+    const { state, p } = dyrothGame();
+    const def = UNITS.find((u) => u.tier === 4 && u.traits.includes('gustiwana') && u.traits.includes('deadeye'));
+    // Any 4-gold hero with a faction and a role works the same; prefer the example if the roster has it.
+    const hero = def ?? UNITS.find((u) => u.tier === 4 && u.shop !== false && u.traits.some((t) => TRAITS[t].kind === 'faction') && u.traits.some((t) => TRAITS[t].kind === 'role'))!;
+    p.bench[0] = { uid: 700, defId: hero.id, star: 1 };
+    state.round = 2;
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 700 }).ok).toBe(false); // not yet
+    state.round = DYROTH.altar.first;
+    const pool = state.pool[hero.id];
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 700 }).ok).toBe(true);
+    expect(state.pool[hero.id]).toBe(pool + 1); // its copy is back
+    const gifts = owned(p).map((id) => UNIT_BY_ID[id]);
+    expect(gifts.length).toBe(2);
+    for (const g of gifts) expect(g.tier).toBe(5);
+    const faction = hero.traits.find((t) => TRAITS[t].kind === 'faction')!;
+    const role = hero.traits.find((t) => TRAITS[t].kind === 'role')!;
+    // One shares its faction, one its role (unless none of that cost has it: then any of that cost).
+    const has = (t: string) => UNITS.some((u) => u.tier === 5 && u.shop !== false && !u.locked && u.traits.includes(t));
+    if (has(faction)) expect(gifts.some((g) => g.traits.includes(faction))).toBe(true);
+    if (has(role)) expect(gifts.some((g) => g.traits.includes(role))).toBe(true);
+    expect([...p.bench, ...p.board].every((u) => !u || u.star === 1)).toBe(true);
+  });
+
+  test('then it recharges for 4 rounds; a 5-gold hero becomes 7-gold; 7-gold and reward units are refused', () => {
+    const { state, p } = dyrothGame();
+    const five = UNITS.find((u) => u.tier === 5 && u.shop !== false)!;
+    const seven = UNITS.find((u) => u.tier === 7 && u.shop !== false)!;
+    const reward = UNITS.find((u) => u.shop === false && !u.summon && !u.monster && !u.piece)!;
+    state.round = 3;
+    p.bench[0] = { uid: 701, defId: seven.id, star: 1 };
+    p.bench[1] = { uid: 702, defId: reward.id, star: 1 };
+    p.bench[2] = { uid: 703, defId: five.id, star: 1 };
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 701 }).ok).toBe(false);
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 702 }).ok).toBe(false);
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 703 }).ok).toBe(true);
+    for (const id of owned(p).filter((id) => id !== seven.id && id !== reward.id)) expect(UNIT_BY_ID[id].tier).toBe(7);
+    p.bench[0] = null;
+    p.bench[1] = { uid: 704, defId: five.id, star: 1 };
+    state.round = 6;
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 704 }).ok).toBe(false);
+    state.round = 3 + DYROTH.altar.every;
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 704 }).ok).toBe(true);
+  });
+
+  test("an offered hero's items go back to the inventory; gifts wait for bench room", () => {
+    const { state, p } = dyrothGame();
+    state.round = 3;
+    const hero = UNITS.find((u) => u.tier === 2 && u.shop !== false)!;
+    p.board[0] = { uid: 705, defId: hero.id, star: 2 };
+    p.items = [{ uid: 900, id: 'waraxe', tier: 1, holder: 705 }];
+    for (let i = 0; i < p.bench.length; i++) p.bench[i] = { uid: 800 + i, defId: 'footman', star: 1 }; // full
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 705 }).ok).toBe(true);
+    expect(p.items[0].holder).toBeNull();
+    expect(p.gifts!.length).toBe(2);
+    p.bench[0] = null;
+    p.bench[1] = null;
+    syncPlayer(state, p);
+    expect(p.gifts!.length).toBe(0);
+    expect(p.bench.slice(0, 2).every((u) => u && UNIT_BY_ID[u.defId].tier === 3)).toBe(true);
+  });
+
+  test('Abyss Altar on Dyroth: a second altar, ready on the pick, a random hero 1 cost up, every 3 rounds', () => {
+    const { state, p } = dyrothGame();
+    p.commanderCard = 'dyroth';
+    state.round = 2;
+    const hero = UNITS.find((u) => u.tier === 1 && u.shop !== false)!;
+    p.bench[0] = { uid: 706, defId: hero.id, star: 1 };
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 706 }).ok).toBe(false); // the first one waits for round 3
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'secondAltar', unit: 706 }).ok).toBe(true);
+    expect(owned(p).map((id) => UNIT_BY_ID[id].tier)).toEqual([2]);
+    p.bench[1] = { uid: 707, defId: hero.id, star: 1 };
+    state.round = 4;
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'secondAltar', unit: 707 }).ok).toBe(false);
+    state.round = 2 + DYROTH.secondAltar.every;
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'secondAltar', unit: 707 }).ok).toBe(true);
+    // Both altars work side by side.
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: [...p.bench].find((u) => u)!.uid }).ok).toBe(true);
+  });
+
+  test('altar uses stack: unspent ones bank, the countdown keeps going, each offering spends one', () => {
+    const { state, p } = dyrothGame();
+    const a = DYROTH.altar;
+    state.round = a.first - 1;
+    expect(altarStatus(p, 'altar', state.round)).toEqual({ uses: 0, next: a.first });
+    state.round = a.first + 2 * a.every; // three uses earned, none spent
+    expect(altarStatus(p, 'altar', state.round)).toEqual({ uses: 3, next: a.first + 3 * a.every });
+    const hero = UNITS.find((u) => u.tier === 1 && u.shop !== false)!;
+    for (let i = 0; i < 4; i++) p.bench[i] = { uid: 720 + i, defId: hero.id, star: 1 };
+    p.level = 5; // 20 xp to the next level: no level-up in the way
+    p.xp = 0;
+    for (let i = 0; i < 3; i++) expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 720 + i }).ok).toBe(true);
+    expect(p.level).toBe(5);
+    expect(p.xp).toBe(3 * a.xp); // 2 XP an offering
+    expect(a.xp).toBe(2);
+    expect(DYROTH.secondAltar.xp).toBe(2);
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 723 }).ok).toBe(false); // all spent
+    expect(altarStatus(p, 'altar', state.round)).toEqual({ uses: 0, next: a.first + 3 * a.every });
+    state.round = a.first + 3 * a.every;
+    expect(altarStatus(p, 'altar', state.round).uses).toBe(1);
+  });
+
+  test('on another commander, his card lends the Demon Altar', () => {
+    const { p } = dyrothGame();
+    p.commander = 'lukas';
+    p.commanderCard = 'dyroth';
+    expect(powersOf(p).altar).toEqual(DYROTH.altar);
+    expect(powersOf(p).secondAltar).toBeUndefined();
+  });
+});
+
+describe('Lunox', () => {
+  // Both players on Lunox (or `other` for the second), cards picked, boards cleared.
+  function lunoxGame(card: string, commander = 'lunox'): { state: GameState; p: Player } {
+    const state = createGame(9, SEEDS);
+    const p = state.players[0];
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander }).ok).toBe(true);
+    expect(applyAction(state, state.players[1].id, { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    p.bench.fill(null);
+    p.board.fill(null);
+    p.gold = 0;
+    p.cardOffer = [card];
+    expect(applyAction(state, p.id, { type: 'pickCard', card }).ok).toBe(true);
+    return { state, p };
+  }
+
+  test('the blessing comes with the card pick (plus 6 gold), and only once', () => {
+    const { p } = lunoxGame('lukas');
+    expect(p.twilight).toEqual({ holder: null, trait: null });
+    expect(p.gold).toBe(LUNOX.twilight.gold);
+  });
+
+  test('blessing a hero rolls one of its own traits, +1 on top of the Magic Orb, and gives 3 heroes of it (1-2 cost)', () => {
+    const { state, p } = lunoxGame('lunox');
+    p.board[3] = { uid: 950, defId: 'prajurit', star: 1 }; // Gustiwana Fighter
+    p.orb = { defId: 'prajurit', trait: 'gustiwana' };
+    const before = playerTraitCounts(p);
+    expect(applyAction(state, p.id, { type: 'bless', unit: 950 }).ok).toBe(true);
+    const trait = p.twilight!.trait!;
+    expect(['gustiwana', 'fighter']).toContain(trait);
+    expect(playerTraitCounts(p)[trait]).toBe((before[trait] ?? 0) + 1);
+    expect(before.gustiwana).toBe(2); // the hero plus the orb; a Gustiwana roll makes it 3
+    expect(p.twilight!.gifts).toHaveLength(LUNOX.twilight.heroes);
+    for (const id of p.twilight!.gifts!) {
+      expect(UNIT_BY_ID[id].traits).toContain(trait);
+      expect([1, 2]).toContain(UNIT_BY_ID[id].tier);
+    }
+    expect(applyAction(state, p.id, { type: 'bless', unit: 950 }).ok).toBe(false); // once
+  });
+
+  test('it stays with that very hero: a second copy has none, and selling the hero loses it', () => {
+    const { state, p } = lunoxGame('lukas');
+    p.bench.fill(null);
+    p.board[3] = { uid: 951, defId: 'prajurit', star: 1 };
+    expect(applyAction(state, p.id, { type: 'bless', unit: 951 }).ok).toBe(true);
+    p.bench.fill(null); // drop the gifted heroes so they don't count
+    const trait = p.twilight!.trait!;
+    expect(playerTraitCounts(p)[trait]).toBe(2);
+    p.board[4] = { uid: 952, defId: 'drakeling', star: 1 };
+    expect(applyAction(state, p.id, { type: 'sell', from: { area: 'board', index: 3 } }).ok).toBe(true);
+    p.board[3] = { uid: 953, defId: 'prajurit', star: 1 }; // another of the same hero
+    expect(playerTraitCounts(p)[trait]).toBe(1);
+  });
+
+  test('Eclipse on Lunox: 8 gold on the pick (with his 6), and the first time the blessed trait reaches 6, 18 gold, once', () => {
+    const { state, p } = lunoxGame('lunox');
+    expect(p.gold).toBe(LUNOX.twilight.gold + LUNOX.cardGold);
+    expect(LUNOX.cardGold).toBe(8);
+    expect(LUNOX.twilightGold.gold).toBe(18);
+    const trait = 'gustiwana';
+    p.board[0] = { uid: 960, defId: 'prajurit', star: 1 };
+    p.twilight = { holder: 960, trait, gifts: [] };
+    p.gold = 0;
+    syncPlayer(state, p);
+    expect(p.gold).toBe(0);
+    const others = UNITS.filter((u) => u.id !== 'prajurit' && u.shop !== false && !u.piece && u.traits.includes(trait)).slice(0, 4);
+    others.forEach((u, i) => (p.board[1 + i] = { uid: 961 + i, defId: u.id, star: 1 }));
+    expect(playerTraitCounts(p)[trait]).toBeGreaterThanOrEqual(LUNOX.twilightGold.count);
+    syncPlayer(state, p);
+    expect(p.gold).toBe(LUNOX.twilightGold.gold);
+    syncPlayer(state, p);
+    expect(p.gold).toBe(LUNOX.twilightGold.gold);
+  });
+
+  test('on another commander: the blessing and 12 gold, no heroes', () => {
+    const { state, p } = lunoxGame('lunox', 'lukas');
+    expect(p.gold).toBe(LUNOX.other.gold);
+    p.board[3] = { uid: 970, defId: 'prajurit', star: 1 };
+    expect(applyAction(state, p.id, { type: 'bless', unit: 970 }).ok).toBe(true);
+    expect(p.twilight!.gifts).toEqual([]);
+    expect(powersOf(p).twilightGold).toBeUndefined();
+  });
+});
+
+describe('Miya', () => {
+  function miyaGame(): { state: GameState; p: Player; foe: Player } {
+    const state = createGame(13, SEEDS);
+    const [p, foe] = state.players;
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'miya' }).ok).toBe(true);
+    expect(applyAction(state, foe.id, { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    for (const x of [p, foe]) {
+      x.bench.fill(null);
+      x.board.fill(null);
+      x.items = [];
+    }
+    return { state, p, foe };
+  }
+  const archer = UNITS.find((u) => u.shop !== false && !u.piece && u.range > 1 && u.tier === 1)!;
+
+  test('the Ice Arrow Blessing: a mark, moved freely, +50% attack speed', () => {
+    const { state, p } = miyaGame();
+    p.board[0] = { uid: 980, defId: archer.id, star: 1 };
+    p.board[1] = { uid: 981, defId: archer.id, star: 1 };
+    const levels = playerTraits(p);
+    const base = fieldStats(p, levels, {}).get(980)!.attackSpeed;
+    expect(applyAction(state, p.id, { type: 'mark', kind: 'iceArrow', unit: 980 }).ok).toBe(true);
+    expect(fieldStats(p, levels, {}).get(980)!.attackSpeed - base).toBeCloseTo(MIYA.iceArrow.attackSpeed);
+    expect(applyAction(state, p.id, { type: 'mark', kind: 'iceArrow', unit: 981 }).ok).toBe(true); // moved
+    expect(fieldStats(p, levels, {}).get(980)!.attackSpeed).toBeCloseTo(base);
+    expect(markedUid(p, 'iceArrow')).toBe(981);
+  });
+
+  test('every 6th basic attack looses ice arrows at up to 6 enemies, 7% of each one\'s max hp, physical', () => {
+    const { state, p, foe } = miyaGame();
+    p.board[3] = { uid: 982, defId: archer.id, star: 2 };
+    p.board[2] = { uid: 983, defId: 'titan', star: 3 }; // keeps the archer alive
+    for (let i = 0; i < 7; i++) foe.board[7 * 2 + i] = { uid: 990 + i, defId: 'titan', star: 1 };
+    applyAction(state, p.id, { type: 'mark', kind: 'iceArrow', unit: 982 });
+    const result = simulateCombat(state, p, foe, { chosen: state.chosen });
+    const me = result.fighters.find((f) => f.side === 0 && f.defId === archer.id)!;
+    const mine = result.events.filter((e) => (e.type === 'attack' && e.id === me.id) || (e.type === 'effect' && e.effect === 'icearrow' && e.by === me.id));
+    const first = mine.findIndex((e) => e.type === 'effect');
+    expect(first).toBeGreaterThan(0);
+    expect(mine.slice(0, first).filter((e) => e.type === 'attack' && !(e as { again?: boolean }).again).length).toBeLessThanOrEqual(MIYA.iceArrow.every);
+    // One volley: all its arrows on one tick, at most 6, each under 7% of the target's max hp (armor).
+    const volleyT = mine[first].t;
+    const volley = result.events.filter((e) => e.type === 'effect' && e.effect === 'icearrow' && e.t === volleyT);
+    expect(volley.length).toBeGreaterThan(1);
+    expect(volley.length).toBeLessThanOrEqual(MIYA.iceArrow.targets);
+    for (const e of volley) {
+      const target = result.fighters.find((f) => f.id === (e as { target: number }).target)!;
+      expect((e as { damage: number }).damage).toBeLessThanOrEqual(Math.round(target.maxHp * MIYA.iceArrow.share * 1.5));
+      expect((e as { damage: number }).damage).toBeGreaterThan(0);
+    }
+  });
+
+  test('her card: 12 gold and the Ice Longbow; +30% attack speed, and a kill heals the lowest ally 20%', () => {
+    const { state, p, foe } = miyaGame();
+    p.gold = 0;
+    p.cardOffer = ['miya'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'miya' }).ok).toBe(true);
+    expect(p.gold).toBe(MIYA.card.gold);
+    const bow = p.items.find((i) => i.id === 'icelongbow')!;
+    expect(bow).toBeDefined();
+    expect(ITEMS.icelongbow.exclusive).toBe(true);
+    expect(EQUIPMENT).not.toContain('icelongbow');
+    p.board[3] = { uid: 984, defId: 'titan', star: 3 };
+    p.board[2] = { uid: 985, defId: 'footman', star: 1 };
+    const levels = playerTraits(p);
+    const base = fieldStats(p, levels, {}).get(984)!.attackSpeed;
+    bow.holder = 984;
+    expect(fieldStats(p, levels, {}).get(984)!.attackSpeed - base).toBeCloseTo(ICE_LONGBOW.attackSpeed);
+    foe.board[7 * 2 + 3] = { uid: 995, defId: 'footman', star: 1 };
+    foe.board[7 * 2 + 4] = { uid: 996, defId: 'footman', star: 1 };
+    const result = simulateCombat(state, p, foe, { chosen: state.chosen });
+    const holder = result.fighters.find((f) => f.side === 0 && f.defId === 'titan')!;
+    const heals = result.events.filter((e) => e.type === 'effect' && e.effect === 'frostmercy');
+    expect(heals.length).toBeGreaterThan(0);
+    for (const e of heals) expect((e as { by: number }).by).toBe(holder.id);
+  });
+});
+
+describe('Alice', () => {
+  const hero = UNITS.find((u) => u.tier === 1 && u.shop !== false && !u.piece)!;
+  function aliceGame(): { state: GameState; p: Player } {
+    const state = createGame(17, SEEDS);
+    const p = state.players[0];
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'alice' }).ok).toBe(true);
+    applyAction(state, state.players[1].id, { type: 'pickCommander', commander: 'lukas' });
+    p.bench.fill(null);
+    p.board.fill(null);
+    return { state, p };
+  }
+  const buy = (state: GameState, p: Player, uid: number) => {
+    const i = p.bench.findIndex((u) => u === null);
+    p.bench[i] = { uid, defId: hero.id, star: 1 };
+    state.pool[hero.id]--;
+    mergeUnits(p, hero.id); // what a real buy does
+  };
+
+  test('a Blood Pact on I-1, II-1 and III-1; unused ones wait; one per hero type', () => {
+    const { state, p } = aliceGame();
+    expect(p.blood!.uses).toBe(1); // picked on I-1
+    while (state.round < roundAt(3, 1)) startRound(state);
+    expect(p.blood!.uses).toBe(3);
+    p.board[0] = { uid: 1001, defId: hero.id, star: 1 };
+    expect(applyAction(state, p.id, { type: 'bloodPact', unit: 1001 }).ok).toBe(true);
+    expect(applyAction(state, p.id, { type: 'bloodPact', unit: 1001 }).ok).toBe(false); // already blessed
+    expect(p.blood!.uses).toBe(2);
+  });
+
+  test('the Pact gives a copy at once; a 2-star (3 copies) becomes 4 copies: 2 stars and a part', () => {
+    const { state, p } = aliceGame();
+    p.board[0] = { uid: 1002, defId: hero.id, star: 2 };
+    expect(applyAction(state, p.id, { type: 'bloodPact', unit: 1002 }).ok).toBe(true);
+    const u = p.board[0]!;
+    expect(u.copies).toBe(4);
+    expect(u.star).toBe(2);
+    expect(bloodStars(4)).toEqual({ full: 2, frac: 1 / 6 });
+    expect(copiesOf(u)).toBe(4);
+  });
+
+  test('copies pile into one hero: 3 = 2 stars, 9 = 3 stars, 13 = 4 red stars and the cap', () => {
+    const { state, p } = aliceGame();
+    p.board[0] = { uid: 1003, defId: hero.id, star: 1 };
+    applyAction(state, p.id, { type: 'bloodPact', unit: 1003 }); // 2 copies
+    const u = p.board[0]!;
+    expect(u.copies).toBe(2);
+    expect(u.star).toBe(1);
+    let uid = 1100;
+    buy(state, p, uid++);
+    expect(u.copies).toBe(3);
+    expect(u.star).toBe(2);
+    while (u.copies! < 9) buy(state, p, uid++);
+    expect(u.star).toBe(3);
+    while (u.copies! < 13) buy(state, p, uid++);
+    expect(bloodStars(13)).toEqual({ full: 4, frac: 0 });
+    expect(p.bench.filter(Boolean)).toHaveLength(0); // all absorbed
+    buy(state, p, uid++); // past the cap: stays a separate copy
+    expect(u.copies).toBe(13);
+    expect(p.bench.filter(Boolean)).toHaveLength(1);
+  });
+
+  test('a full bench still buys a copy of a blessed hero: it goes straight in', () => {
+    const { state, p } = aliceGame();
+    p.board[0] = { uid: 1005, defId: hero.id, star: 1 };
+    applyAction(state, p.id, { type: 'bloodPact', unit: 1005 });
+    const other = UNITS.find((u) => u.id !== hero.id && u.shop !== false && !u.piece)!;
+    for (let i = 0; i < p.bench.length; i++) p.bench[i] = { uid: 1200 + i, defId: other.id, star: 1 };
+    p.shop[0] = hero.id;
+    p.gold = 10;
+    state.pool[hero.id]--;
+    expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    expect(p.board[0]!.copies).toBe(3);
+    expect(p.board[0]!.star).toBe(2);
+  });
+
+  test('stats: every copy counts; past 3 stars +10% attack, magic attack and hp each; the card adds +40% attack', () => {
+    const { state, p } = aliceGame();
+    p.board[0] = { uid: 1004, defId: hero.id, star: 1 };
+    applyAction(state, p.id, { type: 'bloodPact', unit: 1004 });
+    const u = p.board[0]!;
+    const levels = playerTraits(p);
+    const base1 = unitStats(hero, 1, { levels });
+    // 2 copies: halfway from 1 star to 2 stars.
+    const s2 = fieldStats(p, playerTraits(p), {}).get(1004)!;
+    expect(s2.hp / base1.hp).toBeCloseTo(1 + (STAR_MULT[1] / STAR_MULT[0] - 1) * 0.5, 1);
+    u.copies = 11;
+    u.star = 3;
+    const base3 = unitStats(hero, 3, { levels: playerTraits(p) });
+    const s11 = fieldStats(p, playerTraits(p), {}).get(1004)!;
+    expect(s11.hp / base3.hp).toBeCloseTo(1 + 2 * ALICE.bloodPact.perCopy, 1);
+    p.commanderCard = 'alice';
+    const s11c = fieldStats(p, playerTraits(p), {}).get(1004)!;
+    expect(s11c.atk / base3.atk).toBeCloseTo(1 + 2 * ALICE.bloodPact.perCopy + ALICE.card.hybridAtk, 1);
+  });
+
+  test('her card: +10 XP on the pick', () => {
+    const { state, p } = aliceGame();
+    p.level = 5;
+    p.xp = 0;
+    p.cardOffer = ['alice'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'alice' }).ok).toBe(true);
+    expect(p.xp).toBe(ALICE.card.xp);
   });
 });

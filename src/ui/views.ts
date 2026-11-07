@@ -1,17 +1,24 @@
+import { skillIcon } from './skillIcons';
+import { coreHolder, ESSENCE_ROLES, essenceBlock, essenceMods, essenceRoles } from '../game/essence';
+import { ESSENCE_CORE } from '../game/items';
+import type { TraitLevels } from '../game/traits';
+import { bloodBlock, bloodStars } from '../game/blood';
+import { blessBlock, blessedUnit } from '../game/twilight';
 import { rewardText } from '../game/traits/format';
 import { autoHalo, beastOf, cardFace, COMMANDERS, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
-import { BASE_INCOME, isMonsterRound, REROLL_COST, START_HP, TICKS_PER_SECOND } from '../game/config';
+import { BASE_REWARD, baseReward, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
-import { cardItem, isItemCard, ITEMS, type ItemDef } from '../game/items';
+import { cardItem, EQUIPMENT_GROUPS, isItemCard, ITEMS, type ItemDef } from '../game/items';
 import { MIST_WARES, mistCoins } from '../game/mistShop';
+import { ALTAR_KEYS, altarOf, altarStatus, nextTier, offerBlock, type AltarKey } from '../game/altar';
 import { orbOptions } from '../game/orb';
 import { SKILLS } from '../game/skills';
 import { copiesOf, findCopies } from '../game/merge';
 import { MAX_ITEMS_PER_UNIT } from '../game/config';
-import { boardCount, freeSlotCount, interest, levelUpCost, xpToNext } from '../game/player';
+import { boardCount, freeSlotCount, interest, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
 import { attackInterval, type StatKey, type StatMod, type Stats } from '../game/stats';
 import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
-import type { GameState, Item, Player, UnitDef } from '../game/types';
+import type { BotLevel, GameState, Item, Player, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS } from '../game/units';
 import { portraitHtml } from './portraits';
 import { bearerBadgeHtml, traitBadgeHtml } from './traitBadges';
@@ -140,6 +147,7 @@ function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string
     ${chosen[traitId] ? `<p class="trait-stacks">👑 This game: <b>${UNIT_BY_ID[chosen[traitId]].name}</b></p>` : ''}
     ${t.leader ? leaderLineHtml(traitId, p) : ''}
     ${p.orb?.trait === traitId ? `<p class="trait-stacks">🔮 Magic Orb: <b>${UNIT_BY_ID[p.orb.defId].name}</b> counts +1</p>` : ''}
+    ${p.twilight?.trait === traitId && blessedUnit(p) ? `<p class="trait-stacks">🌗 Twilight Blessing: <b>${UNIT_BY_ID[blessedUnit(p)!.defId].name}</b> counts +1</p>` : ''}
     ${t.stacks ? stacksHtml(traitId, p) : ''}
     ${unlockHtml(traitId, p)}
     ${t.items ? traitItemsHtml(t.items.pool, p) : ''}
@@ -172,6 +180,53 @@ function stacksHtml(traitId: string, p: Player): string {
 }
 
 // The Mist Shop beside the board, while any Mistbender is fielded: coins, the 3 wares, what's been bought.
+// Luo Yi's Essence Altar, beside the board: the hero on it, and what its core gives.
+export function essenceAltarHtml(p: Player): string {
+  if (!powersOf(p).essence) return '';
+  const hero = p.essence?.hero;
+  const def = hero ? UNIT_BY_ID[hero.defId] : null;
+  const holder = coreHolder(p);
+  const body = hero
+    ? `<div class="essence-hero">${portraitHtml(hero.defId, 'tiny')}<b>${def!.name}</b> ${starsHtml(hero)}</div>
+      <p class="essence-roles">${essenceRoles(p).map((r) => `${traitBadgeHtml(r)} ${ESSENCE_ROLES[r].text}`).join('<br>') || 'No role effect (factions have none).'}</p>
+      <p class="essence-holder">🔶 Core ${holder ? `on <b>${UNIT_BY_ID[holder.defId].name}</b>` : 'not on a fielded hero: put it on in 🎒 Equipment'}</p>
+      <div class="essence-actions"><button data-action="openEssence">Swap</button><button data-action="essenceOut">Take out</button></div>`
+    : `<p class="essence-empty">Empty. Put a hero on it to make an Essence Core.</p>
+      <div class="essence-actions"><button class="primary" data-action="openEssence">Put a hero on</button></div>`;
+  return `<section class="essence-altar"><h4>⛰️ Essence Altar</h4>${body}</section>`;
+}
+
+// What the core is giving now, for its item popup.
+function essenceFacts(p: Player): string[] {
+  const hero = p.essence?.hero;
+  if (!hero) return [];
+  const show: Partial<Record<string, string>> = { hp: 'HP', atk: 'attack', ap: 'magic attack', armor: 'armor', mr: 'magic resist' };
+  const flat = new Map<string, number>();
+  for (const m of essenceMods(p)) if (m.add && show[m.stat]) flat.set(m.stat, (flat.get(m.stat) ?? 0) + m.add);
+  return [
+    `Essence of <b>${UNIT_BY_ID[hero.defId].name} ${starsHtml(hero)}</b>${p.essence!.items.length ? ` and its ${p.essence!.items.map((i) => ITEMS[i.id].icon).join('')}` : ''}.`,
+    [...flat].map(([k, v]) => `+${Math.round(v)} ${show[k]}`).join(', ') + (p.essence!.items.length ? ', and a share of the items\' other stats' : '') + '.',
+    ...essenceRoles(p).map((r) => `${traitBadgeHtml(r)} ${ESSENCE_ROLES[r].text}.`),
+  ];
+}
+
+export function essencePickHtml(p: Player): string {
+  const options = [...p.board, ...p.bench]
+    .flatMap((u) => (u && !essenceBlock(p, u.uid) ? [u] : []))
+    .map((u) => {
+      const def = UNIT_BY_ID[u.defId];
+      const roles = def.traits.filter((t) => ESSENCE_ROLES[t]);
+      return `<button class="chip" data-action="essenceIn" data-unit="${u.uid}" title="${roles.map((r) => `${TRAITS[r].name}: ${ESSENCE_ROLES[r].text}`).join('. ') || 'No role effect'}">${def.name} ${starsHtml(u)} <small>${roles.map((t) => TRAITS[t].icon).join(' ')}</small></button>`;
+    });
+  return modalHtml(
+    'closeEssence',
+    'trait-popup',
+    `<h2 class="trait-title">⛰️ Essence Altar</h2>
+    <p class="trait-desc">The hero leaves your board and becomes the Essence Core (its items go in with it). Whoever holds the core gets ${Math.round((powersOf(p).essence?.share ?? 0) * 100)}% of the hero's HP, attack, magic attack, armor, magic resist and items' stats, plus an effect for each of its roles. ${p.essence?.hero ? `${UNIT_BY_ID[p.essence.hero.defId].name} comes back to the picked hero's place.` : ''}</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">No hero to put on.</p>'}</div>`,
+  );
+}
+
 export function sideShopsHtml(p: Player): string {
   const t = TRAITS.mistbender;
   if (!p.mistShop || !p.board.some((u) => u && UNIT_BY_ID[u.defId].traits.includes(t.id))) return '';
@@ -209,7 +264,7 @@ export function mistChoiceHtml(p: Player, slot: number): string {
     w.choose === 'unit'
       ? [...p.board, ...p.bench]
           .flatMap((u) => (u && UNIT_BY_ID[u.defId].shop !== false ? [u] : []))
-          .map((u) => `<button class="chip" data-action="mistPick" data-choice="${u.uid}">${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}</button>`)
+          .map((u) => `<button class="chip" data-action="mistPick" data-choice="${u.uid}">${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</button>`)
       : Object.values(TRAITS)
           .filter((t) => t.kind === w.choose)
           .map((t) => `<button class="chip" data-action="mistPick" data-choice="${t.id}">${traitBadgeHtml(t.id)} ${t.name}</button>`);
@@ -253,7 +308,7 @@ function leaderLineHtml(traitId: string, p: Player): string {
   const leader = TRAITS[traitId].leader!;
   const uid = fieldLeaders(p, playerTraits(p))[traitId];
   const u = uid === undefined ? null : p.board.find((x) => x?.uid === uid);
-  return `<p class="trait-stacks">${leader.icon} ${leader.title}: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}` : 'none yet'}</b></p>`;
+  return `<p class="trait-stacks">${leader.icon} ${leader.title}: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}` : 'none yet'}</b></p>`;
 }
 
 // Modal shell: backdrop and × both fire `closeAction`.
@@ -287,6 +342,131 @@ export function galleryHtml(p: Player, chosen: Record<string, string>, tab: Gall
   const body = tab === 'grid' ? crossoverGridHtml(p) : gallerySection(p, chosen, 'faction', 'Factions') + gallerySection(p, chosen, 'role', 'Roles');
   // Each tab keeps its own scroll position.
   return modalHtml('closeGallery', 'gallery', `<h2>📖 Synergies</h2><nav class="gallery-tabs">${tabs}</nav>${body}`, `gallery-${tab}`);
+}
+
+// --- Home screen gallery (no game running: nothing is owned) ---
+
+export type HomeTab = 'heroes' | 'commanders' | 'items' | 'synergies' | 'crossovers';
+export const HOME_TABS: { id: HomeTab; label: string }[] = [
+  { id: 'heroes', label: 'Heroes' },
+  { id: 'commanders', label: 'Commanders' },
+  { id: 'items', label: 'Items' },
+  { id: 'synergies', label: 'Synergies' },
+  { id: 'crossovers', label: 'Crossovers' },
+];
+
+// Bot difficulties on the home screen, in order.
+export const DIFFICULTIES: { id: BotLevel; label: string; hint: string }[] = [
+  { id: 'easy', label: 'Easy', hint: 'Bots buy whatever they can afford and place it anywhere.' },
+  { id: 'normal', label: 'Normal', hint: 'Bots build toward traits and star-ups, put tanks in front and manage their gold.' },
+];
+
+export function homeHtml(difficulty: BotLevel = 'normal'): string {
+  const picks = DIFFICULTIES.map(
+    (d) => `<button class="difficulty-btn${d.id === difficulty ? ' on' : ''}" data-action="difficulty" data-level="${d.id}">${d.label}</button>`,
+  ).join('');
+  return `<div class="home">
+    <h1 class="home-title">Autochess</h1>
+    <div class="home-buttons">
+      <div class="difficulty">
+        <small>Bot difficulty</small>
+        <div class="difficulty-picks">${picks}</div>
+        <p class="difficulty-hint">${DIFFICULTIES.find((d) => d.id === difficulty)!.hint}</p>
+      </div>
+      <button class="primary home-btn" data-action="play">▶ Play</button>
+      <button class="home-btn" data-action="openGallery">📖 Gallery</button>
+    </div>
+  </div>`;
+}
+
+// `p` is a blank player: trait cards and unit popups need one, but nothing is on its board.
+export function homeGalleryHtml(p: Player, tab: HomeTab): string {
+  const tabs = HOME_TABS.map((t) => `<button class="gallery-tab${t.id === tab ? ' on' : ''}" data-action="homeTab" data-tab="${t.id}">${t.label}</button>`).join('');
+  const body =
+    tab === 'heroes' ? heroGalleryHtml()
+    : tab === 'commanders' ? commanderGalleryHtml()
+    : tab === 'items' ? itemGalleryHtml()
+    : tab === 'crossovers' ? crossoverGridHtml(p)
+    : gallerySection(p, {}, 'faction', 'Factions') + gallerySection(p, {}, 'role', 'Roles');
+  return `<div class="dialog gallery home-gallery" data-keep-scroll="home-${tab}">
+    <div class="home-gallery-head">
+      <button data-action="home">← Back</button>
+      <h2>📖 Gallery</h2>
+    </div>
+    <nav class="gallery-tabs">${tabs}</nav>
+    ${body}
+  </div>`;
+}
+
+// Every hero a player can own, by cost; then the ones only handed out.
+function heroGalleryHtml(): string {
+  const heroes = UNITS.filter((u) => !u.summon && !u.monster && !u.piece).sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
+  const card = (u: UnitDef) =>
+    `<button class="hero-card tier-${u.tier}" data-unit-info="${u.id}">
+      ${portraitHtml(u.id, 'big')}
+      <span class="hero-card-text">
+        <b>${u.name}</b>
+        <small>${u.tier}g · ${u.range <= 1 ? 'melee' : `range ${u.range}`}${u.skill ? ` · ${SKILLS[u.skill].name}` : ''}</small>
+        <span class="hero-card-traits">${u.traits.map((id) => `${traitBadgeHtml(id)} ${TRAITS[id].name}`).join(' ')}</span>
+      </span>
+    </button>`;
+  const section = (title: string, list: UnitDef[]) =>
+    list.length ? `<h3 class="gallery-section">${title}</h3><div class="hero-grid">${list.map(card).join('')}</div>` : '';
+  const inShop = heroes.filter((u) => u.shop !== false);
+  const tiers = [...new Set(inShop.map((u) => u.tier))];
+  return (
+    tiers.map((t) => section(`${t} gold`, inShop.filter((u) => u.tier === t))).join('') +
+    section('Not in the shop', heroes.filter((u) => u.shop === false))
+  );
+}
+
+// A commander's two texts, folded: its innate power, and its card (both faces). Native <details> sharing a
+// name, so opening one closes the other; no app state needed.
+function commanderFoldsHtml(c: (typeof COMMANDERS)[string], scope: string): string {
+  const group = `${scope}-${c.id}`;
+  return `<div class="commander-folds">
+    <details name="${group}"><summary>${c.icon} Power</summary><p class="commander-text">${c.desc}</p></details>
+    <details name="${group}"><summary>${c.card.icon} Card: ${c.card.name}</summary>
+      <p class="commander-text"><b>On ${c.name}:</b> ${c.card.selfDesc}</p>
+      <p class="commander-text"><b>On another commander:</b> ${c.card.otherDesc ?? c.desc}</p>
+    </details>
+  </div>`;
+}
+
+function commanderGalleryHtml(): string {
+  const cards = Object.values(COMMANDERS)
+    .map(
+      (c) => `<article class="gallery-card commander-entry">
+        <h3 class="trait-title"><span class="commander-portrait">${c.icon}</span><span>${c.name}<br><small>${c.title}</small></span></h3>
+        ${commanderFoldsHtml(c, 'gallery')}
+      </article>`,
+    )
+    .join('');
+  return `<p class="meta">Pick one at the start of a game. On round I-2 you pick a commander card: your own commander's card upgrades its power, another's lends you that power.</p>
+    <div class="gallery-grid">${cards}</div>`;
+}
+
+// Every item, grouped by where it comes from. Tiered values show every tier.
+function itemGalleryHtml(): string {
+  const all = Object.values(ITEMS);
+  const card = (def: ItemDef) =>
+    `<article class="gallery-card item-entry">
+      <h3 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name} <small>${def.kind}${def.maxTier > 1 ? ` · ${def.maxTier} tiers` : ''}</small></h3>
+      <p class="trait-desc">${descHtml(def, 0)}</p>
+      ${def.membersOnly && def.trait ? `<p class="meta">Only ${TRAITS[def.trait].name} units can hold it.</p>` : ''}
+      ${def.forbidden ? `<p class="meta">${TRAITS[def.forbidden].name} units can't hold it.</p>` : ''}
+    </article>`;
+  const section = (title: string, list: ItemDef[], note = '') =>
+    list.length ? `<h3 class="gallery-section">${title}</h3>${note ? `<p class="meta">${note}</p>` : ''}<div class="gallery-grid">${list.map(card).join('')}</div>` : '';
+  const traitIds = [...new Set(all.flatMap((i) => (i.trait ? [i.trait] : [])))];
+  return (
+    section('Basic items', all.filter((i) => i.basic), 'Round I-1\'s creeps drop them: pick one on I-2.') +
+    EQUIPMENT_GROUPS.map((g, i) =>
+      section(`${g.name} equipment`, all.filter((it) => !it.trait && !it.basic && !it.exclusive && it.group === g.id), i === 0 ? 'Dropped by the monsters on round 3 of every stage from II; anyone can hold them.' : ''),
+    ).join('') +
+    section('Commander items', all.filter((i) => i.exclusive)) +
+    traitIds.map((t) => section(`${TRAITS[t].name} items`, all.filter((i) => i.trait === t))).join('')
+  );
 }
 
 function gallerySection(p: Player, chosen: Record<string, string>, kind: 'faction' | 'role', title: string): string {
@@ -330,20 +510,75 @@ function crossoverGridHtml(p: Player): string {
   <p class="grid-legend">Colour = cost (${[1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-unit tier-${t}">${t}g</span>`).join(' ')}) · bold = on your board · ${bearerBadgeHtml('necromancer')} = Plane Wanderer (Necromancer reward, not in shop) · click a trait or unit to open it</p>`;
 }
 
+// The gold popover: what the end of this round pays, win or lose (or, on a monster round, either way). Counts
+// the gold banked right now; spending it changes the interest.
+function incomePopHtml(p: Player, round: number): string {
+  const base = baseReward(round);
+  const streak = p.streak ?? 0;
+  const row = (label: string, value: number, note = '') =>
+    `<div class="income-row"><span>${label}${note ? `<small>${note}</small>` : ''}</span><b>+${value}</b></div>`;
+  const interestNote = (gold: number) => {
+    const next = interest(gold) >= MAX_INTEREST ? '' : `, ${10 - (gold % 10)} more for +${interest(gold) + 2}`;
+    return `${gold} banked${next}`;
+  };
+  const streakNote = (n: number) => (n === 0 ? 'no streak' : n > 0 ? `${n} win${n === 1 ? '' : 's'} in a row` : `${-n} loss${n === -1 ? '' : 'es'} in a row`);
+  const stage = `Basic reward<small>stage ${roman(stageOf(round))}${stageOf(round) < BASE_REWARD.length ? `; stage ${roman(stageOf(round) + 1)}: ${baseReward(roundAt(stageOf(round) + 1, 1))}` : ''}</small>`;
+  const baseRow = `<div class="income-row"><span>${stage}</span><b>+${base}</b></div>`;
+  const block = (title: string, cls: string, gold: number, next: number, winGold: number) => {
+    const total = winGold + base + interest(gold) + streakBonus(next);
+    return `<section class="income-case ${cls}">
+      <h4>${title}<b>+${total}</b></h4>
+      ${winGold ? row('Win gold', winGold, 'right away, before interest') : ''}
+      ${baseRow}
+      ${row('Interest', interest(gold), interestNote(gold))}
+      ${row(next > 0 ? 'Win streak' : next < 0 ? 'Lose streak' : 'Streak', streakBonus(next), streakNote(next))}
+    </section>`;
+  };
+  const cases = isMonsterRound(round)
+    ? block('After this round', 'even', p.gold, streak, 0) + '<p class="income-note">Monster round: no win gold, and your streak stays as it is.</p>'
+    : block('If you win', 'win', p.gold + WIN_GOLD, Math.max(0, streak) + 1, WIN_GOLD) +
+      block('If you lose', 'lose', p.gold, Math.min(0, streak) - 1, 0);
+  return `<div class="income-pop" role="dialog">
+    <header><b>Next round's gold</b><small>💰 ${p.gold} now · ${roundLabel(round)}</small></header>
+    ${cases}
+    <p class="income-note">Interest counts the gold you still hold when the round ends: spend it and it drops. A draw counts as a loss.</p>
+  </div>`;
+}
+
+// Hand-drawn dock icons, 24x24 strokes in currentColor (tinted per button by CSS).
+const DOCK_ICONS = {
+  levelUp: '<path d="M6 13.5l6-6 6 6M6 19.5l6-6 6 6"/>',
+  reroll: '<path d="M19.5 11A7.5 7.5 0 0 0 6.2 6.8M4.5 13a7.5 7.5 0 0 0 13.3 4.2"/><path d="M5 2.8v4.4h4.4M19 21.2v-4.4h-4.4"/>',
+  locked: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/>',
+  unlocked: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8.5 11V8a3.5 3.5 0 0 1 6.7-1.4"/>',
+};
+const dockIcon = (name: keyof typeof DOCK_ICONS) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DOCK_ICONS[name]}</svg>`;
+
 // The dock along the bottom: leveling, the shop and the fight button, always in view so buying never
 // hides the board. Drop a unit anywhere on it to sell.
-export function shopDockHtml(p: Player, locked: boolean, chosen: Record<string, string>): string {
+export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: Record<string, string>, incomeOpen = false): string {
   const levelCost = levelUpCost(p);
   const levelBtn =
     levelCost === null
-      ? `<button class="dock-btn" disabled><b>Max level</b></button>`
-      : `<button class="dock-btn" data-action="levelUp" ${locked || p.gold < levelCost ? 'disabled' : ''}><b>Level up</b> <span>${levelCost}g <kbd>F</kbd></span></button>`;
+      ? `<button class="dock-icon level" disabled title="Max level">${dockIcon('levelUp')}<small>Max</small></button>`
+      : `<button class="dock-icon level" data-action="levelUp" title="Level up: ${levelCost}g (F)" ${locked || p.gold < levelCost ? 'disabled' : ''}>${dockIcon('levelUp')}<small>${levelCost}g</small><kbd>F</kbd></button>`;
   const lockTitle = p.shopLocked ? 'Locked: keeps this shop next round (click to unlock)' : 'Lock: keep this shop next round';
+  const income = roundIncome(p, round);
+  const streak = p.streak ?? 0;
+  const streakText = streak > 0 ? `${streak} win${streak === 1 ? '' : 's'} in a row` : streak < 0 ? `${-streak} loss${streak === -1 ? '' : 'es'} in a row` : 'no streak';
+  const incomeTitle =
+    `End of round: +${income.base} basic reward, +${income.interest} interest (2 per 10 gold banked, up to ${MAX_INTEREST}), ` +
+    `+${income.streak} streak bonus (${streakText}). Winning a fight against a player also pays +${WIN_GOLD} right away.`;
   return `<section class="dock${locked ? ' fighting' : ''}" data-sell>
     <div class="dock-side">
-      ${levelBtn}
-      <button class="dock-btn" data-action="reroll" ${locked ? 'disabled' : ''}><b>Reroll</b> <span>${REROLL_COST}g <kbd>D</kbd></span></button>
-      <button class="dock-btn lock${p.shopLocked ? ' on' : ''}" data-action="toggleLock" title="${lockTitle}"><b>${p.shopLocked ? '🔒 Locked' : '🔓 Lock shop'}</b></button>
+      <div class="dock-gold" title="${incomeTitle}"><b>💰 ${p.gold}</b><small>+${income.total} next</small><button class="income-help${incomeOpen ? ' on' : ''}" data-action="toggleIncome" title="What next round pays">?</button></div>
+      ${incomeOpen ? incomePopHtml(p, round) : ''}
+      <div class="dock-icons">
+        ${levelBtn}
+        <button class="dock-icon reroll" data-action="reroll" title="Reroll: ${REROLL_COST}g (D)" ${locked ? 'disabled' : ''}>${dockIcon('reroll')}<small>${REROLL_COST}g</small><kbd>D</kbd></button>
+        <button class="dock-icon lock${p.shopLocked ? ' on' : ''}" data-action="toggleLock" title="${lockTitle}">${dockIcon(p.shopLocked ? 'locked' : 'unlocked')}<small>${p.shopLocked ? 'Locked' : 'Lock'}</small></button>
+      </div>
     </div>
     <div class="shop-cards${p.shopLocked ? ' locked' : ''}">${shopCardsHtml(p, locked, chosen)}</div>
     ${
@@ -482,7 +717,7 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
       return `<li class="gear-hero tier-${def.tier}">
         <button class="gear-who" data-select-unit="${u.uid}" title="${def.name}">
           ${portraitHtml(def.id, 'gear-face')}
-          <span class="gear-name">${def.name}<i class="unit-star">${'★'.repeat(u.star)}</i></span>
+          <span class="gear-name">${def.name}<i class="unit-star">${starsHtml(u)}</i></span>
         </button>
         <div class="gear-slot orb-slot" data-orb-unit="${u.uid}" title="Magic, faction or role orb">${orb}</div>
         <div class="gear-slots">${slots.join('')}</div>
@@ -501,11 +736,45 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
   </section>`;
 }
 
-export function hudHtml(state: GameState, p: Player, hp: number, opponentName: string | null): string {
+// Hand-drawn round icons, 24x24, filled with currentColor so CSS colours them (past / current / ahead).
+const ROUND_ICONS = {
+  // A sword, point up-right: blade, crossguard, grip, pommel.
+  fight:
+    '<path d="M20.5 3.5v4.2L11 17.2 6.8 13 16.3 3.5z"/><path d="M4.4 11.6 5.9 10.1 13.9 18.1 12.4 19.6z"/><path d="M7 15.6 8.4 17 4.9 20.5 3.5 19.1z"/><circle cx="3.6" cy="20.4" r="1.7"/>',
+  // A horned monster head; eyes and fangs cut out (evenodd).
+  monster:
+    '<path fill-rule="evenodd" d="M4.5 3 8 8.2Q12 6.4 16 8.2L19.5 3 19 10.2Q20.6 12.4 20 15.6 19.2 20.6 12 21.5 4.8 20.6 4 15.6 3.4 12.4 5 10.2ZM7.6 11.6 11 13.4 7.6 15.2ZM16.4 11.6 13 13.4 16.4 15.2ZM9 17.4H15L14.2 19.2 13.1 18.2 12 19.5 10.9 18.2 9.8 19.2Z"/>',
+};
+
+// The current stage's rounds in a row: sword for a fight, monster for creeps or monsters. Past rounds dim,
+// the current one gold.
+// The player's streak, right of the stage legend: fights against players won (or lost) in a row, and its bonus.
+function streakHtml(streak: number): string {
+  const n = Math.abs(streak);
+  if (streak === 0) return `<div class="hud-streak none" title="No streak: win or lose 2 fights against players in a row for a bonus"><small>Streak</small><b>—</b></div>`;
+  const win = streak > 0;
+  const title = `${n} ${win ? `win${n === 1 ? '' : 's'}` : `loss${n === 1 ? '' : 'es'}`} in a row: +${streakBonus(streak)} gold at the end of every round while it lasts`;
+  return `<div class="hud-streak ${win ? 'win' : 'lose'}" title="${title}"><small>${win ? 'Win' : 'Lose'} streak</small><b>${win ? '🔥' : '💧'} ${n}</b></div>`;
+}
+
+function stageLegendHtml(round: number, streak: number): string {
+  const { stage } = stageRound(round);
+  const count = stage === 1 ? STAGE_ONE_ROUNDS : STAGE_ROUNDS;
+  const icons = Array.from({ length: count }, (_, i) => {
+    const r = roundAt(stage, i + 1);
+    const kind = isMonsterRound(r) ? 'monster' : 'fight';
+    const what = r === CREEP_ROUND ? 'Creeps: they drop a basic item pick' : kind === 'monster' ? 'Monsters: equipment, win or lose' : 'Fight another player';
+    const state = r < round ? 'past' : r === round ? 'current' : 'ahead';
+    return `<span class="legend-round ${state}" title="${roundLabel(r)} · ${what}"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ROUND_ICONS[kind]}</svg></span>`;
+  }).join('<span class="legend-link"></span>');
+  const creeps = round === CREEP_ROUND;
+  const monster = isMonsterRound(round);
+  const title = creeps ? 'Creep round: everyone fights creeps; they drop a basic item pick' : monster ? 'Monster round: everyone fights monsters for equipment' : `Round ${roundLabel(round)} (stage ${roman(stage)})`;
+  return `<div class="stage-legend"><div class="legend-round-label" title="${title}"><small>Round</small><b>${roundLabel(round)}</b></div><div class="legend-icons">${icons}</div>${streakHtml(streak)}</div>`;
+}
+
+export function hudHtml(state: GameState, p: Player, opponentName: string | null): string {
   const need = xpToNext(p);
-  const income = BASE_INCOME + interest(p.gold);
-  const share = Math.max(0, Math.min(1, hp / START_HP));
-  const monster = isMonsterRound(state.round);
   const free = p.level - boardCount(p);
   const benched = p.bench.some(Boolean);
   const stat = (label: string, value: string, title: string, cls = '') =>
@@ -515,19 +784,21 @@ export function hudHtml(state: GameState, p: Player, hp: number, opponentName: s
       ? '<small>max</small>'
       : `<span class="xp-bar"><span style="width:${(p.xp / need) * 100}%"></span></span><small>${p.xp}/${need}</small>`;
   return `<header class="hud">
-    ${stat('Round', `<b>${state.round}</b>${monster ? ' 👹 Monsters' : ''}`, monster ? 'Monster round: everyone fights monsters for equipment' : `Round ${state.round}`)}
-    ${stat('HP', `<b>${hp}</b><span class="hp-bar"><span style="width:${share * 100}%"></span></span>`, 'Your HP: at 0 you are out')}
-    ${stat('Gold', `<b class="gold">${p.gold}</b><small>+${income} next round</small>`, `+${income} next round, including interest`)}
+    <div class="hud-side hud-left">
     ${stat('Level', `<b>${p.level}</b> ${xp}`, need === null ? 'Max level' : `${p.xp}/${need} XP to level ${p.level + 1}`)}
     ${stat('Heroes', `<b>${boardCount(p)}/${p.level}${freeSlotCount(p) ? ` +${freeSlotCount(p)}` : ''}</b>${free > 0 && benched ? `<small class="warn">${free} free slot${free === 1 ? '' : 's'}</small>` : ''}`, 'Heroes on the board / how many you may field')}
     ${p.orbs.length ? stat('Orbs', `🔮 <b>${p.orbs.length}</b>`, 'Magic Orb ready: put it on a hero in the Equipment panel') : ''}
-    ${opponentName ? `<div class="hud-stat vs" title="Fighting"><small>Fighting</small><span><b>${opponentName}</b></span></div>` : ''}
-    <button class="hud-book" data-action="openGallery" title="All factions and roles">📖 Synergies</button>
+    </div>
+    ${stageLegendHtml(state.round, p.streak ?? 0)}
+    <div class="hud-side hud-right">
+      ${opponentName ? `<div class="hud-stat vs" title="Fighting"><small>Fighting</small><span><b>${opponentName}</b></span></div>` : ''}
+      <button class="hud-book" data-action="openGallery" title="All factions and roles">📖 Synergies</button>
+    </div>
   </header>`;
 }
 
 // Right-column card for one of the player's units: stats as it would fight right now.
-export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, string>): string {
+export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, string>, skillOpen = false): string {
   const area = p.board.some((u) => u?.uid === uid) ? 'board' : 'bench';
   const slots = area === 'board' ? p.board : p.bench;
   const cell = slots.findIndex((u) => u?.uid === uid);
@@ -541,12 +812,14 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
   const s = area === 'board' ? fieldStats(p, levels, chosen).get(uid)! : base;
 
   const fmt = (n: number) => String(+n.toFixed(2));
-  const row = (label: string, key: keyof Stats, show = (n: number) => fmt(n)) => {
+  const pctS = (n: number) => `${fmt(n * 100)}%`;
+  // One stat: its icon and number (the full name and any bonus in the tooltip; a bonus marks the number).
+  const stat = (icon: string, label: string, key: keyof Stats, show = (n: number) => fmt(n)) => {
     const diff = s[key] - base[key];
-    const bonus = Math.abs(diff) > 1e-9 ? `<em>${diff > 0 ? '+' : ''}${show(diff)}</em>` : '';
-    return `<dt>${label}</dt><dd>${show(s[key])} ${bonus}</dd>`;
+    const bonus = Math.abs(diff) > 1e-9 ? ` (${diff > 0 ? '+' : ''}${show(diff)} from bonuses)` : '';
+    return `<span class="stat-cell${bonus ? (diff > 0 ? ' up' : ' down') : ''}" title="${label}: ${show(s[key])}${bonus}"><i>${icon}</i>${show(s[key])}</span>`;
   };
-  const optional = (label: string, key: keyof Stats, show?: (n: number) => string) => (s[key] ? row(label, key, show) : '');
+  const optStat = (icon: string, label: string, key: keyof Stats, show?: (n: number) => string) => (s[key] ? stat(icon, label, key, show) : '');
   const perSec = (ticks: number) => (TICKS_PER_SECOND / ticks).toFixed(2);
   const position = `${def.range <= 1 ? 'Frontline · melee' : `Backline · range ${def.range}`} · ${def.attackType ?? 'physical'} attacks`;
   const honorary = held.flatMap((it) => {
@@ -566,7 +839,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
   return `<section class="unit-detail tier-${def.tier}">
     <button class="close" data-action="closeUnit" aria-label="Close">×</button>
     <div class="detail-head">${portraitHtml(def.id, 'big')}<div>
-      <h3>${isChosen(chosen, def.id) ? '👑 ' : ''}${def.name} <span class="unit-star">${'★'.repeat(u.star)}</span></h3>
+      <h3>${isChosen(chosen, def.id) ? '👑 ' : ''}${def.name} <span class="unit-star">${starsHtml(u)}</span></h3>
       <p class="meta">${def.tier}g · ${position}${area === 'bench' ? ' · on bench' : ''}</p>
     </div></div>
     ${traits ? `<div class="chips">${traits}</div>` : ''}
@@ -581,6 +854,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       .join('')}
     ${autoHalo(p) === uid ? `<p class="orb-line">${MARKS.halo.icon} Protected: the hero with the most items</p>` : ''}
     ${p.orb?.defId === def.id ? `<p class="orb-line">🔮 Magic Orb: +1 ${TRAITS[p.orb.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
+    ${p.twilight?.trait && p.twilight.holder === uid ? `<p class="orb-line twilight-line">🌗 Twilight Blessing: +1 ${TRAITS[p.twilight.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
     ${(p.mistOrbs ?? [])
       .filter((o) => o.holder === uid)
       .map(
@@ -588,33 +862,38 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
           <button class="chip" data-action="unequipMistOrb" data-orb="${o.uid}" title="Back to the inventory">✕</button></p>`,
       )
       .join('')}
-    <dl>
-      ${row('HP', 'hp')}
-      ${row('Attack', 'atk')}
-      ${row('Magic attack', 'ap')}
-      <dt>Attack speed</dt><dd>${perSec(attackInterval(s))}/s ${
-        attackInterval(s) !== attackInterval(base) ? `<em>+${fmt((s.attackSpeed - base.attackSpeed) * 100)}%</em>` : ''
-      }</dd>
-      ${row('Range', 'range')}
-      ${row('Armor', 'armor')}
-      ${row('Magic resist', 'mr')}
-      ${row('Mana', 'maxMana')}
-      ${optional('Mana regen', 'manaRegen', (n) => `${fmt(n)}/s`)}
-      ${optional('Damage amp', 'damageAmp', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Damage taken', 'damageTaken', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Armor shred', 'armorShred')}
-      ${optional('Magic pen', 'magicPen', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Crit chance', 'critChance', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Skill damage', 'skillAmp', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Basic attack dmg', 'basicAmp', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Hit-again chance', 'hitAgain', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Starting shield', 'startShield', (n) => `${fmt(n * 100)}% HP`)}
-      ${s.critChance ? row('Crit damage', 'critDamage', (n) => `${fmt(n * 100)}%`) : ''}
-      ${optional('Lifesteal', 'lifesteal', (n) => `${fmt(n * 100)}%`)}
-      ${optional('Spell lifesteal', 'spellLifesteal', (n) => `${fmt(n * 100)}%`)}
-    </dl>
-    ${held.length ? `<h4>Items</h4><ul class="detail-items">${held.map((it) => itemRowHtml(it, effectiveTier(it, levels), area === 'board' ? auraGrants(p, levels, chosen).get(it.uid) : undefined)).join('')}</ul>` : ''}
-    ${skillHtml(def.skill, u.star, s)}
+    <div class="stat-grid">
+      ${stat('❤️', 'HP', 'hp')}
+      ${stat('🗡️', 'Attack', 'atk')}
+      ${stat('✨', 'Magic attack', 'ap')}
+      <span class="stat-cell" title="Attack speed${attackInterval(s) !== attackInterval(base) ? `: +${fmt((s.attackSpeed - base.attackSpeed) * 100)}%` : ''}"><i>⚡</i>${perSec(attackInterval(s))}/s${
+        attackInterval(s) !== attackInterval(base) ? '<em>▲</em>' : ''
+      }</span>
+      ${stat('🎯', 'Range', 'range')}
+      ${stat('🛡️', 'Armor', 'armor')}
+      ${stat('💠', 'Magic resist', 'mr')}
+      ${stat('💧', 'Mana', 'maxMana')}
+      ${optStat('🔋', 'Mana regen', 'manaRegen', (n) => `${fmt(n)}/s`)}
+      ${optStat('💥', 'Damage amp', 'damageAmp', pctS)}
+      ${optStat('🔻', 'Damage taken', 'damageTaken', pctS)}
+      ${optStat('🔨', 'Armor shred', 'armorShred')}
+      ${optStat('🌀', 'Magic pen', 'magicPen', pctS)}
+      ${optStat('🎲', 'Crit chance', 'critChance', pctS)}
+      ${s.critChance ? stat('💢', 'Crit damage', 'critDamage', pctS) : ''}
+      ${optStat('📜', 'Skill damage', 'skillAmp', pctS)}
+      ${optStat('👊', 'Basic attack damage', 'basicAmp', pctS)}
+      ${optStat('🔁', 'Hit-again chance', 'hitAgain', pctS)}
+      ${optStat('🔰', 'Starting shield (of max HP)', 'startShield', pctS)}
+      ${optStat('❣️', 'Lifesteal', 'lifesteal', pctS)}
+      ${optStat('💞', 'Spell lifesteal', 'spellLifesteal', pctS)}
+    </div>
+    <div class="detail-kit">
+      <div class="kit-part"><small>Skill</small>
+        <button class="skill-btn${skillOpen ? ' on' : ''}" data-action="toggleSkill" title="${def.skill ? SKILLS[def.skill].name : 'Skill'}: click for details">${skillIcon(def.skill)}</button>
+      </div>
+      <div class="kit-part"><small>Items</small><div class="gear-slots">${detailSlots(p, uid, levels)}</div></div>
+    </div>
+    ${skillOpen ? `<div class="skill-pop">${skillHtml(def.skill, u.star, s)}</div>` : ''}
     <button class="unit-sell" data-action="sellUnit" data-uid="${u.uid}">Sell for ${def.tier * copiesOf(u)}g</button>
     <p class="meta">Tip: with this unit selected, click any board or bench cell to move it there.</p>
   </section>`;
@@ -692,21 +971,48 @@ export function unitInfoHtml(defId: string, p: Player): string {
 // The unit's skill, its current star's numbers highlighted; or the placeholder cast.
 function skillHtml(skillId: string | undefined, star: number, s: Stats): string {
   if (!skillId) {
-    return `<h4>Skill <small>placeholder</small></h4>
+    return `<h4>✨ Skill <small>placeholder</small></h4>
       <p class="skill">At full mana, the next attack deals ${Math.round(s.castMult * 100)}% magic attack (${Math.round(s.ap * s.castMult * (1 + s.skillAmp))}) as magic damage.</p>`;
   }
   const skill = SKILLS[skillId];
-  return `<h4>Skill: ${skill.name}</h4><p class="skill trait-desc">${descHtml(skill, star)}</p>`;
+  return `<h4>${skillIcon(skillId)} ${skill.name}</h4><p class="skill trait-desc">${skillDescHtml(skill, star, s)}</p>`;
 }
 
-function itemRowHtml(it: Item, tier: number, grant?: AuraGrant): string {
-  const def = ITEMS[it.id];
-  return `<li class="${tier ? '' : 'inactive'}">
-    <b>${def.icon} ${def.name} <small>T${tier || it.tier}${tier ? '' : ' · inactive'}</small></b>
-    <button class="chip" data-action="unequip" data-item="${it.uid}" title="Back to your items">✕</button>
-    <p>${itemText(def, tier || it.tier)}</p>
-    ${grant ? `<p class="aura-line">Now: ${auraText(grant)}</p>` : ''}
-  </li>`;
+// A skill's text at every star (this one highlighted), and where a value is a share of attack, magic attack or
+// max HP, the number it comes to now: "80% (124) of attack".
+function skillDescHtml(src: { desc: string; values(): Record<string, string[]> }, star: number, s: Stats): string {
+  const values = src.values();
+  const base: [RegExp, (s: Stats) => number][] = [
+    [/^ of (?:its )?magic attack/, (x) => x.ap],
+    [/^ of (?:its )?attack/, (x) => x.atk],
+    [/^ of its max HP/, (x) => x.hp],
+  ];
+  return src.desc.replace(/\{(\w+)\}/g, (match: string, key: string, offset: number, whole: string) => {
+    const after = whole.slice(offset + match.length);
+    const shown = values[key].map((v, i) => `<span class="${i === star - 1 ? 'on' : ''}">${v}</span>`).join('<i> / </i>');
+    const cur = values[key][star - 1];
+    // A threshold ('left below 8% of its max HP') is the enemy's HP, not a number this hero has.
+    const threshold = /below $/.test(whole.slice(0, offset));
+    const rule = cur?.endsWith('%') && !threshold ? base.find(([re]) => re.test(after)) : undefined;
+    if (!rule) return shown;
+    // Skill damage gets the skill and damage bonuses, as in combat (before the target's defenses).
+    const damage = /^[^.]*?damage/.test(after.slice(0, 60)) ? (1 + s.skillAmp) * (1 + s.damageAmp) : 1;
+    const n = Math.round((parseFloat(cur) / 100) * rule[1](s) * damage);
+    return `${shown} <b class="calc" title="Now, with this hero's stats">(${n})</b>`;
+  });
+}
+
+// The hero card's item slots, as in the Equipment panel: click an item for its details; with an item picked up,
+// click a slot to equip it here.
+function detailSlots(p: Player, uid: number, levels: TraitLevels): string {
+  const slots: string[] = heldBy(p, uid).flatMap((it) => {
+    const def = ITEMS[it.id];
+    const tier = effectiveTier(it, levels);
+    const chip = `<div class="item-chip${tier ? '' : ' inactive'}" data-item="${it.uid}" title="${def.name}${def.trait ? ` (${tier ? `tier ${tier}` : 'inactive'})` : ''}. ${itemText(def, tier || it.tier)}"><span class="item-icon">${def.icon}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}</div>`;
+    return [`<div class="gear-slot" data-gear-unit="${uid}">${chip}</div>`, ...Array.from({ length: (def.slots ?? 1) - 1 }, () => `<div class="gear-slot taken" data-gear-unit="${uid}"></div>`)];
+  });
+  while (slots.length < MAX_ITEMS_PER_UNIT) slots.push(`<div class="gear-slot" data-gear-unit="${uid}"></div>`);
+  return slots.join('');
 }
 
 // Popup for a bearer: who holds a membership-granting item, what it gets, what it gives.
@@ -722,7 +1028,7 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
   const bonus = level
     ? trait.mods({ level, member: true, cell: -1, chosen: false, stacks: 0, leader: false }).map(modText).join(', ')
     : `nothing until ${trait.name} is active`;
-  const who = holder ? `${UNIT_BY_ID[holder.defId].name} ${'★'.repeat(holder.star)}` : 'nobody';
+  const who = holder ? `${UNIT_BY_ID[holder.defId].name} ${starsHtml(holder)}` : 'nobody';
   return modalHtml(
     'closeBearer',
     'trait-popup',
@@ -747,18 +1053,19 @@ export function itemDetailHtml(p: Player, uid: number, actions: boolean, chosen:
   const aura = auraGrants(p, levels, chosen).get(uid);
   const trait = def.trait ? TRAITS[def.trait] : null;
   const facts = [
-    holder ? `Held by <b>${UNIT_BY_ID[holder.defId].name} ${'★'.repeat(holder.star)}</b>.` : 'Not equipped.',
+    holder ? `Held by <b>${UNIT_BY_ID[holder.defId].name} ${starsHtml(holder)}</b>.` : 'Not equipped.',
     trait && !tier ? `<b>Inactive:</b> works once ${traitBadgeHtml(trait.id)} ${trait.name} is active.` : '',
     def.membersOnly ? `Only ${traitBadgeHtml(trait!.id)} ${trait!.name} units can hold it.` : '',
     def.forbidden ? `${traitBadgeHtml(def.forbidden)} ${TRAITS[def.forbidden].name} units can't hold it.` : '',
     def.slots && def.slots > 1 ? `Takes ${def.slots} item slots.` : '',
     aura ? `Gives ${auraText(aura)}, to ${aura.receivers} unit${aura.receivers === 1 ? '' : 's'} now.` : '',
   ].filter(Boolean);
+  if (def.id === ESSENCE_CORE) facts.unshift(...essenceFacts(p));
   return modalHtml(
     'closeItem',
     'trait-popup',
     `<h2 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name}${trait ? ` <small>tier ${tier || it.tier}</small>` : ''}</h2>
-    <p class="meta">${trait ? `${trait.name} item` : def.exclusive ? 'Commander item' : def.basic ? 'Basic item' : 'Equipment'} · ${def.kind}</p>
+    <p class="meta">${trait ? `${trait.name} item` : def.exclusive ? 'Commander item' : def.basic ? 'Basic item' : `${EQUIPMENT_GROUPS.find((g) => g.id === def.group)?.name ?? ''} equipment`.trim()} · ${def.kind}</p>
     <p class="trait-desc">${itemText(def, tier || it.tier)}</p>
     <ul class="bearer-facts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>
     ${actions ? `<div class="item-actions">
@@ -785,12 +1092,12 @@ function synergyChipsHtml(p: Player): string {
 export function commanderPickHtml(): string {
   const cards = Object.values(COMMANDERS)
     .map(
-      (c) => `<button class="commander-option" data-action="pickCommander" data-commander="${c.id}">
+      (c) => `<div class="commander-option commander-choice">
         <span class="commander-portrait">${c.icon}</span>
         <b>${c.name}</b><small>${c.title}</small>
-        <span class="commander-text">${c.desc}</span>
-        <span class="commander-card-line">Card: ${c.card.icon} <b>${c.card.name}</b></span>
-      </button>`,
+        ${commanderFoldsHtml(c, 'pick')}
+        <button class="primary commander-choose" data-action="pickCommander" data-commander="${c.id}">Choose</button>
+      </div>`,
     )
     .join('');
   return `<div class="overlay"><div class="dialog modal commander-pick">
@@ -825,26 +1132,43 @@ export function itemOfferHtml(p: Player): string {
   const cards = (p.itemOffer ?? [])
     .map((id) => {
       const def = ITEMS[id];
+      const group = def.group ? EQUIPMENT_GROUPS.find((g) => g.id === def.group)!.name : def.kind;
       return `<button class="commander-option" data-action="pickItem" data-item-id="${id}">
         <span class="commander-portrait">${def.icon}</span>
-        <b>${def.name}</b><small>${def.kind}</small>
+        <b>${def.name}</b><small>${group}</small>
         <span class="commander-text">${itemText(def, 1)}</span>
       </button>`;
     })
     .join('');
   return `<div class="overlay"><div class="dialog modal commander-pick">
-    <h2 class="trait-title">${ITEMS[p.itemOffer?.[0] ?? '']?.basic ? 'Choose a basic item' : 'Equipment Chest: choose one'}</h2>
+    <h2 class="trait-title">${p.offerFrom === 'basic' || ITEMS[p.itemOffer?.[0] ?? '']?.basic ? 'Choose a basic item' : p.offerFrom === 'loot' ? `Monster loot: choose one${p.loot ? ` (${p.loot} more after this)` : ''}` : 'Equipment Chest: choose one'}</h2>
     <p class="meta">It goes to your items: equip it on any hero. Unpicked when the fight starts: the first one.</p>
     <div class="commander-options">${cards}</div>
   </div></div>`;
 }
 
 // You, beside the board: your commander, your HP, its power and its card.
-export function commanderPanelHtml(p: Player, hp: number): string {
+// Which part of the commander panel is unfolded: the innate power's text, or the card's. Null: both folded.
+export type CommanderSection = 'innate' | 'card';
+
+// Its status lines and buttons always show; the two descriptions fold away behind tabs (one open at a time).
+export function commanderPanelHtml(p: Player, hp: number, round = 0, open: CommanderSection | null = null): string {
   if (!p.commander) return '';
   const c = COMMANDERS[p.commander];
   const card = p.commanderCard ? COMMANDERS[p.commanderCard] : null;
   const share = Math.max(0, Math.min(1, hp / START_HP));
+  const tab = (section: CommanderSection, label: string) =>
+    `<button class="commander-tab${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" aria-expanded="${open === section}">${label} <span class="caret">${open === section ? '▴' : '▾'}</span></button>`;
+  const tabs = [
+    tab('innate', `${c.icon} Power`),
+    card ? tab('card', `${card.card.icon} ${card.card.name}`) : p.cardOffer ? '<span class="commander-tab waiting">🂠 Card: pick one</span>' : '',
+  ].join('');
+  const body =
+    open === 'innate'
+      ? `<p class="commander-text">${c.desc}</p>`
+      : open === 'card' && card
+        ? `<p class="commander-text">${cardFace(p, p.commanderCard!).desc}</p>`
+        : '';
   return `<section class="commander-panel">
     <div class="commander-head">
       <span class="commander-portrait">${c.icon}</span>
@@ -852,11 +1176,18 @@ export function commanderPanelHtml(p: Player, hp: number): string {
       <span class="commander-hp" title="Your HP">❤️ ${hp}</span>
     </div>
     <div class="commander-hpbar"><span style="width:${share * 100}%"></span></div>
-    <p class="commander-text clamp" title="${c.desc.replace(/"/g, '&quot;')}">${c.desc}</p>
+    <div class="commander-tabs">${tabs}</div>
+    ${body ? `<div class="commander-fold">${body}</div>` : ''}
     ${markKinds(p).map((k) => markLineHtml(p, k)).join('')}
     ${powersOf(p).protect ? autoHaloLineHtml(p) : ''}
     ${chestLineHtml(p)}
-    ${card ? `<p class="commander-text"><b>${card.card.icon} ${card.card.name}</b>: ${cardFace(p, p.commanderCard!).desc}</p>` : p.cardOffer ? '<p class="meta">A commander card is waiting for your pick.</p>' : ''}
+    ${tricksterLineHtml(p)}
+    ${twilightLineHtml(p)}
+    ${p.echo ? `<p class="commander-card-line">🏔️ Earthen Echo: ${portraitHtml(p.echo.defId, 'tiny')} ${UNIT_BY_ID[p.echo.defId].name} <b>${p.echo.given}/${powersOf(p).echo?.total ?? p.echo.given}</b></p>` : ''}
+    ${bloodLineHtml(p)}
+    ${bountyLineHtml(p)}
+    ${groveHtml(p, round)}
+    ${altarsHtml(p, round)}
   </section>`;
 }
 
@@ -868,13 +1199,201 @@ function chestLineHtml(p: Player): string {
   return `<p class="commander-text">Equipment Chests: <b>${earned}/${rule.max}</b>${earned < rule.max ? ` · next at ${kills}/${rule.kills} kills` : ''}</p>`;
 }
 
+// Kaela's Treasure Grove: points on a track to the max, Roll (once a round) and Open (cash in), what the
+// latest roll did and the latest prize; plus any Mirror Devices waiting for a unit.
+function groveHtml(p: Player, round: number): string {
+  const power = powersOf(p).trove;
+  const mirrors = p.mirrors
+    ? `<button class="grove-btn" data-action="openMirror">👥 Use Mirror Device${p.mirrors > 1 ? ` ×${p.mirrors}` : ''}</button>`
+    : '';
+  const last = p.luck?.last ? `<p class="commander-text">🍀 Last prize: <b>${p.luck.last}</b></p>` : '';
+  if (!power) return last + mirrors;
+  const t = p.trove ?? { points: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false };
+  const spent = t.opens >= power.opens;
+  const pips = Array.from({ length: power.max }, (_, i) => `<span class="${i < t.points ? 'on' : ''}"></span>`).join('');
+  const rolled = t.rolledRound === round;
+  const rollNote = rolled && t.lastRoll !== null ? (t.bust ? `Rolled ${t.lastRoll}: bust, back to 0!` : `Rolled ${t.lastRoll}.`) : '';
+  return `<div class="grove">
+    <p class="commander-text">🌳 <b>Treasure Grove</b> · ${t.points}/${power.max} points · worth ${power.value[t.points]} gold · ${power.opens - t.opens} open${power.opens - t.opens === 1 ? '' : 's'} left</p>
+    <div class="grove-track">${pips}</div>
+    ${rollNote ? `<p class="commander-text">${rollNote}</p>` : ''}
+    <div class="grove-actions">
+      <button class="grove-btn" data-action="rollDice" ${rolled || spent ? 'disabled' : ''}>🎲 Roll${rolled ? 'ed' : ''}</button>
+      <button class="grove-btn" data-action="openTrove" ${spent || t.points <= 0 ? 'disabled' : ''}>💰 Open Trove</button>
+    </div>
+  </div>${last}${mirrors}`;
+}
+
+// Mirror Device (won from the Lucky Dice): pick one of your units to copy.
+export function mirrorPickHtml(p: Player): string {
+  const options = [...p.board, ...p.bench]
+    .flatMap((u) => (u && UNIT_BY_ID[u.defId].shop !== false ? [u] : []))
+    .map((u) => `<button class="chip" data-action="useMirror" data-unit="${u.uid}">${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</button>`);
+  return modalHtml(
+    'closeMirror',
+    'trait-popup',
+    `<h2 class="trait-title">👥 Mirror Device</h2>
+    <p class="trait-desc">${MIST_WARES.mirror.desc}</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">Nothing to copy.</p>'}</div>`,
+  );
+}
+
+// Dyroth's altars beside the board: each says when it's ready and opens a hero picker; then the latest
+// offering and what it gave.
+// An altar's countdown to its next use: one rune per round of its cycle, lit for every round already waited.
+// When they fill, a use is banked (the badge) and the runes start over. Uses stack.
+function altarRunesHtml(every: number, uses: number, next: number, round: number): string {
+  const left = Math.max(0, next - round);
+  const lit = Math.max(0, Math.min(every, every - left));
+  const runes = Array.from({ length: every }, (_, i) => `<i class="${i < lit ? 'lit' : ''}"></i>`).join('');
+  const title = `${uses ? `${uses} use${uses === 1 ? '' : 's'} ready. ` : ''}Next use on round ${roundLabel(next)} (${left} more round${left === 1 ? '' : 's'})`;
+  return `<span class="altar-count" title="${title}"><span class="altar-runes">${runes}</span><b class="altar-uses${uses ? ' ready' : ''}">×${uses}</b></span>`;
+}
+
+function altarsHtml(p: Player, round: number): string {
+  const rows = ALTAR_KEYS.flatMap((key) => {
+    const altar = altarOf(p, key);
+    if (!altar) return [];
+    const { uses, next } = altarStatus(p, key, round);
+    const what = `${altar.gifts === 'traits' ? '2 heroes (its faction, its role)' : '1 random hero'}`;
+    return [
+      `<div class="altar">
+        <p class="commander-text altar-line"><span>${altar.icon} <b>${altar.name}</b> · a hero for ${what}, 1 cost up, +${altar.xp} XP</span>${altarRunesHtml(altar.every, uses, next, round)}</p>
+        <button class="grove-btn" data-action="openAltar" data-altar="${key}" ${uses ? '' : 'disabled'}>${altar.icon} Offer a hero${uses > 1 ? ` (${uses})` : ''}</button>
+      </div>`,
+    ];
+  });
+  const last = p.altarLast && altarOf(p, p.altarLast.key)
+    ? `<p class="commander-text">Last offering: ${UNIT_BY_ID[p.altarLast.offered].name} → <b>${p.altarLast.gifts.map((id) => UNIT_BY_ID[id].name).join(', ') || 'nothing left in the pool'}</b></p>`
+    : '';
+  return rows.join('') + (rows.length ? last : '');
+}
+
+// The hero picker for one of Dyroth's altars: every unit it would take, with what cost it turns into.
+export function altarPickHtml(p: Player, key: AltarKey): string {
+  const altar = altarOf(p, key)!;
+  const options = [...p.board, ...p.bench]
+    .flatMap((u) => (u && !offerBlock(UNIT_BY_ID[u.defId]) ? [u] : []))
+    .map((u) => {
+      const def = UNIT_BY_ID[u.defId];
+      return `<button class="chip" data-action="offer" data-unit="${u.uid}" title="${traitNames(def.traits)}">${def.name} ${starsHtml(u)} <small>${def.tier}g → ${nextTier(def.tier)}g</small></button>`;
+    });
+  return modalHtml(
+    'closeAltar',
+    'trait-popup',
+    `<h2 class="trait-title">${altar.icon} ${altar.name}</h2>
+    <p class="trait-desc">${altar.gifts === 'traits' ? 'The hero is gone; you get a 1-star hero of the next cost up sharing its faction, and one sharing its role.' : 'The hero is gone; you get a random 1-star hero of the next cost up.'} Its copies go back to the pool, its items to your inventory.</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">No hero to offer.</p>'}</div>`,
+  );
+}
+
+// Ruby's card: gold earned so far from Cloak and Scythe wearers left standing.
+function bountyLineHtml(p: Player): string {
+  const rule = powersOf(p).survivorGold;
+  if (!rule) return '';
+  return `<p class="commander-text">💵 Bounty: <b>${p.survivorGold ?? 0}/${rule.max}</b> gold · +${rule.gold} per wearer standing after a fight</p>`;
+}
+
+// Nana: knockouts she can still survive, and her damage-gold progress.
+// A unit's stars: plain ★ text, or for a Blood Pact hero red drawn stars with the last one partly filled.
+const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>';
+export function starsHtml(u: { star: number; copies?: number }): string {
+  if (u.copies === undefined) return '★'.repeat(u.star);
+  const { full, frac } = bloodStars(u.copies);
+  const stars = Array.from({ length: full }, () => `<span class="bstar">${STAR_SVG}</span>`);
+  if (frac > 0) stars.push(`<span class="bstar part"><span class="bfill" style="width:${Math.round(frac * 100)}%">${STAR_SVG}</span>${STAR_SVG}</span>`);
+  return `<span class="blood-stars" title="Blood Pact: ${u.copies} copies">${stars.join('')}</span>`;
+}
+
+// Alice's Blood Pacts: uses waiting (button) and the heroes under one.
+function bloodLineHtml(p: Player): string {
+  const blood = p.blood;
+  if (!blood) return '';
+  const heroes = blood.blessed.map((id) => {
+    const u = [...p.board, ...p.bench].find((x) => x?.defId === id && x.copies !== undefined);
+    return `${UNIT_BY_ID[id].name} ${u ? `${starsHtml(u)} <small>${u.copies}/13</small>` : '<small>(none owned)</small>'}`;
+  });
+  return `<div class="altar">
+    <p class="commander-text">🦇 <b>Blood Pact</b>${heroes.length ? ` · ${heroes.join(' · ')}` : ''}</p>
+    ${blood.uses ? `<button class="grove-btn" data-action="openBlood">🦇 Use a Blood Pact${blood.uses > 1 ? ` (${blood.uses})` : ''}</button>` : ''}
+  </div>`;
+}
+
+// Picking the hero for a Blood Pact.
+export function bloodPickHtml(p: Player): string {
+  const options = [...p.board, ...p.bench]
+    .flatMap((u) => (u && !bloodBlock(p, u.uid) ? [u] : []))
+    .map((u) => `<button class="chip" data-action="bloodPact" data-unit="${u.uid}">${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</button>`);
+  return modalHtml(
+    'closeBlood',
+    'trait-popup',
+    `<h2 class="trait-title">🦇 Blood Pact</h2>
+    <p class="trait-desc">You get one more copy of the hero, and from now on its copies pile into one hero instead of merging three at a time: 1 copy 1 star, 3 copies 2 stars, 9 copies 3 stars, then 4 more copies (each +10% attack, magic attack and max HP) up to 13. Every copy raises its stats. Its stars turn red.</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">No hero to take it.</p>'}</div>`,
+  );
+}
+
+// Lunox's Twilight Blessing: waiting to be placed (button), or where it went and what it rolled; his card's
+// progress toward its gold.
+function twilightLineHtml(p: Player): string {
+  const tw = p.twilight;
+  if (!tw) return '';
+  if (tw.holder === null) {
+    return `<div class="altar">
+      <p class="commander-text">🌗 <b>Twilight Blessing</b> · bless a hero: +1 to one of its traits, rolled at random</p>
+      <button class="grove-btn" data-action="openBless">🌗 Bless a hero</button>
+    </div>`;
+  }
+  const unit = blessedUnit(p);
+  const trait = TRAITS[tw.trait!];
+  const where = unit ? `<b>${UNIT_BY_ID[unit.defId].name}</b> → +1 ${trait.icon} <b>${trait.name}</b>` : `lost (the hero is gone) · it was +1 ${trait.name}`;
+  const gifts = tw.gifts?.length ? ` · gave ${tw.gifts.map((id) => UNIT_BY_ID[id].name).join(', ')}` : '';
+  const rule = powersOf(p).twilightGold;
+  const goal = rule
+    ? ` · ${tw.paid ? `<b>${rule.gold} gold paid</b>` : `${trait.name} <b>${Math.min(rule.count, playerTraitCounts(p)[tw.trait!] ?? 0)}/${rule.count}</b> for ${rule.gold} gold`}`
+    : '';
+  return `<p class="commander-text">🌗 Blessed: ${where}${gifts}${goal}</p>`;
+}
+
+// Picking the hero for Lunox's blessing: any of yours, board or bench, with the traits it may roll.
+export function blessPickHtml(p: Player): string {
+  const options = [...p.board, ...p.bench]
+    .flatMap((u) => (u && !blessBlock(p, u.uid) ? [u] : []))
+    .map((u) => {
+      const def = UNIT_BY_ID[u.defId];
+      return `<button class="chip" data-action="bless" data-unit="${u.uid}" title="Rolls one of: ${traitNames(def.traits)}">${def.name} ${starsHtml(u)} <small>${def.traits.map((t) => TRAITS[t].icon).join(' ')}</small></button>`;
+    });
+  return modalHtml(
+    'closeBless',
+    'trait-popup',
+    `<h2 class="trait-title">🌗 Twilight Blessing</h2>
+    <p class="trait-desc">One of the hero's own traits is rolled at random; that hero counts +1 toward it while fielded, on top of any Magic Orb. It stays with this very hero: sell it and the blessing is gone.${powersOf(p).twilight?.heroes ? ` You also get ${powersOf(p).twilight!.heroes} random 1- or 2-cost heroes of the rolled trait.` : ''}</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">No hero to bless.</p>'}</div>`,
+  );
+}
+
+function tricksterLineHtml(p: Player): string {
+  const pw = powersOf(p);
+  const parts: string[] = [];
+  if (pw.deathSaves) {
+    const left = pw.deathSaves - (p.deathsSaved ?? 0);
+    parts.push(left > 0 ? `Survives <b>${left}</b> more knockout${left === 1 ? '' : 's'}` : 'No knockout saves left');
+  }
+  if (pw.hurtGold) {
+    const h = pw.hurtGold;
+    const { taken, paid } = p.hurt ?? { taken: 0, paid: 0 };
+    parts.push(`Damage gold: <b>${paid}/${h.times}</b>${paid < h.times ? ` · next at ${taken}/${(paid + 1) * h.every} damage` : ''}`);
+  }
+  return parts.length ? `<p class="commander-text">${parts.join(' · ')}</p>` : '';
+}
+
 // Who holds a commander mark (Kagura's umbrella or dance), or a nudge to place it.
 function markLineHtml(p: Player, kind: MarkKind): string {
   const m = MARKS[kind];
   const uid = markedUid(p, kind);
   const u = uid === null ? null : [...p.board, ...p.bench].find((x) => x?.uid === uid);
   return u
-    ? `<p class="commander-text">${m.icon} ${m.name}: <b>${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}</b></p>`
+    ? `<p class="commander-text">${m.icon} ${m.name}: <b>${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</b></p>`
     : `<p class="commander-text">${m.icon} ${m.name}: nobody yet. Open a unit to place it.</p>`;
 }
 
@@ -882,7 +1401,7 @@ function markLineHtml(p: Player, kind: MarkKind): string {
 function autoHaloLineHtml(p: Player): string {
   const uid = autoHalo(p);
   const u = uid === null ? null : p.board.find((x) => x?.uid === uid);
-  return `<p class="commander-text">${MARKS.halo.icon} Most items: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${'★'.repeat(u.star)}` : 'nobody fielded'}</b></p>`;
+  return `<p class="commander-text">${MARKS.halo.icon} Most items: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}` : 'nobody fielded'}</b></p>`;
 }
 
 // A commander's board piece (the Divine Beast): what it does and where it may stand.

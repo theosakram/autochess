@@ -15,6 +15,7 @@ export const sheepStick: ItemDef = {
   name: 'Sheep Stick',
   icon: '🐑',
   kind: 'utility',
+  group: 'hybrid',
   maxTier: 1,
   desc:
     `+${pct(SHEEP_STICK.hybridAtk)} attack and magic attack, +${pct(SHEEP_STICK.hp)} max HP. ` +

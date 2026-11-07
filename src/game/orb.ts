@@ -1,4 +1,4 @@
-import { ORB_ROUNDS } from './config';
+import { isOrbRound } from './config';
 import { isAlive } from './player';
 import { nextInt } from './rng';
 import { TRAITS } from './traits';
@@ -23,7 +23,7 @@ export function orbOptions(seed: number, defId: string): string[] {
 
 // Fixed rounds hand every player still alive an unused orb. Returns who got one.
 export function grantOrbs(state: GameState): string[] {
-  if (!ORB_ROUNDS.includes(state.round)) return [];
+  if (!isOrbRound(state.round)) return [];
   const alive = state.players.filter(isAlive);
   for (const p of alive) p.orbs.push(nextInt(state, 2 ** 30));
   return alive.map((p) => p.id);

@@ -14,6 +14,7 @@ export const seaHalberd: ItemDef = {
   name: 'Sea Halberd',
   icon: '🔱',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc:
     `+${pct(SEA_HALBERD.atk)} physical attack. Unique attribute: basic attacks remove ${SEA_HALBERD.penetration} armor and magic resist (defense penetration). ` +

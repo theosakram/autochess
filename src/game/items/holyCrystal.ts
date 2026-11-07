@@ -12,6 +12,7 @@ export const holyCrystal: ItemDef = {
   name: 'Holy Crystal',
   icon: '💎',
   kind: 'offense',
+  group: 'magic',
   maxTier: 1,
   desc: `+${pct(HOLY_CRYSTAL.ap)} magic attack. Mystery (unique): +${pct(HOLY_CRYSTAL.skillDamage)} skill damage.`,
   values: () => ({}),

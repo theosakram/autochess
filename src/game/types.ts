@@ -34,6 +34,7 @@ export interface Unit {
   uid: number;
   defId: string;
   star: Star;
+  copies?: number; // Alice's Blood Pact: 1-star copies piled into this hero (its star follows them)
 }
 
 export interface MistOrb {
@@ -55,10 +56,13 @@ export interface Orb {
   trait: string;
 }
 
+export type BotLevel = 'easy' | 'normal';
+
 export interface Player {
   id: string;
   name: string;
   isBot: boolean;
+  botLevel?: BotLevel; // how a bot plays (see bot.ts); easy if unset
   hp: number;
   gold: number;
   level: number;
@@ -85,10 +89,30 @@ export interface Player {
   commander: string | null; // commander id, picked at the start of the game (see commanders/)
   commanderCard?: string | null; // the commander card picked (a commander id)
   cardOffer?: string[]; // commander cards on offer, waiting for a pick
-  itemOffer?: string[]; // items on offer (round-2 basics, an Equipment Chest), waiting for a pick
+  itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
+  offerFrom?: 'basic' | 'loot' | 'chest'; // where the current itemOffer comes from
+  loot?: number; // monster loot picks not opened yet (each opens as the one before is picked)
   chests?: { kills: number; earned: number; waiting: number }; // Equipment Chests: kills toward the next, earned so far, not opened yet
+  deathsSaved?: number; // lethal hits survived so far (Nana)
+  hurt?: { taken: number; paid: number }; // damage taken toward Nana's gold, and payouts made
+  trove?: { points: number; rolledRound: number; opens: number; lastRoll: number | null; bust: boolean }; // Kaela's Treasure Grove
+  luck?: { rolled: number[]; last: string | null }; // Lucky Dice: card rolls done (by round), and the latest prize
+  mirrors?: number; // Mirror Devices won, waiting for a unit to copy
+  survivorGold?: number; // gold paid so far by Ruby's card
+  streak?: number; // fights against players: +n won in a row, -n lost in a row
+  // Lunox's Twilight Blessing: the unit (uid) it's on, or null until placed; its rolled trait; heroes it gave;
+  // whether his card's gold for the trait reaching its count was paid.
+  twilight?: { holder: number | null; trait: string | null; gifts?: string[]; paid?: boolean };
+  // Alice's Blood Pact: hero types blessed, uses left, and the rounds whose use was handed out.
+  blood?: { blessed: string[]; uses: number; rounds: number[] };
+  // Luo Yi's Essence Altar: the hero on it (off the board and bench) and the items it held, locked in its core.
+  essence?: { hero: Unit | null; items: Item[] };
+  echo?: { defId: string; given: number }; // Luo Yi's card: the hero it hands out, and copies given so far
+  altars?: Partial<Record<'altar' | 'secondAltar', number>>; // Dyroth's altars: the round each next earns a use, once one is spent
+  altarUses?: Partial<Record<'altar' | 'secondAltar', number>>; // uses banked when the last one was spent
+  altarLast?: { key: 'altar' | 'secondAltar'; offered: string; gifts: string[] }; // the latest offering, for the UI
   // Heroes marked by commander powers (Kagura's umbrella and dance), by mark kind. See commanders/.
-  marks?: Partial<Record<'ward' | 'boost' | 'halo' | 'halo2', { uid: number; defId: string } | null>>;
+  marks?: Partial<Record<'ward' | 'boost' | 'halo' | 'halo2' | 'iceArrow', { uid: number; defId: string } | null>>;
 }
 
 // Plain data only, so the whole state can be serialized and sent over the wire later.

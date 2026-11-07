@@ -12,6 +12,7 @@ export const demonHunterSword: ItemDef = {
   name: 'Demon Hunter Sword',
   icon: '😈',
   kind: 'offense',
+  group: 'physical',
   maxTier: 1,
   desc:
     `+${pct(DEMON_HUNTER_SWORD.attackSpeed)} attack speed. Engulf (unique): basic attacks deal extra physical damage ` +

@@ -15,6 +15,7 @@ export const glowingWand: ItemDef = {
   name: 'Glowing Wand',
   icon: '🔆',
   kind: 'offense',
+  group: 'magic',
   maxTier: 1,
   desc:
     `+${pct(GLOWING_WAND.ap)} magic attack. Scorch (unique): skill damage burns the target for ${GLOWING_WAND.seconds}s, ` +

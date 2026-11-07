@@ -1,6 +1,8 @@
+import { bloodMods } from './blood';
+import { coreHolder, essenceMods } from './essence';
 import { markedUid, powersOf, protectedUids } from './commanders';
 import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
-import { EQUIPMENT, ITEMS } from './items';
+import { EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
 import { nextInt, shuffle } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
 import { playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
@@ -71,15 +73,34 @@ export function syncItems(state: GameState, p: Player): void {
 export function takeOfferedItem(state: GameState, p: Player, itemId: string): void {
   p.items.push({ uid: state.nextUid++, id: itemId, tier: 1, holder: null });
   p.itemOffer = undefined;
+  p.offerFrom = undefined;
   openChest(state, p);
   stageItems(state, p);
 }
 
-// Opens a waiting Equipment Chest, unless an offer is already up: pick 1 of a few random equipment.
+// A monster loot offer: one random equipment from each slot, in this order.
+export const LOOT_SLOTS: EquipmentGroup[][] = [['physical'], ['magic', 'hybrid'], ['armor']];
+export function lootOffer(state: GameState): string[] {
+  return LOOT_SLOTS.flatMap((groups) => {
+    const pool = EQUIPMENT.filter((id) => groups.includes(ITEMS[id].group!));
+    return pool.length ? [pool[nextInt(state, pool.length)]] : [];
+  });
+}
+
+// Opens the next waiting offer, unless one is already up: monster loot first, then an Equipment Chest
+// (pick 1 of a few random equipment).
 export function openChest(state: GameState, p: Player): void {
-  if (p.itemOffer?.length || !p.chests?.waiting) return;
+  if (p.itemOffer?.length) return;
+  if (p.loot) {
+    p.loot--;
+    p.itemOffer = lootOffer(state);
+    p.offerFrom = 'loot';
+    return;
+  }
+  if (!p.chests?.waiting) return;
   p.chests.waiting--;
   p.itemOffer = shuffle(state, [...EQUIPMENT]).slice(0, CHEST_OFFER);
+  p.offerFrom = 'chest';
 }
 
 // Items whose tier is the game's stage (see ItemDef.tierByStage) catch up with it.
@@ -136,6 +157,7 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     : [];
   const blessed = protectedUids(p);
   const protect = powersOf(p).protect;
+  const core = coreHolder(p)?.uid;
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
@@ -153,8 +175,15 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
         { stat: 'spellLifesteal', add: boost.hybridLifesteal },
       );
     }
+    // Alice: a Blood Pact hero's piled-up copies (and her card).
+    mods.push(...bloodMods(p, u));
+    // Miya: the Ice Arrow hero attacks faster.
+    const ice = u.uid === markedUid(p, 'iceArrow') ? powersOf(p).iceArrow : undefined;
+    if (ice) mods.push({ stat: 'attackSpeed', add: ice.attackSpeed });
     // Angela: protected heroes hit harder with their skills.
     if (protect && blessed.has(u.uid)) mods.push({ stat: 'skillAmp', add: protect.skillAmp });
+    // Luo Yi: the Essence Core's holder.
+    if (core === u.uid) mods.push(...essenceMods(p));
     stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads, extra: mods }));
   });
   for (const holder of p.board) {

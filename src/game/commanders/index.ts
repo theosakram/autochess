@@ -3,19 +3,37 @@ import { BOARD_COLS, BOARD_ROWS, CARD_OFFER_SIZE } from '../config';
 import { shuffle } from '../rng';
 import type { GameState, Loc, Player } from '../types';
 import { UNIT_BY_ID } from '../units';
+import { addXp } from '../player';
+import { payEcho } from '../essence';
+import { alice } from './alice';
 import { angela } from './angela';
+import { dyroth } from './dyroth';
+import { kaela } from './kaela';
 import { kagura } from './kagura';
 import { kenzo } from './kenzo';
 import { lukas } from './lukas';
+import { lunox } from './lunox';
+import { luoyi } from './luoyi';
+import { miya } from './miya';
+import { nana } from './nana';
+import { ruby } from './ruby';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 
-export type { BeastPower, BoostPower, CommanderDef, CommanderPower, ProtectPower, WardPower } from './types';
+export type { AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
+export { ALICE } from './alice';
 export { ANGELA } from './angela';
+export { DYROTH } from './dyroth';
+export { KAELA } from './kaela';
 export { KAGURA } from './kagura';
 export { KENZO } from './kenzo';
 export { LUKAS } from './lukas';
+export { LUNOX } from './lunox';
+export { LUO_YI } from './luoyi';
+export { MIYA } from './miya';
+export { NANA } from './nana';
+export { RUBY } from './ruby';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi].map((c) => [c.id, c]));
 
 // The board piece a beast power puts on the board (see UnitDef.piece).
 export const BEAST_PIECE = 'divinebeast';
@@ -43,9 +61,9 @@ export function commanderPowers(p: Player): CommanderPower[] {
 }
 
 // Everything working for this player, merged (later powers override earlier ones, field by field).
-// `pickGold` and `pickItem` are left out: they're paid once, on the pick.
-export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem'> {
-  const { pickGold: _gold, pickItem: _item, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
+// `pickGold`, `pickItem`, `pickChest` and `startItems` are left out: they're paid once, on the pick.
+export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp'> {
+  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
   return merged;
 }
 
@@ -54,13 +72,14 @@ export const beastOf = (p: Player): BeastPower | null => powersOf(p).beast ?? nu
 
 // Hero marks: each is its own pick, made while its power works for the player. They can sit on the
 // same hero or on different ones (shield the tank, boost the carry).
-export type MarkKind = 'ward' | 'boost' | 'halo' | 'halo2';
+export type MarkKind = 'ward' | 'boost' | 'halo' | 'halo2' | 'iceArrow';
 type Powers = ReturnType<typeof powersOf>;
 export const MARKS: Record<MarkKind, { icon: string; name: string; action: string; available: (pw: Powers) => boolean }> = {
   ward: { icon: '☂️', name: 'Umbrella', action: 'Shield with your umbrella', available: (pw) => !!pw.ward },
   boost: { icon: '🌂', name: 'Umbrella Dance', action: 'Dance with your umbrella', available: (pw) => !!pw.boost },
   halo: { icon: '😇', name: 'Halo', action: 'Protect with your halo', available: (pw) => (pw.protect?.picks ?? 0) >= 1 },
   halo2: { icon: '😇', name: 'Second Halo', action: 'Protect with your second halo', available: (pw) => (pw.protect?.picks ?? 0) >= 2 },
+  iceArrow: { icon: '❄️', name: 'Ice Arrow Blessing', action: 'Give the Ice Arrow Blessing', available: (pw) => !!pw.iceArrow },
 };
 export const MARK_KINDS = Object.keys(MARKS) as MarkKind[];
 
@@ -123,9 +142,49 @@ export function syncMarks(p: Player): void {
 
 // Pays out what picking card `cardId` gives right away: its gold and its item.
 export function payCard(state: GameState, p: Player, cardId: string): void {
-  const { pickGold = 0, pickItem } = cardFace(p, cardId).power;
+  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0 } = cardFace(p, cardId).power;
   p.gold += pickGold;
-  if (pickItem) p.items.push({ uid: state.nextUid++, id: pickItem, tier: 1, holder: null });
+  if (pickXp) addXp(p, pickXp);
+  for (const id of [...(pickItem ? [pickItem] : []), ...startItems]) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
+  if (pickChest) addChests(p, pickChest);
+  // Lunox's Twilight Blessing (his power, or his card on another commander): handed out now, placed later.
+  const tw = powersOf(p).twilight;
+  if (tw && !p.twilight) {
+    p.twilight = { holder: null, trait: null };
+    p.gold += tw.gold;
+  }
+  // Luo Yi's card: its first copy.
+  payEcho(state, p);
+}
+
+// Hands over what a commander's innate power gives once, when it's picked (Ruby's Cloak and Scythe).
+export function payCommander(state: GameState, p: Player): void {
+  for (const id of COMMANDERS[p.commander!].innate.startItems ?? []) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
+}
+
+// Equipment Chests waiting to be opened (see inventory.openChest). They don't count toward an item's chest limit.
+const addChests = (p: Player, n: number) => ((p.chests ??= { kills: 0, earned: 0, waiting: 0 }).waiting += n);
+
+// The one place a player loses hp (a lost fight). Nana's powers: damage taken pays gold, and a lethal hit
+// may leave them at 1 HP instead.
+export function hurtPlayer(p: Player, damage: number): void {
+  if (damage <= 0) return;
+  p.hp -= damage;
+  const pw = powersOf(p);
+  if (pw.hurtGold) {
+    const h = pw.hurtGold;
+    const hurt = (p.hurt ??= { taken: 0, paid: 0 });
+    hurt.taken += damage;
+    while (hurt.paid < h.times && hurt.taken >= (hurt.paid + 1) * h.every) {
+      hurt.paid++;
+      p.gold += h.gold;
+      if (hurt.paid === h.times && h.chest) addChests(p, 1);
+    }
+  }
+  if (p.hp <= 0 && (p.deathsSaved ?? 0) < (pw.deathSaves ?? 0)) {
+    p.hp = 1;
+    p.deathsSaved = (p.deathsSaved ?? 0) + 1;
+  }
 }
 
 // The cards offered on the card round: the player's own commander's card, then random others.

@@ -208,15 +208,19 @@ export function unitTriggers(levels: TraitLevels, def: UnitDef): { trait: string
 }
 
 // A player's active traits: their board plus their orb.
-export const playerTraits = (p: Pick<Player, 'board' | 'orb' | 'mistOrbs'>) => activeTraits(p.board, p.orb, fieldedMistOrbs(p));
+export const playerTraits = (p: Pick<Player, 'board' | 'orb' | 'mistOrbs' | 'twilight'>) => activeTraits(p.board, p.orb, fieldedMistOrbs(p));
 // A player's trait counts: board, Magic Orb and Mist orbs.
-export const playerTraitCounts = (p: Pick<Player, 'board' | 'orb' | 'mistOrbs'>) => traitCounts(p.board, p.orb, fieldedMistOrbs(p));
+export const playerTraitCounts = (p: Pick<Player, 'board' | 'orb' | 'mistOrbs' | 'twilight'>) => traitCounts(p.board, p.orb, fieldedMistOrbs(p));
 // Mist orbs on fielded units, as orbs on their unit type. Each counts once, even on two copies of a type.
-export function fieldedMistOrbs(p: Pick<Player, 'board' | 'mistOrbs'>): Orb[] {
-  return (p.mistOrbs ?? []).flatMap((o) => {
+// Lunox's Twilight Blessing counts the same way, while the very unit it's on is fielded.
+export function fieldedMistOrbs(p: Pick<Player, 'board' | 'mistOrbs' | 'twilight'>): Orb[] {
+  const orbs = (p.mistOrbs ?? []).flatMap((o) => {
     const holder = p.board.find((u) => u && u.uid === o.holder);
     return holder ? [{ defId: holder.defId, trait: o.trait }] : [];
   });
+  const tw = p.twilight;
+  const blessed = tw?.trait && tw.holder !== null ? p.board.find((u) => u && u.uid === tw.holder) : null;
+  return blessed ? [...orbs, { defId: blessed.defId, trait: tw!.trait! }] : orbs;
 }
 
 // Round-start economy of every active trait for this player.
