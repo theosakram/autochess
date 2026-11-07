@@ -3,8 +3,8 @@ import type { BeastPower, CommanderDef } from './types';
 
 // Tune with `bun run balance`.
 export const LUKAS = {
-  innate: { damage: 0.3, stun: 2, frontRow: false, shred: 0.8, shredSeconds: 10 } satisfies BeastPower,
-  card: { damage: 0.5, stun: 2, frontRow: true, shred: 0.8, shredSeconds: 10 } satisfies BeastPower,
+  innate: { damage: 0.4, stun: 2.5, frontRow: false, shred: 0.8, shredSeconds: 10 } satisfies BeastPower,
+  card: { damage: 0.6, stun: 2.5, frontRow: true, shred: 0.8, shredSeconds: 10 } satisfies BeastPower,
 };
 
 const back = (b: BeastPower) =>

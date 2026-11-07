@@ -246,9 +246,9 @@ describe('Purify', () => {
     }
     a.board[3] = { uid: 1, defId: 'knight', star: 3 };
     if (withPurify) a.items = [{ uid: 97, id: 'purify', tier: 1, holder: 1 }];
-    // Edith stuns; the Wandering Fist leaps in and stuns.
+    // Edith stuns; the Gatotkaca leaps in and stuns.
     b.board[3] = { uid: 2, defId: 'edith', star: 1 };
-    b.board[4] = { uid: 3, defId: 'wanderingblade', star: 1 };
+    b.board[4] = { uid: 3, defId: 'gatotkaca', star: 1 };
     return simulateCombat({ rng: 1 }, a, b);
   }
 

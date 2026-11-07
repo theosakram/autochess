@@ -8,6 +8,7 @@ export const SKILL_ICONS: Record<string, string> = {
   cometlunge: '💫',
   commandersmark: '🎖️',
   craterfall: '🌋',
+  partycrasher: '🎉',
   cryptseal: '⚰️',
   dragonlance: '🐉',
   dragonsdominion: '🐲',

@@ -3,9 +3,9 @@ import { pct } from '../traits/format';
 import { aheadStrip, enemiesOn } from './areas';
 import type { SkillDef } from './types';
 
-// Wandering Eye (Plane Wanderer, Deadeye). Per star, index 0 = 1★.
+// Moscow (Plane Wanderer, Deadeye). Per star, index 0 = 1★.
 export const WANDERERS_VOLLEY = {
-  atk: [2.8, 3.6, 8.5], // of attack, physical, to each enemy in the path
+  atk: [3.2, 3.4, 8], // of attack, physical, to each enemy in the path
 };
 
 export const wanderersVolley: SkillDef = {

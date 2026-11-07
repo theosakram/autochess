@@ -5,13 +5,16 @@ import { EQUIPMENT } from './items';
 import { openChest } from './inventory';
 import { killsBy, type CombatResult } from './combat';
 import { earnChests, payBounty } from './game';
-import { ALICE, LUNOX, MIYA } from './commanders';
+import { ALICE, AMON, CYCLOPS, FREYA, GUINESS, JOHNSON, LUNOX, MIYA } from './commanders';
+import { refreshShop, rollFreeHero, shopPrice } from './shop';
+import { claimable } from './freya';
+import { checkRally, heroValue, payHeirs } from './cyclops';
 import { bloodStars } from './blood';
 import { copiesOf, mergeUnits } from './merge';
 import { STAR_MULT } from './config';
 import { ICE_LONGBOW } from './items';
 import { playerTraitCounts } from './traits';
-import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, DYROTH, hurtPlayer, KAELA, KAGURA, LUKAS, NANA, payCard, RUBY, markedUid, markKinds, powersOf, protectedUids } from './commanders';
+import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, DYROTH, hurtPlayer, KAELA, KAGURA, KENZO, LUKAS, NANA, payCard, RUBY, markedUid, markKinds, powersOf, protectedUids } from './commanders';
 import { ITEMS } from './items';
 import { fieldStats } from './inventory';
 import { syncPlayer } from './sync';
@@ -53,7 +56,7 @@ describe('Kenzo', () => {
     return state;
   }
 
-  test('a win pays 2 extra gold, a loss 3', () => {
+  test('a win pays 1 extra gold, a loss 2', () => {
     const state = kenzoGame();
     state.round = 3;
     const [strong, weak] = state.players;
@@ -66,8 +69,8 @@ describe('Kenzo', () => {
     expect(fight.result.winner).not.toBeNull();
     const winner = state.players.find((p) => p.id === (fight.result.winner === 0 ? fight.home : fight.away))!;
     const loser = state.players.find((p) => p !== winner)!;
-    expect(winner.gold).toBe(2 + WIN_GOLD); // plus the +1 any win pays
-    expect(loser.gold).toBe(3);
+    expect(winner.gold).toBe(KENZO.gold.win + WIN_GOLD); // plus the +1 any win pays
+    expect(loser.gold).toBe(KENZO.gold.loss);
   });
 
   test('another commander taking the card gets the gold, not the sash', () => {
@@ -75,7 +78,7 @@ describe('Kenzo', () => {
     const p = state.players[0];
     p.cardOffer = ['kenzo'];
     applyAction(state, p.id, { type: 'pickCard', card: 'kenzo' });
-    expect(powersOf(p).roundGold).toEqual({ win: 2, loss: 3 });
+    expect(powersOf(p).roundGold).toEqual(KENZO.gold);
     expect(p.items.some((i) => i.id === 'blacksash')).toBe(false);
   });
 
@@ -85,7 +88,7 @@ describe('Kenzo', () => {
     p.cardOffer = ['kenzo'];
     applyAction(state, p.id, { type: 'pickCard', card: 'kenzo' });
     expect(p.items.filter((i) => i.id === 'blacksash')).toHaveLength(1);
-    expect(powersOf(p).roundGold).toEqual({ win: 2, loss: 3 });
+    expect(powersOf(p).roundGold).toEqual(KENZO.gold);
   });
 
   test('the sash is +60% attack and magic attack, and never drops', () => {
@@ -100,13 +103,13 @@ describe('Kenzo', () => {
     expect(killsBy(result, [0])).toBe(3);
   });
 
-  test('every 3 holder kills earn a chest, kept across fights, up to 4', () => {
+  test('every 4 last hits by the holder earn a chest, kept across fights, up to 4', () => {
     const state = kenzoGame();
     const p = state.players[0];
     earnChests(p, killFight([[0, 2], [0, 3]]), 0);
     expect(p.chests).toEqual({ kills: 2, earned: 0, waiting: 0 });
-    earnChests(p, killFight([[0, 2], [0, 3], [1, 4]]), 0);
-    expect(p.chests).toEqual({ kills: 1, earned: 1, waiting: 1 });
+    earnChests(p, killFight([[0, 2], [0, 3], [1, 4]]), 0); // 2 more by the holder (4 in all); 1 by an ally doesn't count
+    expect(p.chests).toEqual({ kills: 0, earned: 1, waiting: 1 });
     earnChests(p, killFight(Array.from({ length: 30 }, (_, i): [number, number] => [0, i + 2])), 0);
     expect(p.chests!.earned).toBe(4);
     expect(p.chests!.waiting).toBe(4);
@@ -416,18 +419,50 @@ describe('Angela', () => {
     expect(protectedUids(p).size).toBe(2);
   });
 
-  test('own card: a second halo, 3 protected in all; on Lukas the card lends only the innate', () => {
+  test('own card: the Love Beam (no extra halo); on Lukas the card lends only the innate', () => {
     const state = angelaGame();
     const [p, lukas] = state.players;
     p.cardOffer = ['angela'];
     applyAction(state, p.id, { type: 'pickCard', card: 'angela' });
-    expect(applyAction(state, p.id, { type: 'mark', kind: 'halo', unit: 900 }).ok).toBe(true);
-    expect(applyAction(state, p.id, { type: 'mark', kind: 'halo2', unit: 902 }).ok).toBe(true);
-    expect([...protectedUids(p)].sort()).toEqual([900, 901, 902]);
+    expect(powersOf(p).loveBeam).toEqual(ANGELA.loveBeam);
+    expect(markKinds(p)).toEqual(['halo']);
     lukas.cardOffer = ['angela'];
     applyAction(state, lukas.id, { type: 'pickCard', card: 'angela' });
     expect(powersOf(lukas).protect).toEqual(ANGELA.innate);
-    expect(markKinds(lukas)).toEqual(['halo']);
+    expect(powersOf(lukas).loveBeam).toBeUndefined();
+  });
+
+  test('Love Beam: every 3s a protected hero beams through its target, healing allies on the line and hitting enemies, harder by stage', () => {
+    const state = angelaGame();
+    const [a, b] = state.players;
+    a.items = [];
+    a.board.fill(null);
+    a.board[2 * BOARD_COLS + 3] = { uid: 1, defId: 'cici', star: 1 }; // back row, middle
+    a.board[3] = { uid: 2, defId: 'knight', star: 1 }; // front row, same column: on the line
+    a.marks = { halo: { uid: 1, defId: 'cici' } };
+    a.commanderCard = 'angela';
+    b.board.fill(null);
+    b.bench.fill(null);
+    b.items = [];
+    b.board[BOARD_COLS - 1 - 3] = { uid: 3, defId: 'paladin', star: 3 }; // straight ahead
+    const run = (round: number) => simulateCombat({ rng: 1 }, a, b, { round });
+    const r = run(1);
+    const beamer = r.fighters.find((f) => f.side === 0 && f.defId === 'cici')!.id;
+    const knight = r.fighters.find((f) => f.side === 0 && f.defId === 'knight')!.id;
+    const every = ANGELA.loveBeam.every * 10;
+    const hits = r.events.filter((e) => e.type === 'effect' && e.effect === 'lovebeam');
+    expect(hits.length).toBeGreaterThan(0);
+    // Both protected heroes beam: the haloed one, and the automatic one (the knight, on the tie-break).
+    expect(hits.every((e) => e.type === 'effect' && (e.by === beamer || e.by === knight) && e.t % every === 0)).toBe(true);
+    expect(hits.some((e) => e.type === 'effect' && e.by === beamer)).toBe(true);
+    const heals = r.events.filter((e) => e.type === 'heal' && e.id === knight && e.t % every === 0);
+    expect(heals.length).toBeGreaterThan(0);
+    // Stage II beams twice as hard as stage I (same target, same resist).
+    const first = (res: CombatResult) => (res.events.find((e) => e.type === 'effect' && e.effect === 'lovebeam') as { damage: number }).damage;
+    expect(first(run(roundAt(2, 1))) / first(r)).toBeCloseTo(ANGELA.loveBeam.damage[1] / ANGELA.loveBeam.damage[0], 1);
+    // Without the card, no beam.
+    a.commanderCard = null;
+    expect(run(1).events.some((e) => e.type === 'effect' && e.effect === 'lovebeam')).toBe(false);
   });
 
   test('in combat: a protected hero gets 20% of its max mana back after casting', () => {
@@ -552,12 +587,12 @@ describe('Kaela', () => {
     (p.mirrors ?? 0) * PRIZE_VALUES.mirror +
     [...p.bench, ...p.board].reduce((n, u) => n + (u && UNIT_BY_ID[u.defId].tier >= 4 ? PRIZE_VALUES[`hero${UNIT_BY_ID[u.defId].tier}`] : 0), 0);
 
-  test('roll once a round for 1-4 points; going past 8 drops back to 0', () => {
+  test('a roll a round for 1-4 points; going past 8 drops back to 0', () => {
     const { state, p } = kaelaGame();
     expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(true);
     expect(p.trove!.points).toBeGreaterThanOrEqual(1);
     expect(p.trove!.points).toBeLessThanOrEqual(KAELA.trove.die);
-    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(false); // once a round
+    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(false); // one a round
     // Next rounds: from 7, anything but a 1 goes bust.
     for (let i = 0; i < 20; i++) {
       state.round++;
@@ -566,6 +601,15 @@ describe('Kaela', () => {
       expect(p.trove!.points).toBe(p.trove!.lastRoll === 1 ? 8 : 0);
       expect(p.trove!.bust).toBe(p.trove!.lastRoll !== 1);
     }
+  });
+
+  test('unused rolls bank up: skip two rounds, roll three times', () => {
+    const { state, p } = kaelaGame();
+    state.round += 2;
+    for (let i = 0; i < 3; i++) expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(true);
+    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(false);
+    state.round++;
+    expect(applyAction(state, p.id, { type: 'rollDice' }).ok).toBe(true);
   });
 
   test('opening pays a prize worth its points, resets them, and works 3 times a game', () => {
@@ -654,12 +698,12 @@ describe('Kaela', () => {
     expect(worth(p) - before).toBe(second);
   });
 
-  test('on another commander, her card lends the Treasure Grove, not the free rolls', () => {
+  test('on another commander, her card gives the free rolls, not the Treasure Grove', () => {
     const { p } = kaelaGame();
     p.commander = 'lukas';
     p.commanderCard = 'kaela';
-    expect(powersOf(p).trove).toEqual(KAELA.trove);
-    expect(powersOf(p).luckyRolls).toBeUndefined();
+    expect(powersOf(p).luckyRolls).toEqual(KAELA.rolls);
+    expect(powersOf(p).trove).toBeUndefined();
   });
 });
 
@@ -1092,5 +1136,409 @@ describe('Alice', () => {
     p.cardOffer = ['alice'];
     expect(applyAction(state, p.id, { type: 'pickCard', card: 'alice' }).ok).toBe(true);
     expect(p.xp).toBe(ALICE.card.xp);
+  });
+});
+
+describe('Johnson', () => {
+  function johnsonGame(): { state: GameState; p: Player } {
+    const state = createGame(2, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'johnson' }).ok).toBe(true);
+    return { state, p: state.players[0] };
+  }
+
+  test("picking him opens Johnnie's Den: Johnnies with all different factions and all different roles", () => {
+    const { p } = johnsonGame();
+    const offer = p.johnnie!.offer;
+    expect(offer.length).toBe(JOHNSON.johnnie.offer);
+    expect(p.johnnie!.defId).toBeNull();
+    for (const k of [0, 1]) expect(new Set(offer.map((id) => UNIT_BY_ID[id].traits[k])).size).toBe(offer.length);
+    expect(offer.every((id) => UNIT_BY_ID[id].johnnie)).toBe(true);
+  });
+
+  test('the Johnnie picked comes free, then rolls in the shop at 0 gold and sells for nothing', () => {
+    const { state, p } = johnsonGame();
+    const id = p.johnnie!.offer[2];
+    const gold = p.gold;
+    expect(applyAction(state, p.id, { type: 'pickJohnnie', johnnie: id }).ok).toBe(true);
+    expect(p.johnnie).toEqual({ offer: [], defId: id });
+    expect(p.bench.filter((u) => u?.defId === id).length).toBe(1);
+    expect(p.gold).toBe(gold);
+    expect(applyAction(state, p.id, { type: 'pickJohnnie', johnnie: id }).ok).toBe(false); // once
+    expect(id in state.pool).toBe(false);
+    // It turns up like a 3-gold hero; the other player never sees it.
+    p.level = 7;
+    state.players[1].level = 7;
+    let slot = -1;
+    let seenByOther = false;
+    for (let i = 0; i < 200 && slot < 0; i++) {
+      refreshShop(state, p);
+      refreshShop(state, state.players[1]);
+      slot = p.shop.indexOf(id);
+      seenByOther ||= state.players[1].shop.includes(id);
+    }
+    expect(slot).toBeGreaterThanOrEqual(0);
+    expect(seenByOther).toBe(false);
+    const before = p.gold;
+    expect(applyAction(state, p.id, { type: 'buy', slot }).ok).toBe(true);
+    expect(p.gold).toBe(before);
+    const at = p.bench.findIndex((u) => u?.defId === id);
+    expect(applyAction(state, p.id, { type: 'sell', from: { area: 'bench', index: at } }).ok).toBe(true);
+    expect(p.gold).toBe(before);
+    expect(id in state.pool).toBe(false);
+  });
+
+  test('picked with a full bench, the Johnnie waits for room', () => {
+    const { state, p } = johnsonGame();
+    p.bench.fill(null);
+    p.bench.forEach((_, i) => (p.bench[i] = { uid: 900 + i, defId: 'cici', star: 1 }));
+    const id = p.johnnie!.offer[0];
+    expect(applyAction(state, p.id, { type: 'pickJohnnie', johnnie: id }).ok).toBe(true);
+    expect(p.gifts).toContain(id);
+    p.bench[0] = null;
+    syncPlayer(state, p);
+    expect(p.bench.some((u) => u?.defId === id)).toBe(true);
+  });
+
+  test('Family Business: every Johnnie gets +35% attack and magic attack and +30% HP, other heroes nothing', () => {
+    const { p } = johnsonGame();
+    const id = p.johnnie!.offer[0];
+    p.board.fill(null);
+    p.board[0] = { uid: 700, defId: id, star: 1 };
+    p.board[1] = { uid: 701, defId: 'cici', star: 1 };
+    const stats = () => fieldStats(p, playerTraits(p));
+    const before = stats();
+    p.commanderCard = 'johnson';
+    const after = stats();
+    const j0 = before.get(700)!;
+    const j1 = after.get(700)!;
+    expect(j1.atk).toBeCloseTo(j0.atk * (1 + JOHNSON.card.hybridAtk), -1);
+    expect(j1.ap).toBeCloseTo(j0.ap * (1 + JOHNSON.card.hybridAtk), -1);
+    expect(j1.hp).toBeCloseTo(j0.hp * (1 + JOHNSON.card.hp), -1);
+    expect(after.get(701)).toEqual(before.get(701));
+  });
+
+  test("on another commander, his card opens Johnnie's Den", () => {
+    const { state, p } = johnsonGame();
+    p.commander = 'lukas';
+    p.johnnie = undefined;
+    syncPlayer(state, p);
+    expect(p.johnnie).toBeUndefined();
+    p.commanderCard = 'johnson';
+    syncPlayer(state, p);
+    expect(p.johnnie!.offer.length).toBe(JOHNSON.johnnie.offer);
+  });
+});
+
+describe('Amon', () => {
+  function amonGame(): { state: GameState; p: Player } {
+    const state = createGame(2, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'amon' }).ok).toBe(true);
+    return { state, p: state.players[0] };
+  }
+  // Takes a fresh hero to 2 stars: three 1-star copies on the bench, merged.
+  let nextUid = 5000;
+  function twoStar(state: GameState, p: Player, defId: string): void {
+    p.bench.fill(null);
+    for (let i = 0; i < 3; i++) p.bench[i] = { uid: nextUid++, defId, star: 1 };
+    mergeUnits(p, defId);
+    syncPlayer(state, p);
+  }
+  const heroes = UNITS.filter((u) => u.tier === 1 && u.shop !== false).map((u) => u.id);
+
+  test('starts with a Mirror Device; every 7 heroes to 2 stars make another and pay 12 gold, 2 times at most', () => {
+    const { state, p } = amonGame();
+    expect(p.mirrors).toBe(AMON.mirrorBar.start);
+    const gold = p.gold;
+    for (let i = 0; i < AMON.mirrorBar.steps - 1; i++) twoStar(state, p, heroes[i % heroes.length]);
+    expect(p.mirrorBar).toEqual({ steps: AMON.mirrorBar.steps - 1, made: 0 });
+    expect(p.mirrors).toBe(1);
+    twoStar(state, p, heroes[0]);
+    expect(p.mirrorBar).toEqual({ steps: 0, made: 1 });
+    expect(p.mirrors).toBe(2);
+    expect(p.gold - gold).toBe(AMON.mirrorBar.gold);
+    for (let i = 0; i < AMON.mirrorBar.steps * 2; i++) twoStar(state, p, heroes[i % heroes.length]);
+    expect(p.mirrorBar!.made).toBe(AMON.mirrorBar.max);
+    expect(p.mirrors).toBe(AMON.mirrorBar.start + AMON.mirrorBar.max);
+    expect(p.gold - gold).toBe(AMON.mirrorBar.gold * AMON.mirrorBar.max);
+  });
+
+  test('a 3-star merge is no step; picking him again gives no second starting device', () => {
+    const { state, p } = amonGame();
+    p.bench.fill(null);
+    for (let i = 0; i < 3; i++) p.bench[i] = { uid: nextUid++, defId: heroes[0], star: 2 };
+    mergeUnits(p, heroes[0]);
+    syncPlayer(state, p);
+    expect(p.mirrorBar!.steps).toBe(0);
+    syncPlayer(state, p);
+    expect(p.mirrors).toBe(1);
+  });
+
+  test('Polished Reflection: 4 gold per hero to 2 stars, up to 32', () => {
+    const { state, p } = amonGame();
+    p.commanderCard = 'amon';
+    p.mirrorBar!.made = AMON.mirrorBar.max; // the bar's gold out of the way
+    const gold = p.gold;
+    twoStar(state, p, heroes[0]);
+    expect(p.gold - gold).toBe(AMON.starGold.gold);
+    for (let i = 0; i < 12; i++) twoStar(state, p, heroes[i % heroes.length]);
+    expect(p.gold - gold).toBe(AMON.starGold.max);
+    expect(p.starGold).toBe(AMON.starGold.max);
+  });
+
+  test('on another commander, his card is just 1 Mirror Device: no bar, no gold per 2 stars', () => {
+    const { state, p } = amonGame();
+    p.commander = 'lukas';
+    p.mirrorBar = undefined;
+    p.mirrors = 0;
+    p.cardOffer = ['amon'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'amon' }).ok).toBe(true);
+    expect(p.mirrors).toBe(AMON.otherMirrors);
+    expect(p.mirrorBar).toBeUndefined();
+    expect(powersOf(p).mirrorBar).toBeUndefined();
+    expect(powersOf(p).starGold).toBeUndefined();
+    syncPlayer(state, p);
+    expect(p.mirrors).toBe(AMON.otherMirrors); // once, on the pick
+  });
+});
+
+describe('Freya', () => {
+  function freyaGame(): { state: GameState; p: Player } {
+    const state = createGame(2, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'freya' }).ok).toBe(true);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    return { state, p };
+  }
+  // `n` different Mages on the board (plus a non-Mage), so Mage is active.
+  function fieldMages(p: Player, n: number): void {
+    const mages = UNITS.filter((u) => u.shop !== false && !u.locked && u.traits.includes('mage')).slice(0, n);
+    mages.forEach((u, i) => (p.board[i] = { uid: 800 + i, defId: u.id, star: 1 }));
+    p.level = 9;
+  }
+
+  test('blessing a role adds its extra on top, any time, to the right units; other roles refused', () => {
+    const { state, p } = freyaGame();
+    fieldMages(p, 2);
+    const other = UNITS.find((u) => u.shop !== false && !u.traits.includes('mage'))!;
+    p.board[7] = { uid: 899, defId: other.id, star: 1 };
+    const ap = () => fieldStats(p, playerTraits(p)).get(899)!.ap;
+    const before = ap();
+    expect(applyAction(state, p.id, { type: 'enhance', trait: 'mage' }).ok).toBe(true);
+    // Mage blesses every ally: +10% magic attack at 2 on top of the trait's own +10%.
+    expect(ap()).toBeCloseTo(before * (1 + 0.1 + FREYA.enhance.traits.mage.mods[0].pct![0]) / 1.1);
+    expect(applyAction(state, p.id, { type: 'enhance', trait: 'fighter' }).ok).toBe(true);
+    expect(ap()).toBeCloseTo(before);
+    expect(applyAction(state, p.id, { type: 'enhance', trait: 'astral' }).ok).toBe(false);
+    expect(applyAction(state, p.id, { type: 'enhance', trait: 'weaponmaster' }).ok).toBe(false);
+  });
+
+  test('Fighter blesses only Fighters', () => {
+    const { state, p } = freyaGame();
+    const fighters = UNITS.filter((u) => u.shop !== false && !u.locked && u.traits.includes('fighter')).slice(0, 2);
+    fighters.forEach((u, i) => (p.board[i] = { uid: 810 + i, defId: u.id, star: 1 }));
+    const other = UNITS.find((u) => u.shop !== false && !u.traits.includes('fighter'))!;
+    p.board[7] = { uid: 899, defId: other.id, star: 1 };
+    const amp = (uid: number) => fieldStats(p, playerTraits(p)).get(uid)!.basicAmp;
+    const [f0, o0] = [amp(810), amp(899)];
+    applyAction(state, p.id, { type: 'enhance', trait: 'fighter' });
+    expect(amp(810) - f0).toBeCloseTo(0.05);
+    expect(amp(899)).toBe(o0);
+  });
+
+  test('rewards wait for the player, once each: 2 heroes of the role worth 4 gold at 2', () => {
+    const { state, p } = freyaGame();
+    applyAction(state, p.id, { type: 'enhance', trait: 'mage' });
+    expect(claimable(p)).toEqual([]);
+    fieldMages(p, 2);
+    expect(claimable(p)).toEqual([1]);
+    expect(p.bench.every((u) => u === null)).toBe(true); // never on its own
+    const pool = { ...state.pool };
+    expect(applyAction(state, p.id, { type: 'claimEnhance', level: 1 }).ok).toBe(true);
+    // What left the pool (the copies may merge with the Mages on the board, so count from there).
+    const got = Object.keys(pool).flatMap((id) => Array(pool[id] - state.pool[id]).fill(UNIT_BY_ID[id]) as (typeof UNITS)[number][]);
+    expect(got.length).toBe(2);
+    expect(got.every((u) => u.traits.includes('mage'))).toBe(true);
+    expect(got.reduce((n, u) => n + u.tier, 0)).toBe(FREYA.enhance.rewardGold[0]);
+    expect(p.gifts ?? []).toEqual([]); // both delivered
+    expect(applyAction(state, p.id, { type: 'claimEnhance', level: 1 }).ok).toBe(false);
+    // Switching roles doesn't open the same reward again.
+    applyAction(state, p.id, { type: 'enhance', trait: 'fighter' });
+    expect(claimable(p)).toEqual([]);
+    expect(applyAction(state, p.id, { type: 'claimEnhance', level: 2 }).ok).toBe(false); // not reached
+  });
+
+  test('Harvest Blessing: 10 gold at 2, an Equipment Chest at 4, an orb at 6', () => {
+    const { state, p } = freyaGame();
+    p.commanderCard = 'freya';
+    applyAction(state, p.id, { type: 'enhance', trait: 'mage' });
+    fieldMages(p, 6);
+    expect(claimable(p)).toEqual([1, 2, 3]);
+    const gold = p.gold;
+    applyAction(state, p.id, { type: 'claimEnhance', level: 1 });
+    expect(p.gold - gold).toBe(FREYA.cardGold);
+    applyAction(state, p.id, { type: 'claimEnhance', level: 2 });
+    expect(p.offerFrom).toBe('chest');
+    const orbs = p.mistOrbs?.length ?? 0;
+    applyAction(state, p.id, { type: 'claimEnhance', level: 3 });
+    expect(p.mistOrbs!.length).toBe(orbs + 1);
+    expect(p.freya!.claimed).toEqual([1, 2, 3]);
+  });
+});
+
+describe('Cyclops', () => {
+  const SEATS = [0, 1, 2].map((i) => ({ id: `p${i}`, name: `P${i}`, isBot: false }));
+  function cyclopsGame(): { state: GameState; p: Player; a: Player; b: Player } {
+    const state = createGame(4, SEATS);
+    const [p, a, b] = state.players;
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'cyclops' }).ok).toBe(true);
+    for (const o of [a, b]) applyAction(state, o.id, { type: 'pickCommander', commander: 'lukas' });
+    for (const o of state.players) {
+      o.board.fill(null);
+      o.bench.fill(null);
+    }
+    return { state, p, a, b };
+  }
+  // Two Mages and an Astral on the board: Mage is the biggest trait.
+  function fieldMages(p: Player): void {
+    const mages = UNITS.filter((u) => u.shop !== false && !u.locked && u.traits.includes('mage') && !u.traits.includes('astral')).slice(0, 2);
+    mages.forEach((u, i) => (p.board[i] = { uid: 600 + i, defId: u.id, star: 1 }));
+    p.board[5] = { uid: 610, defId: 'minos', star: 1 };
+  }
+
+  test('dropping to 80 HP or below, once: 3 heroes of the biggest trait and an Equipment Chest', () => {
+    const { state, p } = cyclopsGame();
+    fieldMages(p);
+    p.level = 6;
+    p.hp = CYCLOPS.rally.hp + 1;
+    checkRally(state, p);
+    expect(p.rallied).toBeUndefined();
+    p.hp = CYCLOPS.rally.hp;
+    checkRally(state, p);
+    expect(p.rallied!.trait).toBe('mage');
+    expect(p.rallied!.heroes).toHaveLength(CYCLOPS.rally.heroes);
+    expect(p.rallied!.heroes.every((id) => UNIT_BY_ID[id].traits.includes('mage'))).toBe(true);
+    expect(p.gifts).toEqual(p.rallied!.heroes); // delivered as bench room allows
+    expect(p.chests!.waiting).toBe(CYCLOPS.rally.chests);
+    p.hp = 10;
+    checkRally(state, p);
+    expect(p.gifts).toHaveLength(CYCLOPS.rally.heroes); // never again
+  });
+
+  test('a knockout pays 14% of their hero value (every copy, board and bench); the card adds 15% and 12 gold, on anyone', () => {
+    const { state, p, a, b } = cyclopsGame();
+    a.board[0] = { uid: 700, defId: 'fanny', star: 2 }; // 5 gold x 3 copies
+    a.bench[0] = { uid: 701, defId: 'cici', star: 1 }; // 1 gold
+    expect(heroValue(a)).toBe(16);
+    const gold = p.gold;
+    const bGold = b.gold;
+    payHeirs(state, a);
+    expect(p.gold - gold).toBe(Math.round(16 * CYCLOPS.heirShare));
+    expect(p.heirGold).toBe(Math.round(16 * CYCLOPS.heirShare));
+    expect(b.gold).toBe(bGold); // Lukas gets nothing
+    // A real knockout pays through the fight round.
+    a.hp = -5;
+    resolveCombat(state);
+    expect(a.place).not.toBeNull();
+    expect(p.heirGold).toBe(2 * Math.round(16 * CYCLOPS.heirShare));
+    // The card, on Cyclops: 12 gold now, and 29% in all.
+    p.cardOffer = ['cyclops'];
+    const before = p.gold;
+    applyAction(state, p.id, { type: 'pickCard', card: 'cyclops' });
+    expect(p.gold - before).toBe(CYCLOPS.card.gold);
+    expect(powersOf(p).heirShare! + powersOf(p).heirShareCard!).toBeCloseTo(0.29);
+    // On another commander: the same card face.
+    b.cardOffer = ['cyclops'];
+    applyAction(state, b.id, { type: 'pickCard', card: 'cyclops' });
+    expect(powersOf(b).heirShareCard).toBe(CYCLOPS.card.heirShare);
+    expect(powersOf(b).heirShare).toBeUndefined();
+  });
+});
+
+describe('Guiness', () => {
+  function guinessGame(): { state: GameState; p: Player } {
+    const state = createGame(6, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'guiness' }).ok).toBe(true);
+    const p = state.players[0];
+    p.level = 5;
+    return { state, p };
+  }
+
+  test('starts with an Equipment Chest, opened at once', () => {
+    const { p } = guinessGame();
+    expect(p.offerFrom).toBe('chest');
+    expect(p.itemOffer).toHaveLength(3);
+  });
+
+  test('after a free refresh, a hero in the shop is free about 24% of the time; buying it costs nothing', () => {
+    const { state, p } = guinessGame();
+    let free = 0;
+    for (let i = 0; i < 500; i++) {
+      refreshShop(state, p);
+      expect(p.freeSlot).toBeNull(); // a refresh clears it
+      rollFreeHero(state, p);
+      if (p.freeSlot != null) free++;
+    }
+    expect(free / 500).toBeGreaterThan(GUINESS.freeHeroChance - 0.06);
+    expect(free / 500).toBeLessThan(GUINESS.freeHeroChance + 0.06);
+    // Buy the free one.
+    while (p.freeSlot == null) {
+      refreshShop(state, p);
+      rollFreeHero(state, p);
+    }
+    const slot = p.freeSlot!;
+    expect(shopPrice(p, slot)).toBe(0);
+    p.bench.fill(null);
+    p.gold = 0;
+    expect(applyAction(state, p.id, { type: 'buy', slot }).ok).toBe(true);
+    expect(p.gold).toBe(0);
+    expect(p.freeSlot).toBeNull();
+  });
+
+  test('the round-start refresh rolls it, but never on round 1 and never for a locked shop', () => {
+    const { state, p } = guinessGame();
+    p.freeHeroes = 99; // the card's guarantee, so every roll lands
+    for (const o of state.players) o.commanderCard = 'nana'; // no card round offer in the way
+    resolveCombat(state);
+    startRound(state);
+    expect(p.freeSlot).not.toBeNull();
+    p.shopLocked = true;
+    const left = p.freeHeroes;
+    resolveCombat(state);
+    startRound(state);
+    expect(p.freeHeroes).toBe(left); // the locked shop wasn't refreshed, so nothing rolled
+  });
+
+  test('On the House: a free hero in each of the next 15 after-fight shops, then back to the chance', () => {
+    const { state, p } = guinessGame();
+    p.cardOffer = ['guiness'];
+    applyAction(state, p.id, { type: 'pickCard', card: 'guiness' });
+    expect(p.freeHeroes).toBe(GUINESS.card.rounds);
+    for (let i = 0; i < GUINESS.card.rounds; i++) {
+      refreshShop(state, p);
+      rollFreeHero(state, p);
+      expect(p.freeSlot).not.toBeNull();
+    }
+    expect(p.freeHeroes).toBe(0);
+    let misses = 0;
+    for (let i = 0; i < 50; i++) {
+      refreshShop(state, p);
+      rollFreeHero(state, p);
+      if (p.freeSlot == null) misses++;
+    }
+    expect(misses).toBeGreaterThan(0);
+  });
+
+  test("on another commander, his card lends the innate: the chance, and a chest on the pick", () => {
+    const { state } = guinessGame();
+    const o = state.players[1];
+    o.commander = 'lukas';
+    o.itemOffer = undefined;
+    o.chests = undefined;
+    o.cardOffer = ['guiness'];
+    applyAction(state, o.id, { type: 'pickCard', card: 'guiness' });
+    expect(powersOf(o).freeHeroChance).toBe(GUINESS.freeHeroChance);
+    expect(o.freeHeroes ?? 0).toBe(0);
+    expect(o.offerFrom).toBe('chest');
   });
 });

@@ -41,16 +41,19 @@ describe('Spectre', () => {
     expect(units.map((u) => u.traits.filter((t) => t !== 'spectre'))).toEqual([['scavenger'], ['deadeye'], ['fighter'], ['hunter'], ['mage'], ['dauntless'], []]);
   });
 
-  test('Spectres deal more damage; at 10 they also gain HP and the Eidolon fights a star higher', () => {
+  test('Spectres deal more damage; at 10 they also gain HP and Boss Alpha fights a star higher', () => {
     for (const level of [1, 2, 3]) {
       expect(unitStats(UNIT_BY_ID.phove, 1, { levels: { spectre: level } }).damageAmp).toBeCloseTo(SPECTRE.damageAmp[level - 1]);
       expect(unitStats(UNIT_BY_ID.footman, 1, { levels: { spectre: level } }).damageAmp).toBe(0);
     }
-    const plain = unitStats(UNIT_BY_ID.eidolon, 1);
-    const ten = unitStats(UNIT_BY_ID.eidolon, 1, { levels: { spectre: 4 } });
-    expect(ten.hp).toBe(Math.round(UNIT_BY_ID.eidolon.hp * 1.8 * (1 + SPECTRE.hp[3])));
-    expect(ten.atk).toBe(Math.round(plain.atk * 1.8));
-    expect(unitStats(UNIT_BY_ID.eidolon, 3, { levels: { spectre: 4 } }).atk).toBe(Math.round(UNIT_BY_ID.eidolon.atk * 5.832));
+    const plain = unitStats(UNIT_BY_ID.bossalpha, 1);
+    const ten = unitStats(UNIT_BY_ID.bossalpha, 1, { levels: { spectre: 4 } });
+    // A star higher: its 2★ numbers at 1★, and past 3★ its 3★ numbers x1.8.
+    const per = UNIT_BY_ID.bossalpha.starStats!;
+    expect(plain.hp).toBe(per.hp[0]);
+    expect(ten.hp).toBe(Math.round(per.hp[1] * (1 + SPECTRE.hp[3])));
+    expect(ten.atk).toBe(per.atk[1]);
+    expect(unitStats(UNIT_BY_ID.bossalpha, 3, { levels: { spectre: 4 } }).atk).toBe(Math.round(per.atk[2] * 1.8));
   });
 
   test('Spectre 2: two-starring a 1- or 2-gold Spectre gives a free one a cost higher, from the pool', () => {
@@ -83,7 +86,7 @@ describe('Spectre', () => {
     expect(owned(p).filter((u) => u === 'gourd1')).toHaveLength(2);
   });
 
-  test('Spectre 6: two-starring the 5-gold unlocks the Eidolon in this player\'s shop and gives one', () => {
+  test('Spectre 6: two-starring the 5-gold unlocks Boss Alpha in this player\'s shop and gives one', () => {
     const state = newGame();
     const [p, other] = state.players;
     ['phove', 'ginger', 'saber', 'pacquiao', 'gourd', 'alice'].forEach((d, i) => put(p, d, i));
@@ -91,15 +94,15 @@ describe('Spectre', () => {
       let seen = 0;
       for (let i = 0; i < 200; i++) {
         refreshShop(state, pl);
-        seen += pl.shop.filter((id) => id === 'eidolon').length;
+        seen += pl.shop.filter((id) => id === 'bossalpha').length;
       }
       return seen;
     };
     expect(draws(p)).toBe(0);
     p.bench.fill(null);
     twoStar(state, p, 'alice');
-    expect(p.unlocked).toEqual(['eidolon']);
-    expect(owned(p)).toContain('eidolon1');
+    expect(p.unlocked).toEqual(['bossalpha']);
+    expect(owned(p)).toContain('bossalpha1');
     expect(draws(p)).toBeGreaterThan(0);
     expect(draws(other)).toBe(0);
   });
@@ -122,12 +125,12 @@ describe('Spectre', () => {
     expect(p.bench.some((u) => u?.defId === 'ginger')).toBe(true);
   });
 
-  test('the Eidolon costs 7 and is never in anyone\'s shop before it is unlocked', () => {
+  test('Boss Alpha costs 7 and is never in anyone\'s shop before it is unlocked', () => {
     const state = newGame();
-    expect(UNIT_BY_ID.eidolon.tier).toBe(7);
+    expect(UNIT_BY_ID.bossalpha.tier).toBe(7);
     for (let i = 0; i < 20; i++) {
       startRound(state);
-      for (const p of state.players) expect(p.shop).not.toContain('eidolon');
+      for (const p of state.players) expect(p.shop).not.toContain('bossalpha');
     }
   });
 });

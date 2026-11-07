@@ -3,12 +3,11 @@ import { around, enemiesOn } from './areas';
 import { densestDrop } from './mythMadeFlesh';
 import type { SkillDef } from './types';
 
-// Wandering Fist (Plane Wanderer, Fighter). Per star, index 0 = 1★.
+// Gatotkaca (Plane Wanderer, Fighter). Per star, index 0 = 1★.
 export const BLADE_DESCENT = {
   stun: [1, 1.25, 1.75], // seconds, everyone around where it lands
-  bonus: [4.5, 5.5, 12], // its next basic attack: extra damage
-  shield: [0.25, 0.3, 0.5], // of its max hp
-  seconds: 4,
+  bonus: [3, 3.2, 8], // its next basic attack: extra damage (400 / 420 / 900% in all)
+  heal: [0.2, 0.25, 0.45], // of its max hp, as it lands
 };
 
 export const bladeDescent: SkillDef = {
@@ -16,9 +15,9 @@ export const bladeDescent: SkillDef = {
   name: 'Meteor Fist',
   desc:
     'Leaps into the thick of the enemy (the spot with the most of them around it), stunning everyone around it for {stun}. ' +
-    `Its next basic attack deals {bonus} more damage, and it gains a shield of {shield} of its max HP for ${BLADE_DESCENT.seconds}s.`,
+    'Its next basic attack deals {bonus} more damage, and it heals {heal} of its max HP.',
   damage: { bonus: 'attack' },
-  values: () => ({ stun: BLADE_DESCENT.stun.map((s) => `${s}s`), bonus: BLADE_DESCENT.bonus.map(pct), shield: BLADE_DESCENT.shield.map(pct) }),
+  values: () => ({ stun: BLADE_DESCENT.stun.map((s) => `${s}s`), bonus: BLADE_DESCENT.bonus.map(pct), heal: BLADE_DESCENT.heal.map(pct) }),
   cast(api, caster) {
     const i = caster.star - 1;
     const spot = densestDrop(api, caster);
@@ -26,7 +25,7 @@ export const bladeDescent: SkillDef = {
     for (const e of enemiesOn(api, caster, around(caster))) api.stun(e, BLADE_DESCENT.stun[i], caster);
     // Charged until its next basic attack (see onBasicHit).
     api.buff(caster, [{ stat: 'basicAmp', add: BLADE_DESCENT.bonus[i] }], Infinity, 'bladecharged', caster);
-    api.shield(caster, caster.maxHp * BLADE_DESCENT.shield[i], BLADE_DESCENT.seconds, 'bladedescent');
+    api.heal(caster, caster.maxHp * BLADE_DESCENT.heal[i]);
   },
   onBasicHit(api, caster) {
     if (api.hasBuff(caster, 'bladecharged')) api.unbuff(caster, 'bladecharged');

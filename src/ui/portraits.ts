@@ -60,13 +60,13 @@ export const PORTRAITS: Record<string, string> = {
   odette: '👼',
   thamar: '☠️',
   alice: '🧛',
-  eidolon: '👽',
+  bossalpha: '👽',
 
-  wanderingblade: '🤜',
-  wanderingeye: '🕶️',
-  wanderinghunter: '🐆',
-  wanderingbastion: '🏯',
-  wanderingseer: '🃏',
+  gatotkaca: '🤜',
+  moscow: '🕶️',
+  amon: '🐆',
+  cyborg: '🏯',
+  novaria: '🃏',
 
   mythbeast: '🦄',
   spiritarcher: '🦋',
@@ -76,9 +76,13 @@ export const PORTRAITS: Record<string, string> = {
   divinebeast: '🐯',
 };
 
+// Johnson's Johnnies (one def per faction + role pair) all share one face.
+export const JOHNNIE_PORTRAIT = '🤠';
+export const portraitOf = (defId: string) => PORTRAITS[defId] ?? (UNIT_BY_ID[defId]?.johnnie ? JOHNNIE_PORTRAIT : '❔');
+
 // An inline plate for the HTML side, in the hero's cost colour, the same as on the board. The colour
 // comes in as --plate; style.css draws the rest.
 export function portraitHtml(defId: string, className = ''): string {
   const color = `#${TIER_COLORS[UNIT_BY_ID[defId].tier].toString(16).padStart(6, '0')}`;
-  return `<span class="portrait ${className}" style="--plate:${color}">${PORTRAITS[defId]}</span>`;
+  return `<span class="portrait ${className}" style="--plate:${color}">${portraitOf(defId)}</span>`;
 }

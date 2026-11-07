@@ -5,7 +5,9 @@ import type { TraitLevels } from '../game/traits';
 import { bloodBlock, bloodStars } from '../game/blood';
 import { blessBlock, blessedUnit } from '../game/twilight';
 import { rewardText } from '../game/traits/format';
-import { autoHalo, beastOf, cardFace, COMMANDERS, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
+import { claimable } from '../game/freya';
+import { shopPrice } from '../game/shop';
+import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
 import { BASE_REWARD, baseReward, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, EQUIPMENT_GROUPS, isItemCard, ITEMS, type ItemDef } from '../game/items';
@@ -19,7 +21,7 @@ import { boardCount, freeSlotCount, interest, roundIncome, streakBonus, levelUpC
 import { attackInterval, type DamageType, type StatKey, type StatMod, type Stats } from '../game/stats';
 import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
 import type { BotLevel, GameState, Item, Player, UnitDef } from '../game/types';
-import { UNIT_BY_ID, UNITS } from '../game/units';
+import { UNIT_BY_ID, UNITS, unitPrice } from '../game/units';
 import { portraitHtml } from './portraits';
 import { bearerBadgeHtml, traitBadgeHtml } from './traitBadges';
 
@@ -636,13 +638,13 @@ function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string
         })
         .join('');
       const tag = upgrade ? '<span class="up" title="Buying this makes a 2-star">★★</span>' : owned ? `<span class="owned">own ${owned}</span>` : '';
-      return `<button class="shop-card tier-${def.tier}${upgrade ? ' upgrade' : ''}" data-action="buy" data-slot="${slot}" ${locked || p.gold < def.tier ? 'disabled' : ''}>
+      return `<button class="shop-card tier-${def.tier}${upgrade ? ' upgrade' : ''}" data-action="buy" data-slot="${slot}" ${locked || p.gold < shopPrice(p, slot) ? 'disabled' : ''}>
         ${portraitHtml(id, 'shop-face')}
         <span class="shop-body">
           <span class="unit-name">${isChosen(chosen, id) ? '👑 ' : ''}${def.name}</span>
           <span class="traits">${traits || '<span class="shop-trait none">no traits</span>'}</span>
         </span>
-        <b class="cost">${def.tier}g</b>${tag}
+        <b class="cost">${shopPrice(p, slot)}g</b>${p.freeSlot === slot ? '<span class="free-tag">FREE</span>' : ''}${tag}
       </button>`;
     })
     .join('');
@@ -911,7 +913,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       <div class="kit-part"><small>Items</small><div class="gear-slots">${detailSlots(p, uid, levels)}</div></div>
     </div>
     ${skillOpen ? `<div class="skill-pop">${skillHtml(def.skill, u.star, s, def.attackType ?? 'physical')}</div>` : ''}
-    <button class="unit-sell" data-action="sellUnit" data-uid="${u.uid}">Sell for ${def.tier * copiesOf(u)}g</button>
+    <button class="unit-sell" data-action="sellUnit" data-uid="${u.uid}">Sell for ${unitPrice(u.defId) * copiesOf(u)}g</button>
     <p class="meta">Tip: with this unit selected, click any board or bench cell to move it there.</p>
   </section>`;
 }
@@ -979,7 +981,7 @@ export function unitInfoHtml(defId: string, p: Player): string {
   return modalHtml(
     'closeUnitInfo',
     'trait-popup unit-info',
-    `<span class="unit-info-cost" title="${def.tier} gold">💰${def.tier}</span>
+    `<span class="unit-info-cost" title="${unitPrice(def.id)} gold">💰${unitPrice(def.id)}</span>
     <h2 class="trait-title tier-${def.tier}">${portraitHtml(def.id, 'big')} ${def.name}</h2>
     <div class="info-row"><span class="info-traits">${badges}</span><span class="info-facts">${facts.join('')}</span></div>
     ${where ? `<p class="meta">${where}</p>` : ''}
@@ -1119,40 +1121,88 @@ function synergyChipsHtml(p: Player): string {
 // --- Commanders ---
 
 // The pick at the start of the game. It can't be dismissed: every player needs a commander.
-export function commanderPickHtml(): string {
-  const cards = Object.values(COMMANDERS)
+// The start-of-game pick: a roster of small tiles on the left (click to look), the one looked at in full
+// on the right with its Choose button. Nothing folds, so the grid never shifts.
+export function commanderPickHtml(selected: string | null = null): string {
+  const all = Object.values(COMMANDERS);
+  const c = (selected && COMMANDERS[selected]) || all[0];
+  const tiles = all
     .map(
-      (c) => `<div class="commander-option commander-choice">
-        <span class="commander-portrait">${c.icon}</span>
-        <b>${c.name}</b><small>${c.title}</small>
-        ${commanderFoldsHtml(c, 'pick')}
-        <button class="primary commander-choose" data-action="pickCommander" data-commander="${c.id}">Choose</button>
-      </div>`,
+      (o) => `<button class="commander-tile${o.id === c.id ? ' on' : ''}" data-action="previewCommander" data-commander="${o.id}" title="${o.title}">
+        <span class="commander-portrait">${o.icon}</span><b>${o.name}</b>
+      </button>`,
     )
     .join('');
-  return `<div class="overlay"><div class="dialog modal commander-pick">
-    <h2 class="trait-title">Choose your commander</h2>
-    <p class="meta">Your commander is you: it holds your HP, and its power works for you all game.</p>
-    <div class="commander-options">${cards}</div>
+  return `<div class="overlay"><div class="dialog modal commander-start">
+    <header class="commander-start-head">
+      <h2 class="trait-title">Choose your commander</h2>
+      <p class="meta">Your commander is you: it holds your HP, and its power works for you all game.</p>
+    </header>
+    <div class="commander-roster" data-keep-scroll="commander-roster">${tiles}</div>
+    <section class="commander-detail" data-keep-scroll="commander-detail">
+      <div class="commander-detail-head">
+        <span class="commander-portrait">${c.icon}</span>
+        <div><h3>${c.name}</h3><small>${c.title}</small></div>
+      </div>
+      <h4>${c.icon} Power</h4>
+      <p class="commander-text">${c.desc}</p>
+      <h4>${c.card.icon} Card: ${c.card.name}</h4>
+      <p class="commander-text"><b>On ${c.name}:</b> ${c.card.selfDesc}</p>
+      <p class="commander-text"><b>On another commander:</b> ${c.card.otherDesc ?? c.desc}</p>
+      <button class="primary commander-choose" data-action="pickCommander" data-commander="${c.id}">Choose ${c.name}</button>
+    </section>
   </div></div>`;
 }
 
 // The commander card pick (round 2). Each card shows what it does for this player.
-export function cardOfferHtml(p: Player): string {
-  const cards = (p.cardOffer ?? [])
-    .map((id) => {
-      const c = COMMANDERS[id];
-      const face = cardFace(p, id);
-      return `<button class="commander-option${face.self ? ' own' : ''}" data-action="pickCard" data-card="${id}">
+export function cardOfferHtml(p: Player, selected: string | null = null): string {
+  const offer = p.cardOffer ?? [];
+  const id = selected && offer.includes(selected) ? selected : offer[0];
+  const tiles = offer
+    .map((o) => {
+      const c = COMMANDERS[o];
+      const own = cardFace(p, o).self;
+      return `<button class="commander-tile card-tile${o === id ? ' on' : ''}" data-action="previewCard" data-card="${o}">
+        <span class="commander-portrait">${c.card.icon}</span><b>${c.card.name}</b>
+        <small>${c.icon} ${c.name}'s card</small>
+        <span class="card-tag${own ? ' own' : ''}">${own ? '⬆ Upgrade' : '🤝 Borrow power'}</span>
+      </button>`;
+    })
+    .join('');
+  const c = COMMANDERS[id];
+  const face = cardFace(p, id);
+  return `<div class="overlay"><div class="dialog modal commander-start commander-cards">
+    <header class="commander-start-head">
+      <h2 class="trait-title">Choose a commander card</h2>
+      <p class="meta">Your own commander's card upgrades its power; another commander's card lends you that commander's power. Unpicked when the fight starts: the first one.</p>
+    </header>
+    <div class="commander-roster" data-keep-scroll="card-roster">${tiles}</div>
+    <section class="commander-detail" data-keep-scroll="card-detail">
+      <div class="commander-detail-head">
         <span class="commander-portrait">${c.card.icon}</span>
-        <b>${c.card.name}</b><small>${c.icon} ${c.name}'s card${face.self ? ' · yours: the upgrade' : ` · gives you ${c.name}'s power`}</small>
-        <span class="commander-text">${face.desc}</span>
+        <div><h3>${c.card.name}</h3><small>${c.icon} ${c.name}'s card · ${face.self ? 'yours: the upgrade' : `gives you ${c.name}'s power`}</small></div>
+      </div>
+      <p class="commander-text">${face.desc}</p>
+      <button class="primary commander-choose" data-action="pickCard" data-card="${id}">Take ${c.card.name}</button>
+    </section>
+  </div></div>`;
+}
+
+// Johnson's Den: pick one of the Johnnies on offer (each a different faction and role).
+export function johnnieOfferHtml(p: Player): string {
+  const cards = (p.johnnie?.offer ?? [])
+    .map((id) => {
+      const def = UNIT_BY_ID[id];
+      const traits = def.traits.map((t) => `${traitBadgeHtml(t)} ${TRAITS[t].name}`).join(' · ');
+      return `<button class="commander-option" data-action="pickJohnnie" data-johnnie="${id}">
+        <span class="commander-portrait">${portraitHtml(id)}</span>
+        <b>${def.name}</b><small>${traits}</small>
       </button>`;
     })
     .join('');
   return `<div class="overlay"><div class="dialog modal commander-pick">
-    <h2 class="trait-title">Choose a commander card</h2>
-    <p class="meta">Your own commander's card upgrades its power; another commander's card lends you that commander's power. Unpicked when the fight starts: the first one.</p>
+    <h2 class="trait-title">🎩 Johnnie's Den: pick your Johnnie</h2>
+    <p class="meta">It's yours, free. From now on this Johnnie (the same faction and role) turns up in your shop like a 3-gold hero, at 0 gold.</p>
     <div class="commander-options">${cards}</div>
   </div></div>`;
 }
@@ -1214,11 +1264,77 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
     ${tricksterLineHtml(p)}
     ${twilightLineHtml(p)}
     ${p.echo ? `<p class="commander-card-line">🏔️ Earthen Echo: ${portraitHtml(p.echo.defId, 'tiny')} ${UNIT_BY_ID[p.echo.defId].name} <b>${p.echo.given}/${powersOf(p).echo?.total ?? p.echo.given}</b></p>` : ''}
+    ${p.johnnie?.defId ? `<p class="commander-card-line">🎩 Your Johnnie: ${portraitHtml(p.johnnie.defId, 'tiny')} ${UNIT_BY_ID[p.johnnie.defId].traits.map((t) => `${traitBadgeHtml(t)} ${TRAITS[t].name}`).join(' · ')}</p>` : ''}
+    ${cyclopsLineHtml(p)}
+    ${freyaHtml(p)}
+    ${mirrorBarLineHtml(p)}
     ${bloodLineHtml(p)}
     ${bountyLineHtml(p)}
     ${groveHtml(p, round)}
     ${altarsHtml(p, round)}
   </section>`;
+}
+
+// Cyclops: the low-hp rally (waiting, or what it gave) and the gold from knockouts so far.
+function cyclopsLineHtml(p: Player): string {
+  const pw = powersOf(p);
+  const lines: string[] = [];
+  if (pw.rally) {
+    const r = p.rallied;
+    lines.push(
+      r
+        ? `<p class="commander-card-line">🧿 Rally: ${r.heroes.map((id) => portraitHtml(id, 'tiny')).join('') || 'no heroes left'}${r.trait ? ` (${TRAITS[r.trait].name})` : ''} + ${pw.rally.chests} chest</p>`
+        : `<p class="commander-card-line">🧿 Rally at ${pw.rally.hp} HP: ${pw.rally.heroes} heroes of your biggest trait + ${pw.rally.chests} chest</p>`,
+    );
+  }
+  const share = (pw.heirShare ?? 0) + (pw.heirShareCard ?? 0);
+  if (share) lines.push(`<p class="commander-card-line">🍖 Knockouts: ${Math.round(share * 100)}% of their heroes' value · <b>${p.heirGold ?? 0}</b> gold so far</p>`);
+  return lines.join('');
+}
+
+// Freya's blessing: the roles to bless (the blessed one lit), its extra, and any reward waiting to be claimed.
+function freyaHtml(p: Player): string {
+  const power = powersOf(p).enhance;
+  if (!power) return '';
+  const blessed = p.freya?.trait ?? null;
+  const chips = Object.keys(power.traits)
+    .map((id) => `<button class="freya-role${id === blessed ? ' on' : ''}" data-action="enhance" data-enhance="${id}" title="${TRAITS[id].name}: ${enhanceValues(power.traits[id].mods[0])} ${power.traits[id].text}" aria-label="Bless ${TRAITS[id].name}">${traitBadgeHtml(id)}</button>`)
+    .join('');
+  const t = blessed ? power.traits[blessed] : null;
+  const level = blessed ? (playerTraits(p)[blessed] ?? 0) : 0;
+  const extra = t ? `<p class="commander-text">🌸 <b>${TRAITS[blessed!].name}</b>: ${enhanceValues(t.mods[0])} ${t.text} (${t.members ? `${TRAITS[blessed!].name}s only` : 'all allies'})${level ? ` · working at ${TRAITS[blessed!].breakpoints[level - 1]}` : ' · not active yet'}</p>` : '<p class="commander-text">🌸 Pick a role to bless.</p>';
+  const claims = claimable(p)
+    .map((l) => `<button class="grove-btn" data-action="claimEnhance" data-level="${l}">🎁 Claim ${TRAITS[blessed!].breakpoints[l - 1]}-${TRAITS[blessed!].name} reward (2 heroes, ${power.rewardGold[l - 1]}g)</button>`)
+    .join('');
+  // Every reward's state: claimed, ready (the button above), or how many of the blessed role are still missing.
+  const fielded = blessed ? (playerTraitCounts(p)[blessed] ?? 0) : 0;
+  const steps = blessed
+    ? TRAITS[blessed].breakpoints.slice(0, power.rewardGold.length).map((need, i) => {
+        const l = i + 1;
+        if (p.freya?.claimed.includes(l)) return `<span class="freya-step done">✔ ${need}</span>`;
+        if (fielded >= need) return `<span class="freya-step ready">🎁 ${need}</span>`;
+        return `<span class="freya-step">${need}: ${fielded}/${need}</span>`;
+      })
+    : [];
+  const progress = steps.length ? `<p class="commander-text freya-steps">Rewards (field the blessed role): ${steps.join('')}</p>` : '';
+  return `<div class="grove"><div class="freya-roles">${chips}</div>${extra}${progress}${claims ? `<div class="grove-actions">${claims}</div>` : ''}</div>`;
+}
+
+// Amon's Mirror Bar (steps toward the next Mirror Device) and his card's gold. Devices are used from the Grove line.
+function mirrorBarLineHtml(p: Player): string {
+  const pw = powersOf(p);
+  const lines: string[] = [];
+  const bar = pw.mirrorBar;
+  if (bar && p.mirrorBar) {
+    const done = p.mirrorBar.made >= bar.max;
+    const pips = Array.from({ length: bar.steps }, (_, i) => `<span class="${done || i < p.mirrorBar!.steps ? 'on' : ''}"></span>`).join('');
+    lines.push(`<div class="grove">
+      <p class="commander-text">👥 <b>Mirror Bar</b> · ${done ? 'done' : `${p.mirrorBar.steps}/${bar.steps} heroes to 2★`} · ${p.mirrorBar.made}/${bar.max} devices made (+${bar.gold} gold each)</p>
+      <div class="grove-track">${pips}</div>
+    </div>`);
+  }
+  if (pw.starGold) lines.push(`<p class="commander-card-line">💠 Polished Reflection: +${pw.starGold.gold} gold per 2★ · <b>${p.starGold ?? 0}/${pw.starGold.max}</b></p>`);
+  return lines.join('');
 }
 
 // Progress toward the next Equipment Chest, once the player owns a chest item.
@@ -1229,7 +1345,7 @@ function chestLineHtml(p: Player): string {
   return `<p class="commander-text">Equipment Chests: <b>${earned}/${rule.max}</b>${earned < rule.max ? ` · next at ${kills}/${rule.kills} kills` : ''}</p>`;
 }
 
-// Kaela's Treasure Grove: points on a track to the max, Roll (once a round) and Open (cash in), what the
+// Kaela's Treasure Grove: points on a track to the max, Roll (one a round, banked) and Open (cash in), what the
 // latest roll did and the latest prize; plus any Mirror Devices waiting for a unit.
 function groveHtml(p: Player, round: number): string {
   const power = powersOf(p).trove;
@@ -1238,7 +1354,8 @@ function groveHtml(p: Player, round: number): string {
     : '';
   const last = p.luck?.last ? `<p class="commander-text">🍀 Last prize: <b>${p.luck.last}</b></p>` : '';
   if (!power) return last + mirrors;
-  const t = p.trove ?? { points: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false };
+  const t = p.trove ?? { points: 0, rolls: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false };
+  const left = Math.max(0, round - t.rolls);
   const spent = t.opens >= power.opens;
   const pips = Array.from({ length: power.max }, (_, i) => `<span class="${i < t.points ? 'on' : ''}"></span>`).join('');
   const rolled = t.rolledRound === round;
@@ -1248,7 +1365,7 @@ function groveHtml(p: Player, round: number): string {
     <div class="grove-track">${pips}</div>
     ${rollNote ? `<p class="commander-text">${rollNote}</p>` : ''}
     <div class="grove-actions">
-      <button class="grove-btn" data-action="rollDice" ${rolled || spent ? 'disabled' : ''}>🎲 Roll${rolled ? 'ed' : ''}</button>
+      <button class="grove-btn" data-action="rollDice" ${!left || spent ? 'disabled' : ''}>🎲 Roll${left > 1 ? ` ×${left}` : !left ? 'ed' : ''}</button>
       <button class="grove-btn" data-action="openTrove" ${spent || t.points <= 0 ? 'disabled' : ''}>💰 Open Trove</button>
     </div>
   </div>${last}${mirrors}`;

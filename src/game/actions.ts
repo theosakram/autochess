@@ -1,5 +1,7 @@
 import { bloodBless, grantBlood } from './blood';
 import { essenceIn, essenceOut } from './essence';
+import { pickJohnnie } from './johnnie';
+import { claimEnhance, setEnhance } from './freya';
 import { bless } from './twilight';
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
 import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, type MarkKind } from './commanders';
@@ -12,10 +14,10 @@ import { cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
 import { absorb, bloodMerge, bloodRoom, copiesOf, findCopies, mergeUnits, promote, slotsOf } from './merge';
 import { addXp, boardCount, isAlive, levelUpCost } from './player';
-import { refreshShop } from './shop';
+import { refreshShop, shopPrice } from './shop';
 import { TRAITS } from './traits';
 import type { GameState, Loc, Player, Unit } from './types';
-import { UNIT_BY_ID } from './units';
+import { UNIT_BY_ID, unitPrice } from './units';
 
 // Everything a player can do goes through here, bots included. Later the server
 // runs this same function on actions received from clients, so validate everything.
@@ -36,14 +38,17 @@ export type Action =
   | { type: 'pickCard'; card: string } // one of the cards on offer (a commander id)
   | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
   | { type: 'pickItem'; item: string } // one of the basic items on offer
-  | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (once a round)
+  | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (a roll a round, unused ones bank up)
   | { type: 'openTrove' } // Kaela: cash in the Trove's points
   | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device won from the dice
   | { type: 'offer'; altar: AltarKey; unit: number } // Dyroth: offer a hero (uid) on one of his altars
   | { type: 'bless'; unit: number } // Lunox: place the Twilight Blessing on a hero (uid)
   | { type: 'bloodPact'; unit: number } // Alice: use a Blood Pact on a hero (uid)
   | { type: 'essenceIn'; unit: number } // Luo Yi: put a hero (uid) on the Essence Altar (swapping out any there)
-  | { type: 'essenceOut' }; // Luo Yi: take the altar hero back to the bench
+  | { type: 'essenceOut' } // Luo Yi: take the altar hero back to the bench
+  | { type: 'pickJohnnie'; johnnie: string }
+  | { type: 'enhance'; trait: string } // Freya: bless a role (any time)
+  | { type: 'claimEnhance'; level: number }; // Freya: claim the blessed role's reward at level 1-3 (its 2/4/6) // Johnson: one of the Johnnies on offer in the Den (a def id)
 
 export type Result = { ok: true } | { ok: false; error: string };
 
@@ -67,6 +72,7 @@ export function canClaim(p: Player, defId: string): boolean {
 export function claimShopSlot(state: GameState, p: Player, slot: number): void {
   const defId = p.shop[slot]!;
   p.shop[slot] = null;
+  if (p.freeSlot === slot) p.freeSlot = null;
   gainUnit(state, p, defId);
 }
 
@@ -126,7 +132,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       const defId = p.shop[slot];
       if (!defId) return fail('Nothing to buy there');
       if (isItemCard(defId)) return upgradeItem(p, slot);
-      const cost = UNIT_BY_ID[defId].tier;
+      const cost = shopPrice(p, slot);
       if (p.gold < cost) return fail('Not enough gold');
       if (!canClaim(p, defId)) return fail('Bench is full');
       p.gold -= cost;
@@ -143,7 +149,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       const copies = copiesOf(unit);
       slots[action.from.index] = null;
       if (unit.defId in state.pool) state.pool[unit.defId] += copies;
-      p.gold += UNIT_BY_ID[unit.defId].tier * copies;
+      p.gold += unitPrice(unit.defId) * copies;
       return OK;
     }
 
@@ -198,6 +204,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!COMMANDERS[action.commander]) return fail('No such commander');
       p.commander = action.commander;
       payCommander(state, p);
+      openChest(state, p); // Guiness's starting chest
       grantBlood(state, p); // Alice picked on I-1: that round's Blood Pact
       return OK;
     }
@@ -252,6 +259,15 @@ function perform(state: GameState, p: Player, action: Action): Result {
 
     case 'essenceOut':
       return result(essenceOut(p));
+
+    case 'enhance':
+      return result(setEnhance(p, action.trait));
+
+    case 'claimEnhance':
+      return result(claimEnhance(state, p, action.level));
+
+    case 'pickJohnnie':
+      return result(pickJohnnie(p, action.johnnie, state));
 
     case 'mistBuy':
       return buyMistWare(state, p, action.slot, action.choice);

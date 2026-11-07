@@ -1,3 +1,4 @@
+import type { StatKey } from '../stats';
 // Commanders: each player picks one at the start of the game. The commander is the player: it holds
 // their hp, and its innate power works for them all game. On round COMMANDER_CARD_ROUND every player
 // picks one commander card; a card does one thing for its own commander (an upgrade) and another for
@@ -49,6 +50,10 @@ export interface CommanderPower {
   pickGold?: number; // gold paid once, when this card is picked
   pickItem?: string; // item handed over once, when this card is picked
   pickChest?: number; // Equipment Chests handed over once, when this card is picked
+  pickFreeHeroes?: number; // Guiness's card: the next this-many after-fight shops each have a free hero
+  startChests?: number; // Equipment Chests handed over once, when this power first works (Guiness)
+  freeHeroChance?: number; // Guiness: chance the after-fight shop has a free hero
+  pickMirrors?: number; // Mirror Devices handed over once, when this card is picked (Amon's card on another commander)
   // Nana: lethal hits survived (left at 1 HP), in all. A card's count replaces the innate one, it doesn't add.
   deathSaves?: number;
   hurtGold?: HurtGoldPower;
@@ -77,6 +82,59 @@ export interface CommanderPower {
   // Kaela's card: Lucky Dice rolled for the player on these rounds (or on the pick, if it comes later), each
   // paying a random prize worth between `min` and `max` gold. See luckyDice.ts.
   luckyRolls?: { round: number; min: number; max: number }[];
+  johnnie?: JohnniePower; // Johnson: Johnnie's Den (see johnnie.ts)
+  johnnieBuff?: { hybridAtk: number; hp: number }; // Johnson's card: every Johnnie gets these shares more
+  mirrorBar?: MirrorBarPower; // Amon (see mirrorBar.ts)
+  starGold?: StarGoldPower; // Amon's card
+  rally?: RallyPower; // Cyclops: once, at low hp (see cyclops.ts in game/)
+  heirShare?: number; // Cyclops: of a knocked-out player's hero value, as gold
+  heirShareCard?: number; // Cyclops's card: the same again (a separate field, so the two add up)
+  loveBeam?: LoveBeamPower; // Angela's card: protected heroes fire Love Beams
+  enhance?: EnhancePower; // Freya (see freya.ts in game/)
+  enhanceExtra?: { gold: number }; // Freya's card: more with every reward claimed
+}
+
+// Cyclops: the first time the player is at `hp` or below, `heroes` random heroes of their biggest trait
+// and `chests` Equipment Chests.
+export interface RallyPower {
+  hp: number;
+  heroes: number;
+  chests: number;
+}
+
+// Angela's card: every `every` seconds each protected hero beams a line through its target to the board's
+// edge: allies on it heal `heal` of their max hp, enemies take `damage` by stage (index 0 = stage I; the
+// last value from then on), magic.
+export interface LoveBeamPower {
+  every: number;
+  heal: number;
+  damage: number[];
+}
+
+// Freya's blessing: per blessable trait, its extra stat mods per level; and the rewards' worth per level.
+export interface EnhancePower {
+  traits: Record<string, { text: string; members: boolean; mods: { stat: StatKey; add?: number[]; pct?: number[] }[] }>;
+  rewardGold: number[];
+}
+
+// Amon's Mirror Bar: `start` Mirror Devices at once; every hero reaching 2 stars is a step, and `steps`
+// steps make another device and pay `gold`, up to `max` devices from the bar.
+export interface MirrorBarPower {
+  start: number;
+  steps: number;
+  max: number;
+  gold: number;
+}
+
+// Amon's card: `gold` every time a hero reaches 2 stars, up to `max` gold a game.
+export interface StarGoldPower {
+  gold: number;
+  max: number;
+}
+
+// Johnson's Johnnie's Den: `offer` Johnnies to pick from, all different factions and roles.
+export interface JohnniePower {
+  offer: number;
 }
 
 // Ruby's card: after each fight, `gold` for every one of `items` whose holder is still standing at the end
@@ -130,7 +188,7 @@ export interface TwilightPower {
   gold: number;
 }
 
-// Kaela's treasure trove: once a round the player may roll a die (1..`die`) and add it to their points; going
+// Kaela's treasure trove: a roll a round (unused ones bank up), the player may roll a die (1..`die`) and add it to their points; going
 // past `max` drops them to 0. Opening it pays a prize worth `value[points]` gold and resets the points, up to
 // `opens` times a game. See luckyDice.ts.
 export interface TrovePower {

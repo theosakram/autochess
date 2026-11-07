@@ -3,11 +3,11 @@ import { pct } from '../traits/format';
 import { freeCellNextTo } from './dashStrike';
 import type { SkillDef, SkillFighter } from './types';
 
-// Wandering Hunter (Plane Wanderer, Hunter). Per star, index 0 = 1★.
+// Amon (Plane Wanderer, Hunter). Per star, index 0 = 1★.
 export const STALKERS_MARK = {
   execute: [0.08, 0.1, 0.15], // passive: of max hp
   back: 0.5, // seconds away before it strikes
-  atk: [6, 9, 21], // of attack, physical
+  atk: [9, 9.5, 22], // of attack, physical
 };
 
 export const stalkersMark: SkillDef = {

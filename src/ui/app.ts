@@ -19,6 +19,7 @@ import {
   graveHtml,
   mistChoiceHtml,
   mirrorPickHtml,
+  johnnieOfferHtml,
   altarPickHtml,
   blessPickHtml,
   essenceAltarHtml,
@@ -74,6 +75,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let altarOpen: AltarKey | null = null;
   let blessOpen = false; // Lunox's blessing picker
   let essenceOpen = false; // Luo Yi's altar picker
+  let cardPreview: string | null = null; // the card looked at on the card pick
+  let commanderPreview: string | null = null; // the commander looked at on the start-of-game pick
   let bloodOpen = false; // Alice's Blood Pact picker
   // The unfolded part of the commander panel (its power's text or its card's), if any.
   let commanderOpen: CommanderSection | null = null;
@@ -251,8 +254,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       blessOpen && p.twilight?.holder === null ? blessPickHtml(p) : '',
       essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
       bloodOpen && p.blood?.uses ? bloodPickHtml(p) : '',
-      !p.commander ? commanderPickHtml() : '',
-      p.commander && p.cardOffer?.length && !combat ? cardOfferHtml(p) : '',
+      !p.commander ? commanderPickHtml(commanderPreview) : '',
+      p.johnnie?.offer.length && !combat ? johnnieOfferHtml(p) : '',
+      p.commander && p.cardOffer?.length && !combat ? cardOfferHtml(p, cardPreview) : '',
       // One pick at a time: the basic item after the commander card.
       p.commander && !p.cardOffer?.length && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
       over ? gameOverHtml(p, state.players.length) : '',
@@ -414,6 +418,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         const slot = mistPick!;
         mistPick = null;
         dispatch({ type: 'mistBuy', slot, choice: btn.dataset.choice! });
+      } else if (a === 'previewCard') {
+        cardPreview = btn.dataset.card!;
+        render();
+      } else if (a === 'previewCommander') {
+        commanderPreview = btn.dataset.commander!;
+        render();
       } else if (a === 'openMirror' || a === 'closeMirror') {
         mirrorOpen = a === 'openMirror';
         render();
@@ -501,6 +511,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'newGame') location.reload();
       else if (a === 'reroll' || a === 'levelUp' || a === 'toggleLock') dispatch({ type: a });
       else if (a === 'pickCommander') dispatch({ type: 'pickCommander', commander: btn.dataset.commander! });
+      else if (a === 'enhance') dispatch({ type: 'enhance', trait: btn.dataset.enhance! });
+      else if (a === 'claimEnhance') dispatch({ type: 'claimEnhance', level: Number(btn.dataset.level) });
+      else if (a === 'pickJohnnie') dispatch({ type: 'pickJohnnie', johnnie: btn.dataset.johnnie! });
       else if (a === 'pickCard') dispatch({ type: 'pickCard', card: btn.dataset.card! });
       else if (a === 'pickItem') dispatch({ type: 'pickItem', item: btn.dataset.itemId! });
       else if (a === 'mark') dispatch({ type: 'mark', kind: btn.dataset.kind as MarkKind, unit: Number(btn.dataset.unit) });

@@ -1,9 +1,10 @@
-import { SHOP_ODDS } from './config';
+import { POOL_SIZE, SHOP_ODDS } from './config';
 import { isItemCard, itemCard } from './items';
 import { nextFloat, nextInt } from './rng';
 import { playerTraits, TRAITS } from './traits';
+import { powersOf } from './commanders';
 import type { GameState, Player } from './types';
-import { UNITS } from './units';
+import { UNIT_BY_ID, UNITS } from './units';
 
 function pickTier(state: GameState, level: number): number {
   const odds = SHOP_ODDS[level - 1];
@@ -15,12 +16,17 @@ function pickTier(state: GameState, level: number): number {
   return 1;
 }
 
-// Weighted by remaining copies, so contested units get rarer for everyone.
+// Weighted by remaining copies, so contested units get rarer for everyone. The player's own Johnnie
+// (Johnson) rolls with its tier as if it had a full pool that never runs out: it's theirs alone.
 function drawFromTier(state: GameState, tier: number, p?: Player): string | null {
   const defs = UNITS.filter((u) => (u.shopTier ?? u.tier) === tier && u.shop !== false && (!u.locked || !!p?.unlocked?.includes(u.id)));
-  const total = defs.reduce((n, d) => n + state.pool[d.id], 0);
+  const johnnie = p?.johnnie?.defId && UNIT_BY_ID[p.johnnie.defId].tier === tier ? p.johnnie.defId : null;
+  const own = johnnie ? POOL_SIZE[tier] : 0;
+  const total = defs.reduce((n, d) => n + state.pool[d.id], 0) + own;
   if (total === 0) return null;
   let r = nextInt(state, total);
+  if (r < own) return johnnie;
+  r -= own;
   for (const d of defs) {
     r -= state.pool[d.id];
     if (r < 0) {
@@ -51,7 +57,28 @@ export function returnShop(state: GameState, p: Player): void {
 
 export function refreshShop(state: GameState, p: Player): void {
   returnShop(state, p);
+  p.freeSlot = null;
   for (let i = 0; i < p.shop.length; i++) p.shop[i] = upgradeCard(state, p) ?? drawUnit(state, p.level, p);
+}
+
+// What buying shop slot `slot` costs this player: 0 for the free hero (Guiness), else the unit's price.
+export function shopPrice(p: Player, slot: number): number {
+  const id = p.shop[slot];
+  if (!id || isItemCard(id)) return 0;
+  return p.freeSlot === slot ? 0 : UNIT_BY_ID[id].price ?? UNIT_BY_ID[id].tier;
+}
+
+// Guiness: after the free after-fight refresh, maybe make one hero in the shop free: always while his card's
+// rounds last (one used up), else at his innate chance. Rolls only for players with the power.
+export function rollFreeHero(state: GameState, p: Player): void {
+  const chance = powersOf(p).freeHeroChance ?? 0;
+  const card = (p.freeHeroes ?? 0) > 0;
+  if (!card && !chance) return;
+  const slots = p.shop.flatMap((id, i) => (id && !isItemCard(id) ? [i] : []));
+  if (!slots.length) return;
+  if (card) p.freeHeroes!--;
+  else if (nextFloat(state) >= chance) return;
+  p.freeSlot = slots[nextInt(state, slots.length)];
 }
 
 // While a trait with items is active, a slot may offer a free upgrade for one of its owned items.

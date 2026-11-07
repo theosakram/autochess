@@ -98,6 +98,9 @@ export interface SkillApi {
   // What its basic attacks hit with: attack as physical, or magic attack as magic for magic attackers.
   attackPower(f: SkillFighter): { amount: number; type: DamageType };
   debuff(target: SkillFighter, amount: { armor?: number; mr?: number }, seconds: number, effect: string): void;
+  // Puts `by`'s armor/mr shred (Hunter) on `target` now, as a basic attack would: a skill hit right after
+  // already benefits. Skill hits don't shred on their own.
+  shred(target: SkillFighter, by: SkillFighter): void;
 }
 
 // A unit's active skill: replaces the placeholder cast when its mana is full.
@@ -112,6 +115,9 @@ export interface SkillDef {
   cast(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
   // A passive: runs once when the fight starts (positions are the starting ones).
   atStart?(api: SkillApi, caster: SkillFighter): void;
+  // Runs `atStart` after every other skill's: for passives that move the unit (a leap), so buffs that
+  // depend on where it stands (an ally beside it, its row) still reach it first.
+  atStartLate?: true;
   // A passive execute: an enemy on the tiles around it that is damaged and left below this share of
   // its max hp (per star) dies on the spot, through shields.
   executeBelow?: number[];

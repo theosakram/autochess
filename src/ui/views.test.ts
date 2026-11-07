@@ -86,9 +86,9 @@ describe('Plane Wanderers in the gallery', () => {
     const html = galleryHtml(p, state.chosen);
     const necro = html.slice(html.indexOf('Necromancer <small>'), html.indexOf('</article>', html.indexOf('Necromancer <small>')));
     const bearers = necro.slice(necro.indexOf('Bearers'));
-    for (const name of ['Wandering Fist', 'Wandering Eye', 'Wandering Hunter', 'Wandering Bastion', 'Wandering Seer']) expect(bearers).toContain(name);
+    for (const name of ['Gatotkaca', 'Moscow', 'Amon', 'Cyborg', 'Novaria']) expect(bearers).toContain(name);
     const fighter = html.slice(html.indexOf('Fighter <small>'), html.indexOf('</article>', html.indexOf('Fighter <small>')));
-    const row = fighter.slice(fighter.indexOf('Wandering Fist'), fighter.indexOf('</li>', fighter.indexOf('Wandering Fist')));
+    const row = fighter.slice(fighter.indexOf('Gatotkaca'), fighter.indexOf('</li>', fighter.indexOf('Gatotkaca')));
     expect(row).toContain('bearer-chip');
     expect(row).toContain('data-trait="necromancer"');
   });
@@ -99,7 +99,7 @@ describe('Plane Wanderers in the gallery', () => {
     const cols = [...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map((m) => m[1]);
     const necro = cols.findIndex((c) => c.includes('data-trait="necromancer"'));
     const fighterRow = rows.find((r) => r.includes('data-trait="fighter"'))!;
-    expect([...fighterRow.matchAll(/<td>([\s\S]*?)<\/td>/g)][necro][1]).toContain('Wandering Fist');
+    expect([...fighterRow.matchAll(/<td>([\s\S]*?)<\/td>/g)][necro][1]).toContain('Gatotkaca');
   });
 });
 
@@ -140,8 +140,8 @@ describe('unit info popup', () => {
     expect(html).toContain('210%');
     for (const hp of [2575, 4635, 8760]) expect(html).toContain(`<td>${hp}</td>`);
     expect(html).toContain('data-trait="spectre"');
-    expect(unitInfoHtml('wanderingblade', p)).toContain('Not in the shop');
-    expect(unitInfoHtml('eidolon', p)).toContain('Spectral Cataclysm');
+    expect(unitInfoHtml('gatotkaca', p)).toContain('Not in the shop');
+    expect(unitInfoHtml('bossalpha', p)).toContain('Spectral Cataclysm');
   });
 });
 
@@ -236,19 +236,19 @@ describe('grave', () => {
     const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
     const p = state.players[0];
     p.stacks = { necromancer: 12 };
-    p.rewardUnit = { necromancer: 'wanderinghunter' };
+    p.rewardUnit = { necromancer: 'amon' };
     const html = graveHtml(p);
-    expect(html).toContain('data-unit-info="wanderinghunter"');
-    expect(html).toContain('Wandering Hunter');
+    expect(html).toContain('data-unit-info="amon"');
+    expect(html).toContain('Amon');
   });
 
   test('shows the rolled Plane Wanderer with its role icon', () => {
     const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
     const p = state.players[0];
     p.stacks = { necromancer: 12 };
-    p.rewardUnit = { necromancer: 'wanderingbastion' };
-    expect(graveHtml(p)).toContain(`${traitBadgeHtml('dauntless')} Wandering Bastion`);
-    expect(galleryHtml(p, state.chosen)).toContain(`${traitBadgeHtml('dauntless')} Wandering Bastion`);
+    p.rewardUnit = { necromancer: 'cyborg' };
+    expect(graveHtml(p)).toContain(`${traitBadgeHtml('dauntless')} Cyborg`);
+    expect(galleryHtml(p, state.chosen)).toContain(`${traitBadgeHtml('dauntless')} Cyborg`);
   });
 });
 

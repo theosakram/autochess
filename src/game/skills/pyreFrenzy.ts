@@ -3,8 +3,8 @@ import type { SkillDef } from './types';
 
 // Mia (2g Cult of Fire / Deadeye). Per star, index 0 = 1★.
 export const PYRE_FRENZY = {
-  aura: 0.15, // passive attack speed: itself and the allies directly left and right of it, for the fight
-  frenzy: [0.35, 0.4, 0.45], // active: more attack speed for itself
+  aura: 0.2, // passive attack speed: itself and the allies directly left and right of it, for the fight
+  frenzy: [0.5, 0.55, 0.65], // active: more attack speed for itself
   seconds: 5,
 };
 

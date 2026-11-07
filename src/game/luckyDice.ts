@@ -60,7 +60,10 @@ export function payPrize(state: GameState, p: Player, value: number): string {
   return text;
 }
 
-const troveOf = (p: Player) => (p.trove ??= { points: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false });
+const troveOf = (p: Player) => (p.trove ??= { points: 0, rolls: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false });
+
+// Rolls banked: one a round from I-1 (Kaela is picked on the first round), unused ones carry over.
+export const rollsLeft = (state: GameState, p: Player) => Math.max(0, state.round - troveOf(p).rolls);
 
 // Why this player can't roll the Trove's dice now, or null.
 export function rollBlock(state: GameState, p: Player): string | null {
@@ -68,7 +71,7 @@ export function rollBlock(state: GameState, p: Player): string | null {
   if (!power) return 'You have no Treasure Grove';
   const t = troveOf(p);
   if (t.opens >= power.opens) return 'The Trove is spent';
-  if (t.rolledRound === state.round) return 'Already rolled this round';
+  if (rollsLeft(state, p) <= 0) return 'No rolls left; one more next round';
   return null;
 }
 
@@ -78,6 +81,7 @@ export function rollTrove(state: GameState, p: Player): string | null {
   const power = powersOf(p).trove!;
   const t = troveOf(p);
   const roll = 1 + nextInt(state, power.die);
+  t.rolls++;
   t.rolledRound = state.round;
   t.lastRoll = roll;
   t.bust = t.points + roll > power.max;

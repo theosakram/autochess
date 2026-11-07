@@ -231,7 +231,7 @@ describe('Plane Wanderer', () => {
     const p = state.players[0];
     p.level = 3;
     field(p, [['val', 1, 0], ['natalie', 1, 1], ['harley', 1, 2]]);
-    p.bench[0] = { uid: ++uid, defId: 'wanderingblade', star: 1 };
+    p.bench[0] = { uid: ++uid, defId: 'gatotkaca', star: 1 };
     p.bench[1] = { uid: ++uid, defId: 'tig', star: 1 };
     expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 0 }, to: { area: 'board', index: 5 } }).ok).toBe(true);
     expect(boardCount(p)).toBe(3);
@@ -242,7 +242,7 @@ describe('Plane Wanderer', () => {
     const state = newGame();
     const p = state.players[0];
     field(p, [['val', 1, 0], ['natalie', 1, 1]]);
-    p.board[5] = { uid: ++uid, defId: 'wanderingeye', star: 1 };
+    p.board[5] = { uid: ++uid, defId: 'moscow', star: 1 };
     p.stacks.necromancer = 400;
     expect(traitCounts(p.board).necromancer).toBe(2);
     expect(traitCounts(p.board).deadeye).toBe(1);

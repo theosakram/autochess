@@ -2,7 +2,7 @@ import { Container, Graphics, GraphicsContext, Rectangle, Text } from 'pixi.js';
 import { ITEMS } from '../../game/items';
 import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
-import { PORTRAITS } from '../portraits';
+import { portraitOf } from '../portraits';
 import { badgeSvg, BEARER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
 import { bloodStars } from '../../game/blood';
 import { BLOOD_STAR, COLORS, FONT, mix, STAR_COLORS, TIER_COLORS } from './theme';
@@ -119,7 +119,7 @@ export function makeToken(s: TokenSpec): TokenView {
   root.addChild(name);
 
   const faceTop = -half + barSpace;
-  const face = text(PORTRAITS[s.defId], (ribbonTop - faceTop) * 0.74, 0xffffff);
+  const face = text(portraitOf(s.defId), (ribbonTop - faceTop) * 0.74, 0xffffff);
   face.anchor.set(0.5);
   face.position.set(0, (faceTop + ribbonTop) / 2);
   root.addChild(face);

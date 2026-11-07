@@ -1,5 +1,7 @@
 import { bloodMods } from './blood';
 import { coreHolder, essenceMods } from './essence';
+import { johnnieMods } from './johnnie';
+import { enhanceMods } from './freya';
 import { markedUid, powersOf, protectedUids } from './commanders';
 import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
 import { EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
@@ -177,6 +179,10 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     }
     // Alice: a Blood Pact hero's piled-up copies (and her card).
     mods.push(...bloodMods(p, u));
+    // Johnson's card: every Johnnie.
+    mods.push(...johnnieMods(p, u));
+    // Freya: the blessed role's extra.
+    mods.push(...enhanceMods(p, UNIT_BY_ID[u.defId], honorary, levels));
     // Miya: the Ice Arrow hero attacks faster.
     const ice = u.uid === markedUid(p, 'iceArrow') ? powersOf(p).iceArrow : undefined;
     if (ice) mods.push({ stat: 'attackSpeed', add: ice.attackSpeed });

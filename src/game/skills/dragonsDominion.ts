@@ -15,7 +15,7 @@ export const DRAGONS_DOMINION = {
 
 const FIGHT = MAX_COMBAT_TICKS / TICKS_PER_SECOND;
 
-// A Lava Shield that explodes when it breaks, then comes back (while Balia lives).
+// A Lava Shield, once per fight: it explodes when it breaks (while Balia lives).
 function lavaShield(api: SkillApi, caster: SkillFighter, holder: SkillFighter): void {
   const i = caster.star - 1;
   api.shield(holder, caster.maxHp * DRAGONS_DOMINION.lava[i], FIGHT, `lava${caster.id}`, () => {
@@ -26,7 +26,6 @@ function lavaShield(api: SkillApi, caster: SkillFighter, holder: SkillFighter): 
       for (const e of enemiesOn(api, holder, around(holder))) api.hit(caster, e, caster.stats.ap * DRAGONS_DOMINION.explode[i], 'magic', 'lavashield');
       caster.skill.exploding = 0;
     }
-    lavaShield(api, caster, holder);
   });
 }
 
@@ -36,7 +35,7 @@ export const dragonsDominion: SkillDef = {
   desc:
     'Passive: when combat starts, it and the allies directly left and right of it gain a Lava Shield of {lava} of its max HP. ' +
     "When a Lava Shield breaks, it explodes for {explode} of this unit's magic attack as magic damage to every enemy around its holder, " +
-    'then comes back (while this unit lives). ' +
+    '(if this unit still lives). Each Lava Shield comes once per fight. ' +
     'Active: lands among the enemy (the spot with the most of them around it): every enemy around it takes {ap} of its magic attack ' +
     `plus {hp} of its max HP as magic damage and is taunted for ${DRAGONS_DOMINION.taunt}s.`,
   damage: { explode: 'magic', ap: 'magic', hp: 'magic' },

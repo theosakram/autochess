@@ -1,5 +1,5 @@
 import { applyAction } from './actions';
-import { interestBank, playEssence, placeMarks, playAltars, playBlood, playTrove, playTwilight, useOrb } from './bot';
+import { interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
 import { COMMANDERS } from './commanders';
 import { REROLL_COST, STAR_MULT, stageRound } from './config';
 import { equipBlock } from './inventory';
@@ -9,6 +9,7 @@ import { nextInt } from './rng';
 import { tileSeating, traitCounts, traitLevel } from './traits';
 import type { GameState, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
+import { shopPrice } from './shop';
 
 // Normal bot: plays toward the strongest board it can make from what it owns. Every decision (what to buy,
 // sell, field) compares "best team" values: each hero's worth by cost and stars, plus its traits'
@@ -122,7 +123,7 @@ function shopPass(state: GameState, p: Player, reserve: number): void {
       applyAction(state, p.id, { type: 'buy', slot: i });
       continue;
     }
-    const cost = UNIT_BY_ID[id].tier;
+    const cost = shopPrice(p, i);
     if (p.gold < cost) continue;
     const worth = buyWorth(p, id);
     // A copy that completes a star-up is worth dipping into the bank for.
@@ -247,6 +248,7 @@ export function normalBot(state: GameState, p: Player): void {
   pickCard(state, p);
   pickItems(state, p);
   playTrove(state, p);
+  playJohnnie(state, p);
   playAltars(state, p);
   playTwilight(state, p);
   playBlood(state, p);
@@ -275,6 +277,7 @@ export function normalBot(state: GameState, p: Player): void {
   field(state, p);
   playEssence(state, p);
   useOrb(state, p);
+  playFreya(state, p);
   for (const [from, to] of tileSeating(p.board, p.orb)) {
     applyAction(state, p.id, { type: 'move', from: { area: 'board', index: from }, to: { area: 'board', index: to } });
   }

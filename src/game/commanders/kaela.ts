@@ -19,7 +19,7 @@ export const kaela: CommanderDef = {
   icon: '🎲',
   title: 'Keeper of the Treasure Grove',
   desc:
-    `A Treasure Grove grows beside your board. Once a round, roll the Lucky Dice there for 1 to ${t.die} points; ` +
+    `A Treasure Grove grows beside your board. You get a roll of the Lucky Dice every round (unused rolls carry over), each for 1 to ${t.die} points; ` +
     `going past ${t.max} drops you back to 0. Open the Trove to cash in your points for a prize ` +
     `(${t.max} points: ${t.value[t.max]} gold worth: gold, a hero, an orb, a Mirror Device or equipment); up to ${t.opens} times a game.`,
   innate: { trove: KAELA.trove },
@@ -30,5 +30,9 @@ export const kaela: CommanderDef = {
       `The Lucky Dice roll for you twice, apart from the Trove: now (round ${roundLabel(KAELA.rolls[0].round)}) and on round ${roundLabel(KAELA.rolls[1].round)}, ` +
       `each paying a random prize. ${KAELA.rolls[0].min + KAELA.rolls[1].min}-${KAELA.rolls[0].max + KAELA.rolls[1].max} gold worth in all.`,
     self: { luckyRolls: KAELA.rolls },
+    otherDesc:
+      `The Lucky Dice roll for you twice: now (round ${roundLabel(KAELA.rolls[0].round)}) and on round ${roundLabel(KAELA.rolls[1].round)}, ` +
+      `each paying a random prize. ${KAELA.rolls[0].min + KAELA.rolls[1].min}-${KAELA.rolls[0].max + KAELA.rolls[1].max} gold worth in all.`,
+    other: { luckyRolls: KAELA.rolls },
   },
 };

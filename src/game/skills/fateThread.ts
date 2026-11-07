@@ -2,11 +2,11 @@ import { pct } from '../traits/format';
 import { pickSpread } from './unfoldingTale';
 import type { SkillDef } from './types';
 
-// Wandering Seer (Plane Wanderer, Stargazer). Per star, index 0 = 1★.
+// Novaria (Plane Wanderer, Stargazer). Per star, index 0 = 1★.
 export const FATE_THREAD = {
   linked: [2, 3, 4], // enemies linked at the start of combat
   share: [0.3, 0.4, 0.5], // of the damage a linked enemy takes, dealt to each other linked enemy
-  ap: [4.5, 5.4, 12], // active: of magic attack, magic, one target
+  ap: [3.5, 3.8, 8], // active: of magic attack, magic, one target
 };
 
 export const fateThread: SkillDef = {

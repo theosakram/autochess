@@ -1,4 +1,5 @@
 import { bloodBlock } from './blood';
+import { claimable } from './freya';
 import { blessBlock } from './twilight';
 import { applyAction } from './actions';
 import { ALTAR_KEYS, altarStatus, offerBlock } from './altar';
@@ -9,9 +10,10 @@ import { equipBlock } from './inventory';
 import { isItemCard } from './items';
 import { boardCount, interest, levelUpCost } from './player';
 import { orbOptions } from './orb';
-import { tileSeating, traitCounts, traitLevel } from './traits';
+import { playerTraitCounts, tileSeating, traitCounts, traitLevel } from './traits';
 import type { GameState, Player } from './types';
 import { UNIT_BY_ID } from './units';
+import { shopPrice } from './shop';
 import { normalBot } from './botNormal';
 
 export function runBot(state: GameState, p: Player): void {
@@ -31,13 +33,14 @@ function easyBot(state: GameState, p: Player): void {
   while (p.itemOffer?.length) applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[nextInt(state, p.itemOffer.length)] });
   placeMarks(state, p);
   playTrove(state, p);
+  playJohnnie(state, p);
   playAltars(state, p);
   playTwilight(state, p);
   playBlood(state, p);
 
   for (let i = 0; i < p.shop.length; i++) {
     const id = p.shop[i];
-    if (id && (isItemCard(id) || UNIT_BY_ID[id].tier <= p.gold)) applyAction(state, p.id, { type: 'buy', slot: i });
+    if (id && (isItemCard(id) || shopPrice(p, i) <= p.gold)) applyAction(state, p.id, { type: 'buy', slot: i });
   }
 
   for (let i = 0; i < p.bench.length && boardCount(p) < p.level; i++) {
@@ -48,6 +51,7 @@ function easyBot(state: GameState, p: Player): void {
 
   useOrb(state, p);
   playEssence(state, p);
+  playFreya(state, p);
 
   for (const [from, to] of tileSeating(p.board, p.orb)) {
     applyAction(state, p.id, { type: 'move', from: { area: 'board', index: from }, to: { area: 'board', index: to } });
@@ -98,7 +102,7 @@ export function interestBank(): number {
 // then the bigger trait.
 export function useOrb(state: GameState, p: Player): void {
   if (p.orbs.length === 0) return;
-  const counts = traitCounts(p.board);
+  const counts = playerTraitCounts(p);
   let best: { unit: number; trait: string; score: number } | null = null;
   for (const u of p.board) {
     if (!u) continue;
@@ -111,11 +115,37 @@ export function useOrb(state: GameState, p: Player): void {
   if (best) applyAction(state, p.id, { type: 'useOrb', unit: best.unit, trait: best.trait });
 }
 
+// Freya: bless the role with the most fielded units (ties: the one blessed already, then table order),
+// and claim every reward as soon as it's there.
+export function playFreya(state: GameState, p: Player): void {
+  const power = powersOf(p).enhance;
+  if (!power) return;
+  const counts = traitCounts(p.board);
+  const ids = Object.keys(power.traits);
+  const best = ids.reduce((a, b) => ((counts[b] ?? 0) > (counts[a] ?? 0) ? b : a), p.freya?.trait ?? ids[0]);
+  if (best !== p.freya?.trait) applyAction(state, p.id, { type: 'enhance', trait: best });
+  for (const level of claimable(p)) applyAction(state, p.id, { type: 'claimEnhance', level });
+}
+
+// Johnson's Den: the Johnnie sharing the most traits with the units already owned (ties: the first).
+export function playJohnnie(state: GameState, p: Player): void {
+  const offer = p.johnnie?.offer;
+  if (!offer?.length) return;
+  const owned = [...p.board, ...p.bench].filter((u) => u !== null);
+  const score = (id: string) => UNIT_BY_ID[id].traits.reduce((n, t) => n + owned.filter((u) => UNIT_BY_ID[u.defId].traits.includes(t)).length, 0);
+  const best = offer.reduce((a, b) => (score(b) > score(a) ? b : a));
+  applyAction(state, p.id, { type: 'pickJohnnie', johnnie: best });
+}
+
 // Kaela's Trove: cash in at 6+ points, else roll while it's safe-ish (from 5 up a roll may go bust).
 // Mirror Devices copy the highest-star fielded unit that can still be copied.
 export function playTrove(state: GameState, p: Player): void {
-  if (p.trove && p.trove.points >= 6) applyAction(state, p.id, { type: 'openTrove' });
-  if (!p.trove || p.trove.points < 5) applyAction(state, p.id, { type: 'rollDice' });
+  // Banked rolls too: open at 6+, roll below 5, until out of rolls (or the Trove is spent).
+  for (;;) {
+    if (p.trove && p.trove.points >= 6) applyAction(state, p.id, { type: 'openTrove' });
+    if (p.trove && p.trove.points >= 5) break;
+    if (!applyAction(state, p.id, { type: 'rollDice' }).ok) break;
+  }
   while (p.mirrors) {
     const unit = p.board.filter((u) => u !== null && UNIT_BY_ID[u.defId].shop !== false && state.pool[u.defId] > 0).sort((a, b) => b!.star - a!.star)[0];
     if (!unit || !applyAction(state, p.id, { type: 'useMirror', unit: unit.uid }).ok) break;

@@ -2,6 +2,8 @@ import { payTwilight } from './twilight';
 import { syncBeast, syncMarks } from './commanders';
 import { syncItems } from './inventory';
 import { EQUIPMENT } from './items';
+import { syncJohnnie } from './johnnie';
+import { onTwoStar, syncMirrorBar } from './mirrorBar';
 import { mergeUnits } from './merge';
 import { openMistShop, syncMistOrbs } from './mistShop';
 import { nextInt } from './rng';
@@ -13,6 +15,8 @@ import { UNIT_BY_ID } from './units';
 // Run after anything that changes a player's units, and at round start: items, counters, rewards.
 export function syncPlayer(state: GameState, p: Player): void {
   syncBeast(state, p);
+  syncJohnnie(state, p);
+  syncMirrorBar(p);
   payTwilight(p);
   syncMarks(p);
   syncItems(state, p);
@@ -40,6 +44,7 @@ export function handlePromotions(state: GameState, p: Player): void {
     p.promotions = [];
     const levels = playerTraits(p);
     for (const { defId, star } of promotions) {
+      if (star === 2) onTwoStar(p);
       const def = UNIT_BY_ID[defId];
       for (const [id, level] of Object.entries(levels)) {
         if (!def.traits.includes(id)) continue;

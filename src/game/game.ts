@@ -26,8 +26,9 @@ import { openChest, stageItems, takeOfferedItem } from './inventory';
 import { cardRolls } from './luckyDice';
 import { addXp, recordFight, roundIncome, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
-import { drawUnit, refreshShop, returnShop } from './shop';
-import { claimShopSlot, canClaim } from './actions';
+import { drawUnit, refreshShop, returnShop, rollFreeHero } from './shop';
+import { applyAction, claimShopSlot, canClaim } from './actions';
+import { checkRally, payHeirs } from './cyclops';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
 import { hurtPlayer, offerCards, payCard, powersOf } from './commanders';
@@ -44,6 +45,7 @@ export interface PlayerSeed {
   name: string;
   isBot: boolean;
   botLevel?: BotLevel;
+  commander?: string; // picked for them before the first round (the commander balance harness)
 }
 
 export interface Fight {
@@ -87,6 +89,7 @@ export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
   };
   state.chosen = rollChosen(state);
   for (const p of state.players) giveStarterUnits(state, p);
+  seeds.forEach((s, i) => s.commander && applyAction(state, state.players[i].id, { type: 'pickCommander', commander: s.commander }));
   startRound(state);
   return state;
 }
@@ -121,7 +124,10 @@ export function startRound(state: GameState): RoundBonus[] {
     p.gold += roundIncome(p, Math.max(1, state.round - 1)).total;
     // A locked shop keeps what's left in it for this round, then unlocks.
     if (p.shopLocked) p.shopLocked = false;
-    else refreshShop(state, p);
+    else {
+      refreshShop(state, p);
+      if (state.round > 1) rollFreeHero(state, p); // Guiness: after fights only
+    }
   }
   // The commander card round: everyone gets an offer to pick from.
   if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
@@ -203,7 +209,7 @@ export function resolveCombat(state: GameState): Fight[] {
       // home is the last entry, so this picks anyone else.
       away = alive[nextInt(state, alive.length - 1)];
     }
-    const result = simulateCombat(state, home, away, { chosen: state.chosen });
+    const result = simulateCombat(state, home, away, { chosen: state.chosen, round: state.round });
     const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
     if (result.winner === 1) hurtPlayer(home, damage);
     else if (result.winner === 0 && !ghost) hurtPlayer(away, damage);
@@ -265,7 +271,7 @@ function monsterRound(state: GameState): Fight[] {
   const alive = state.players.filter(isAlive);
   const fights = alive.map((p): Fight => {
     const { player: monsters, statMult } = monsterSide(state.round);
-    const result = simulateCombat(state, p, monsters, { chosen: state.chosen, statMult: [1, statMult] });
+    const result = simulateCombat(state, p, monsters, { chosen: state.chosen, statMult: [1, statMult], round: state.round });
     const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
     if (result.winner === 1) hurtPlayer(p, damage);
     gainStacks(p, result.traits[0], (traitId: string) => ({ kills: enemyDeaths(result, 0), memberSkills: memberSkills(result, 0, traitId) }));
@@ -284,9 +290,13 @@ function eliminate(state: GameState, aliveBefore: number): void {
   out.forEach((p, k) => {
     p.place = aliveBefore - out.length + 1 + k;
     p.hp = 0;
-    releaseUnits(state, p);
   });
+  // Cyclops: gold from each knockout (their heroes still on them), then they're released to the pool.
+  for (const p of out) payHeirs(state, p);
+  for (const p of out) releaseUnits(state, p);
   const left = state.players.filter(isAlive);
+  // Cyclops: the low-hp rally, for anyone still in.
+  for (const p of left) checkRally(state, p);
   if (left.length === 1) left[0].place = 1;
 }
 

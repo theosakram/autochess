@@ -6,8 +6,13 @@ import { UNIT_BY_ID } from '../units';
 import { addXp } from '../player';
 import { payEcho } from '../essence';
 import { alice } from './alice';
+import { amon } from './amon';
 import { angela } from './angela';
+import { cyclops } from './cyclops';
 import { dyroth } from './dyroth';
+import { guiness } from './guiness';
+import { freya } from './freya';
+import { johnson } from './johnson';
 import { kaela } from './kaela';
 import { kagura } from './kagura';
 import { kenzo } from './kenzo';
@@ -19,10 +24,15 @@ import { nana } from './nana';
 import { ruby } from './ruby';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 
-export type { AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
+export type { AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
 export { ALICE } from './alice';
+export { AMON } from './amon';
 export { ANGELA } from './angela';
+export { CYCLOPS } from './cyclops';
 export { DYROTH } from './dyroth';
+export { GUINESS } from './guiness';
+export { enhanceValues, FREYA } from './freya';
+export { JOHNSON } from './johnson';
 export { KAELA } from './kaela';
 export { KAGURA } from './kagura';
 export { KENZO } from './kenzo';
@@ -33,7 +43,7 @@ export { MIYA } from './miya';
 export { NANA } from './nana';
 export { RUBY } from './ruby';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness].map((c) => [c.id, c]));
 
 // The board piece a beast power puts on the board (see UnitDef.piece).
 export const BEAST_PIECE = 'divinebeast';
@@ -62,8 +72,8 @@ export function commanderPowers(p: Player): CommanderPower[] {
 
 // Everything working for this player, merged (later powers override earlier ones, field by field).
 // `pickGold`, `pickItem`, `pickChest` and `startItems` are left out: they're paid once, on the pick.
-export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp'> {
-  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
+export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp' | 'pickMirrors' | 'pickFreeHeroes' | 'startChests'> {
+  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, pickMirrors: _mirrors, pickFreeHeroes: _free, startChests: _startChests, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
   return merged;
 }
 
@@ -142,8 +152,11 @@ export function syncMarks(p: Player): void {
 
 // Pays out what picking card `cardId` gives right away: its gold and its item.
 export function payCard(state: GameState, p: Player, cardId: string): void {
-  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0 } = cardFace(p, cardId).power;
+  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0, pickMirrors = 0, pickFreeHeroes = 0, startChests = 0 } = cardFace(p, cardId).power;
   p.gold += pickGold;
+  if (pickFreeHeroes) p.freeHeroes = (p.freeHeroes ?? 0) + pickFreeHeroes;
+  if (startChests) addChests(p, startChests);
+  if (pickMirrors) p.mirrors = (p.mirrors ?? 0) + pickMirrors;
   if (pickXp) addXp(p, pickXp);
   for (const id of [...(pickItem ? [pickItem] : []), ...startItems]) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
   if (pickChest) addChests(p, pickChest);
@@ -159,7 +172,9 @@ export function payCard(state: GameState, p: Player, cardId: string): void {
 
 // Hands over what a commander's innate power gives once, when it's picked (Ruby's Cloak and Scythe).
 export function payCommander(state: GameState, p: Player): void {
-  for (const id of COMMANDERS[p.commander!].innate.startItems ?? []) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
+  const innate = COMMANDERS[p.commander!].innate;
+  for (const id of innate.startItems ?? []) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
+  if (innate.startChests) addChests(p, innate.startChests);
 }
 
 // Equipment Chests waiting to be opened (see inventory.openChest). They don't count toward an item's chest limit.

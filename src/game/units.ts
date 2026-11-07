@@ -111,11 +111,11 @@ export const UNITS: UnitDef[] = [
   // Range 2, but a frontliner: frontline armor and magic resist.
   { id: 'alice', name: 'Alice', tier: 5, traits: [SP, DN], hp: 3990, atk: 230, ap: 230, armor: 36, mr: 36, mana: 60, range: 2, attackTicks: 15, skill: 'dreaddescent', starStats: { hp: [3990, 7180, 53760], atk: [230, 345, 740], ap: [230, 345, 740], mana: [60, 60, 20] } },
   // Plane Wanderers: raised by the Necromancer grave (one per player, rolled once), never in the shop.
-  { id: 'wanderingblade', name: 'Wandering Fist', tier: 5, traits: [FI], hp: 1250, atk: 120, ap: 72, armor: 36, mr: 36, mana: 80, range: 1, attackTicks: 8, honorary: { trait: NE, icon: '🧭' }, skill: 'bladedescent', shop: false, freeSlot: true },
-  { id: 'wanderingeye', name: 'Wandering Eye', tier: 5, traits: [DE], hp: 950, atk: 120, ap: 72, armor: 24, mr: 24, mana: 90, range: 4, attackTicks: 12, honorary: { trait: NE, icon: '🧭' }, skill: 'wanderersvolley', shop: false, freeSlot: true },
-  { id: 'wanderinghunter', name: 'Wandering Hunter', tier: 5, traits: [HU], hp: 1200, atk: 115, ap: 69, armor: 36, mr: 36, mana: 60, range: 1, attackTicks: 13, honorary: { trait: NE, icon: '🧭' }, skill: 'stalkersmark', shop: false, freeSlot: true },
-  { id: 'wanderingbastion', name: 'Wandering Bastion', tier: 5, traits: [DN], hp: 1500, atk: 95, ap: 57, armor: 36, mr: 36, mana: 100, range: 1, attackTicks: 15, honorary: { trait: NE, icon: '🧭' }, skill: 'craterfall', shop: false, freeSlot: true },
-  { id: 'wanderingseer', name: 'Wandering Seer', tier: 5, traits: [SG], hp: 950, atk: 50, ap: 110, armor: 24, mr: 24, mana: 90, range: 4, attackTicks: 13, attackType: 'magic', honorary: { trait: NE, icon: '🧭' }, skill: 'fatethread', shop: false, freeSlot: true },
+  { id: 'gatotkaca', name: 'Gatotkaca', tier: 5, traits: [FI], hp: 4075, atk: 215, ap: 215, armor: 36, mr: 36, mana: 50, range: 1, attackTicks: 13, honorary: { trait: NE, icon: '🧭' }, skill: 'bladedescent', shop: false, freeSlot: true, starStats: { hp: [4075, 7335, 50535], atk: [215, 320, 680], ap: [215, 320, 680], mana: [50, 50, 20] } },
+  { id: 'moscow', name: 'Moscow', tier: 5, traits: [DE], hp: 3365, atk: 220, ap: 220, armor: 24, mr: 24, mana: 50, range: 4, attackTicks: 12, honorary: { trait: NE, icon: '🧭' }, skill: 'wanderersvolley', shop: false, freeSlot: true, starStats: { hp: [3365, 6415, 44205], atk: [220, 330, 705], ap: [220, 330, 705], mana: [50, 50, 20] } },
+  { id: 'amon', name: 'Amon', tier: 5, traits: [HU], hp: 3900, atk: 235, ap: 235, armor: 36, mr: 36, mana: 30, range: 1, attackTicks: 13, honorary: { trait: NE, icon: '🧭' }, skill: 'stalkersmark', shop: false, freeSlot: true, starStats: { hp: [3900, 7020, 48000], atk: [235, 355, 760], ap: [235, 355, 760], mana: [30, 30, 20] } },
+  { id: 'cyborg', name: 'Cyborg', tier: 5, traits: [DN], hp: 4400, atk: 230, ap: 230, armor: 36, mr: 36, mana: 40, range: 1, attackTicks: 15, honorary: { trait: NE, icon: '🧭' }, skill: 'craterfall', shop: false, freeSlot: true, starStats: { hp: [4400, 7920, 54000], atk: [230, 345, 740], ap: [230, 345, 740], mana: [40, 40, 20] } },
+  { id: 'novaria', name: 'Novaria', tier: 5, traits: [SG], hp: 3200, atk: 165, ap: 165, armor: 24, mr: 24, mana: 50, range: 4, attackTicks: 13, attackType: 'magic', honorary: { trait: NE, icon: '🧭' }, skill: 'fatethread', shop: false, freeSlot: true, starStats: { hp: [3200, 5760, 40000], atk: [165, 250, 540], ap: [165, 250, 540], mana: [50, 50, 20] } },
   // Dropped by Vex's Myth Made Flesh inside a fight; its hp and attack come from Vex.
   { id: 'mythbeast', name: 'Myth Beast', tier: 4, traits: [], hp: 1, atk: 0, ap: 0, armor: 45, mr: 45, mana: 70, range: 1, attackTicks: 9, skill: 'beastmaul', shop: false, summon: true },
   // Summoned by Melina's Spirit Archers inside a fight; its hp and damage come from Melina.
@@ -127,7 +127,29 @@ export const UNITS: UnitDef[] = [
   // Lukas's Divine Beast (see commanders/): a board piece that fires once when a fight starts, never a fighter.
   { id: 'divinebeast', name: 'Divine Beast', tier: 5, traits: [], hp: 1, atk: 0, ap: 0, armor: 0, mr: 0, mana: 100, range: 1, attackTicks: 10, shop: false, freeSlot: true, piece: true },
   // The only 7-gold unit: in a player's shop (rolled with the 5-golds) once Spectre unlocks it for them.
-  { id: 'eidolon', name: 'Eidolon', tier: 7, traits: [SP], hp: 1700, atk: 150, ap: 90, armor: 36, mr: 36, mana: 100, range: 1, attackTicks: 8, skill: 'spectralcataclysm', locked: true, shopTier: 5 },
+  { id: 'bossalpha', name: 'Boss Alpha', tier: 7, traits: [SP], hp: 6500, atk: 370, ap: 370, armor: 36, mr: 36, mana: 50, range: 1, attackTicks: 10, skill: 'spectralcataclysm', locked: true, shopTier: 5, starStats: { hp: [6500, 11700, 80000], atk: [370, 555, 1180], ap: [370, 555, 1180], mana: [50, 50, 20] } },
 ];
 
-export const UNIT_BY_ID: Record<string, UnitDef> = Object.fromEntries(UNITS.map((u) => [u.id, u]));
+// Johnson's Johnnie: a 3-gold hero with one faction and one role, any pair; free to buy (worth nothing sold).
+// One def per pair, all sharing the same stats and skill. Kept out of UNITS: they're nobody's until
+// Johnson's pick, and they'd flood every hero list.
+const FACTIONS = [astral, cultOfFire, dragonAltar, gustiwana, mistbender, mooneater, necromancer, skybringer, spectre, storyweaver].map((t) => t.id);
+const ROLES = [dauntless, deadeye, defender, fighter, hunter, mage, phasewarper, scavenger, stargazer, weaponMaster].map((t) => t.id);
+export const JOHNNIE_FACTIONS = FACTIONS;
+export const JOHNNIE_ROLES = ROLES;
+export const johnnieId = (faction: string, role: string) => `johnnie-${faction}-${role}`;
+const JOHNNIE: Omit<UnitDef, 'id' | 'traits'> = {
+  name: 'Johnnie', tier: 3, price: 0, johnnie: true, shop: false,
+  hp: 2575, atk: 140, ap: 140, armor: 36, mr: 36, mana: 60, range: 1, attackTicks: 13, skill: 'partycrasher',
+  starStats: { hp: [2575, 4635, 8760], atk: [140, 210, 280], ap: [140, 210, 280] },
+};
+// Attack speed follows the role, as for every hero (see the note above UNITS); 13 ticks otherwise.
+const ROLE_TICKS: Record<string, number> = { [DF]: 15, [DN]: 15, [DE]: 12 };
+export const JOHNNIES: UnitDef[] = FACTIONS.flatMap((f) =>
+  ROLES.map((r) => ({ ...JOHNNIE, id: johnnieId(f, r), traits: [f, r], attackTicks: ROLE_TICKS[r] ?? JOHNNIE.attackTicks })),
+);
+
+export const UNIT_BY_ID: Record<string, UnitDef> = Object.fromEntries([...UNITS, ...JOHNNIES].map((u) => [u.id, u]));
+
+// Gold to buy a unit, and what one copy sells for.
+export const unitPrice = (defId: string) => UNIT_BY_ID[defId].price ?? UNIT_BY_ID[defId].tier;

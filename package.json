@@ -9,7 +9,8 @@
     "typecheck": "tsc",
     "test": "bun test",
     "balance": "bun scripts/balance.ts",
-    "bots": "bun scripts/bots.ts"
+    "bots": "bun scripts/bots.ts",
+    "commanders": "bun scripts/commanders.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",

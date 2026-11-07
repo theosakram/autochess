@@ -11,7 +11,7 @@ export const NECROMANCER = {
   skillAmp: 0.0003, // skill damage per soul, Necromancers only
   hp: 0.0003, // max hp per soul, Necromancers only
   // The Plane Wanderers: one is rolled per player when their grave first appears, and stays theirs.
-  wanderers: ['wanderingblade', 'wanderingeye', 'wanderinghunter', 'wanderingbastion', 'wanderingseer'],
+  wanderers: ['gatotkaca', 'moscow', 'amon', 'cyborg', 'novaria'],
   // The Plane Wanderer at 100 / 350 / 999 souls, with gold, equipment and an orb in between.
   rewards: [
     { at: 100, star: 1 },

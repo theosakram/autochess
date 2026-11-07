@@ -4,8 +4,8 @@ import { TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { dist, GRID_H, GRID_W, type Point } from './grid';
 import { JIMAT } from './items';
-import { ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, knifePath, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
-import { DAUNTLESS, unitStats } from './traits';
+import { PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, knifePath, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { DAUNTLESS, TRAITS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
 
@@ -39,11 +39,14 @@ function fakeBattle(enemyCells: Point[]) {
     mana: [] as { target: number; amount: number }[],
     counters: [] as { by: number; target: number }[],
     burns: [] as { cells: string[]; perSecond: number; seconds: number }[],
+    // Shreds and hits in the order they happened, e.g. 'shred:1', 'hit:1'.
+    order: [] as string[],
   };
   // Enemies whose next hit kills them (to test kill-chains).
   const fragile = new Set<number>();
   const record = (target: SkillFighter, raw: number, effect: string, basic: boolean) => {
     log.hits.push({ target: target.id, raw, effect, basic });
+    log.order.push(`hit:${target.id}`);
     if (!fragile.has(target.id)) return false;
     target.hp = 0;
     return true;
@@ -74,6 +77,9 @@ function fakeBattle(enemyCells: Point[]) {
     attackPower: (f) => ({ amount: f.stats.atk, type: 'physical' }),
     showOrbit: () => {},
     showProjectile: () => {},
+    shred: (target) => {
+      log.order.push(`shred:${target.id}`);
+    },
     random: (n) => (log.rolls.push(n), 0),
     giveMana: (f, amount) => log.mana.push({ target: f.id, amount }),
     counterAttack: (f, target) => log.counters.push({ by: f.id, target: target.id }),
@@ -2405,7 +2411,7 @@ describe('Defender skills', () => {
     expect(UNIT_BY_ID.balia.range).toBe(1);
   });
 
-  test("Dragon's Dominion passive: Lava Shields on itself and both sides that explode when broken, then come back", () => {
+  test("Dragon's Dominion passive: Lava Shields on itself and both sides at the start, once: they explode when broken, and don't come back", () => {
     const b = fakeBattle([{ x: 2, y: 4 }, { x: 0, y: 0 }]);
     b.caster.maxHp = 2000;
     b.caster.stats = unitStats(UNIT_BY_ID.balia, 1);
@@ -2418,15 +2424,12 @@ describe('Defender skills', () => {
     const at = b.log.shieldTargets.indexOf(70);
     b.log.shieldEnds[at]!();
     expect(b.log.hits).toEqual([{ target: 1, raw: b.caster.stats.ap * DRAGONS_DOMINION.explode[0], effect: 'lavashield', basic: false }]);
-    // ...and it's back.
-    expect(b.log.shieldTargets.at(-1)).toBe(70);
-    expect(b.log.shields.at(-1)!.amount).toBe(2000 * DRAGONS_DOMINION.lava[0]);
-    // Balia gone: no explosion, no new shield.
-    const count = b.log.shields.length;
+    // ...and no new shield.
+    expect(b.log.shields).toHaveLength(3);
+    // Balia gone: another shield breaking doesn't explode.
     b.caster.hp = 0;
-    b.log.shieldEnds.at(-1)!();
+    b.log.shieldEnds[b.log.shieldTargets.indexOf(71)]!();
     expect(b.log.hits).toHaveLength(1);
-    expect(b.log.shields).toHaveLength(count);
   });
 
   test("Dragon's Dominion active: lands among the enemy, hits by magic attack plus max hp, and taunts", () => {
@@ -2739,10 +2742,18 @@ describe('Storm Fists', () => {
 });
 
 describe("Wanderer's Volley", () => {
+  test('Moscow has Melina-like stats per star (mana: 50 / 50 / 20), range 4', () => {
+    const at = (star: Star) => unitStats(UNIT_BY_ID.moscow, star);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3365, 6415, 44205]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([220, 330, 705]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
+    expect([UNIT_BY_ID.moscow.range, UNIT_BY_ID.moscow.attackTicks]).toEqual([4, 12]);
+  });
+
   test('a 3-wide projectile to the far end of the board, hitting everyone in its path', () => {
     // From (3,5) facing up: (3,4), (2,1), (4,0) are in the path; (0,2) and (6,0) aren't.
     const b = fakeBattle([{ x: 3, y: 4 }, { x: 2, y: 1 }, { x: 4, y: 0 }, { x: 0, y: 2 }, { x: 6, y: 0 }]);
-    b.caster.stats = unitStats(UNIT_BY_ID.wanderingeye, 1);
+    b.caster.stats = unitStats(UNIT_BY_ID.moscow, 1);
     b.cast('wanderersvolley');
     expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2, 3]);
     expect(b.log.hits.every((h) => h.raw === b.caster.stats.atk * WANDERERS_VOLLEY.atk[0] && !h.basic)).toBe(true);
@@ -2750,16 +2761,26 @@ describe("Wanderer's Volley", () => {
 });
 
 describe('Meteor Fist', () => {
-  test('leaps into the densest spot, stuns everyone around, charges the next attack and shields', () => {
+  test('Gatotkaca has 5g fighter stats per star (mana too), melee, 0.75 attacks a second', () => {
+    const at = (star: Star) => unitStats(UNIT_BY_ID.gatotkaca, star);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([4075, 7335, 50535]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([215, 320, 680]);
+    expect([1, 2, 3].map((s) => at(s as Star).ap)).toEqual([215, 320, 680]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
+    expect([UNIT_BY_ID.gatotkaca.name, UNIT_BY_ID.gatotkaca.range, UNIT_BY_ID.gatotkaca.attackTicks]).toEqual(['Gatotkaca', 1, 13]);
+  });
+
+  test('leaps into the densest spot, stuns everyone around, charges the next attack and heals', () => {
     const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }, { x: 0, y: 4 }]);
-    b.caster.stats = unitStats(UNIT_BY_ID.wanderingblade, 1);
+    b.caster.stats = unitStats(UNIT_BY_ID.gatotkaca, 1);
     b.cast('bladedescent');
     expect(b.log.dashes).toHaveLength(1);
     expect(b.log.stuns.map((s) => s.target).sort()).toEqual([1, 2, 3]);
     expect(b.log.stuns.every((s) => s.seconds === BLADE_DESCENT.stun[0])).toBe(true);
     expect(b.log.hits).toEqual([]);
     expect(b.log.buffs).toEqual([{ target: 0, mods: [{ stat: 'basicAmp', add: BLADE_DESCENT.bonus[0] }], seconds: Infinity, effect: 'bladecharged' }]);
-    expect(b.log.shields).toEqual([{ amount: b.caster.maxHp * BLADE_DESCENT.shield[0], seconds: BLADE_DESCENT.seconds }]);
+    expect(b.log.heals).toEqual([{ target: 0, amount: b.caster.maxHp * BLADE_DESCENT.heal[0] }]);
+    expect(b.log.shields).toEqual([]);
     // The charge is spent on the next basic attack.
     b.onHit('bladedescent');
     expect(b.log.unbuffs).toEqual(['bladecharged']);
@@ -2776,10 +2797,10 @@ describe('Meteor Fist', () => {
       p.bench.fill(null);
       p.items = [];
     }
-    a.board[3] = { uid: 1, defId: 'wanderingblade', star: 1 };
+    a.board[3] = { uid: 1, defId: 'gatotkaca', star: 1 };
     b.board[3] = { uid: 2, defId: 'titan', star: 1 };
     const r = simulateCombat({ rng: 1 }, a, b);
-    const me = r.fighters.find((f) => f.defId === 'wanderingblade')!.id;
+    const me = r.fighters.find((f) => f.defId === 'gatotkaca')!.id;
     const cast = r.events.find((e) => e.type === 'skill' && e.id === me);
     if (!cast) throw new Error('no cast');
     const hits = r.events.filter((e) => e.type === 'attack' && e.id === me && !e.crit && !e.again);
@@ -2792,9 +2813,17 @@ describe('Meteor Fist', () => {
 });
 
 describe('Crater Fall', () => {
+  test('Cyborg has tanky 5g stats per star (mana: 40 / 40 / 20), melee, 0.65 attacks a second', () => {
+    const at = (star: Star) => unitStats(UNIT_BY_ID.cyborg, star);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([4400, 7920, 54000]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([230, 345, 740]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([40, 40, 20]);
+    expect([UNIT_BY_ID.cyborg.name, UNIT_BY_ID.cyborg.range, UNIT_BY_ID.cyborg.attackTicks]).toEqual(['Cyborg', 1, 15]);
+  });
+
   test('lands in the densest spot: tick, tick, tick, boom on that fixed area', () => {
     const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }, { x: 0, y: 4 }]);
-    b.caster.stats = unitStats(UNIT_BY_ID.wanderingbastion, 1);
+    b.caster.stats = unitStats(UNIT_BY_ID.cyborg, 1);
     b.cast('craterfall');
     expect(b.log.dashes).toHaveLength(1);
     expect(b.log.repeats[0]).toMatchObject({ seconds: CRATER_FALL.every, times: CRATER_FALL.ticks });
@@ -2812,6 +2841,14 @@ describe('Crater Fall', () => {
 });
 
 describe('Fate Thread', () => {
+  test('Novaria has stats per star a step below Nana (mana: 50 / 50 / 20), range 4, magic attacks', () => {
+    const at = (star: Star) => unitStats(UNIT_BY_ID.novaria, star);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3200, 5760, 40000]);
+    expect([1, 2, 3].map((s) => at(s as Star).ap)).toEqual([165, 250, 540]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
+    expect([UNIT_BY_ID.novaria.name, UNIT_BY_ID.novaria.range, UNIT_BY_ID.novaria.attackType]).toEqual(['Novaria', 4, 'magic']);
+  });
+
   test('passive: links 2 / 3 / 4 enemies by star', () => {
     for (const [star, expected] of [[1, 2], [2, 3], [3, 4]] as const) {
       const b = fakeBattle([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 }]);
@@ -2825,7 +2862,7 @@ describe('Fate Thread', () => {
 
   test('active: a single magic nuke', () => {
     const b = fakeBattle([{ x: 3, y: 1 }, { x: 4, y: 1 }]);
-    b.caster.stats = unitStats(UNIT_BY_ID.wanderingseer, 1);
+    b.caster.stats = unitStats(UNIT_BY_ID.novaria, 1);
     b.cast('fatethread');
     expect(b.log.hits).toEqual([{ target: 1, raw: b.caster.stats.ap * FATE_THREAD.ap[0], effect: 'fatethread', basic: false }]);
   });
@@ -2841,7 +2878,7 @@ describe('Fate Thread', () => {
       p.bench.fill(null);
       p.items = [];
     }
-    a.board[17] = { uid: 1, defId: 'wanderingseer', star: 3 };
+    a.board[17] = { uid: 1, defId: 'novaria', star: 3 };
     a.board[3] = { uid: 2, defId: 'knight', star: 3 };
     b.board[2] = { uid: 3, defId: 'paladin', star: 2 };
     b.board[3] = { uid: 4, defId: 'paladin', star: 2 };
@@ -2861,9 +2898,17 @@ describe('Fate Thread', () => {
 });
 
 describe("Stalker's Mark", () => {
+  test('Amon has stats per star just below Fanny (mana: 30 / 30 / 20), melee', () => {
+    const at = (star: Star) => unitStats(UNIT_BY_ID.amon, star);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3900, 7020, 48000]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([235, 355, 760]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([30, 30, 20]);
+    expect([UNIT_BY_ID.amon.name, UNIT_BY_ID.amon.range, UNIT_BY_ID.amon.attackTicks]).toEqual(['Amon', 1, 13]);
+  });
+
   test('active: vanishes to the safest tile (attackers drop it), then strikes its prey a beat later', () => {
     const b = fakeBattle([{ x: 3, y: 4 }]);
-    b.caster.stats = unitStats(UNIT_BY_ID.wanderinghunter, 1);
+    b.caster.stats = unitStats(UNIT_BY_ID.amon, 1);
     b.cast('stalkersmark');
     expect(b.log.dashes[0]).toEqual({ x: 6, y: 5 }); // the fake safest cell
     expect(b.log.dropped).toEqual([0]);
@@ -2887,28 +2932,36 @@ describe("Stalker's Mark", () => {
       p.items = [];
     }
     // Sturdy enough that its hits leave them low rather than one-shot them.
-    a.board[3] = { uid: 1, defId: 'wanderinghunter', star: 2 };
-    b.board[3] = { uid: 2, defId: 'knight', star: 2 };
-    b.board[4] = { uid: 3, defId: 'knight', star: 2 };
+    a.board[3] = { uid: 1, defId: 'amon', star: 1 };
+    b.board[3] = { uid: 2, defId: 'titan', star: 2 };
+    b.board[4] = { uid: 3, defId: 'titan', star: 2 };
     const r = simulateCombat({ rng: 1 }, a, b);
-    const me = r.fighters.find((f) => f.defId === 'wanderinghunter')!.id;
+    const me = r.fighters.find((f) => f.defId === 'amon')!.id;
     const executions = r.events.filter((e) => e.type === 'effect' && e.effect === 'execute');
     expect(executions.length).toBeGreaterThan(0);
     for (const e of executions) {
       if (e.type !== 'effect') continue;
       expect(e.by).toBe(me);
       const victim = r.fighters.find((f) => f.id === e.target)!;
-      expect(e.damage).toBeLessThan(victim.maxHp * STALKERS_MARK.execute[1]);
+      expect(e.damage).toBeLessThan(victim.maxHp * STALKERS_MARK.execute[0]);
       expect(r.events.some((x) => x.type === 'death' && x.id === e.target && x.t === e.t)).toBe(true);
     }
   });
 });
 
 describe('Spectral Cataclysm', () => {
+  test('Boss Alpha has 7g stats per star, above every 5g (mana: 50 / 50 / 20), melee', () => {
+    const at = (star: Star) => unitStats(UNIT_BY_ID.bossalpha, star);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([6500, 11700, 80000]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([370, 555, 1180]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
+    expect([UNIT_BY_ID.bossalpha.name, UNIT_BY_ID.bossalpha.tier, UNIT_BY_ID.bossalpha.range]).toEqual(['Boss Alpha', 7, 1]);
+  });
+
   test('leaps into the densest spot: impact on the tiles around, then a bigger blast out to 3 tiles', () => {
     // A cluster around (5,1); (2,3) is within 3 of it, (0,5) isn't.
     const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }, { x: 2, y: 3 }, { x: 0, y: 5 }]);
-    b.caster.stats = unitStats(UNIT_BY_ID.eidolon, 1);
+    b.caster.stats = unitStats(UNIT_BY_ID.bossalpha, 1);
     b.cast('spectralcataclysm');
     expect(b.log.dashes).toHaveLength(1);
     const land = b.log.dashes[0];
@@ -2926,5 +2979,140 @@ describe('Spectral Cataclysm', () => {
     expect(blast.map((h) => h.target).sort()).toEqual(reached);
     expect(reached).not.toContain(5);
     expect(blast.every((h) => h.raw === atk * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
+  });
+});
+
+describe('Party Crasher (Johnnie)', () => {
+  const johnnie = UNIT_BY_ID['johnnie-astral-fighter'];
+  // Three enemies side by side up front, one off on its own.
+  const cells = [{ x: 2, y: 1 }, { x: 3, y: 1 }, { x: 4, y: 1 }, { x: 6, y: 4 }];
+
+  test('when combat starts, leaps into the thickest group: magic attack plus a share of its own max hp', () => {
+    for (const star of [1, 3] as Star[]) {
+      const b = fakeBattle(cells);
+      b.caster.star = star;
+      b.caster.stats = unitStats(johnnie, star);
+      b.atStart('partycrasher');
+      const i = star - 1;
+      expect(b.log.dashes).toEqual([{ x: 3, y: 2 }]);
+      // Each one is shredded (Hunter) right before its hit.
+      for (const id of [1, 2, 3]) expect(b.log.order.indexOf(`shred:${id}`)).toBe(b.log.order.indexOf(`hit:${id}`) - 1);
+      const hits = [...b.log.hits].sort((x, y) => x.target - y.target);
+      expect(hits.map((h) => h.target)).toEqual([1, 2, 3]);
+      for (const h of hits) expect(h.raw).toBeCloseTo(b.caster.stats.ap * PARTY_CRASHER.leapAp[i] + b.caster.maxHp * PARTY_CRASHER.leapHp[i]);
+    }
+  });
+
+  test('throws at the thickest group: every enemy in the 3x3 around the one aimed at is hit and stunned', () => {
+    for (const star of [1, 3] as Star[]) {
+      const b = fakeBattle(cells);
+      b.caster.star = star;
+      b.caster.stats = unitStats(johnnie, star);
+      b.cast('partycrasher');
+      const i = star - 1;
+      const byTarget = <T extends { target: number }>(xs: T[]) => [...xs].sort((x, y) => x.target - y.target);
+      expect(byTarget(b.log.hits).map((h) => [h.target, h.raw])).toEqual([1, 2, 3].map((t) => [t, b.caster.stats.ap * PARTY_CRASHER.ap[i]]));
+      expect(byTarget(b.log.stuns)).toEqual([1, 2, 3].map((target) => ({ target, seconds: PARTY_CRASHER.stun[i] })));
+    }
+  });
+
+  test('a Johnnie for every faction + role pair, each a 3-gold hero that costs nothing, attack speed by role', () => {
+    const johnnies = Object.values(UNIT_BY_ID).filter((u) => u.johnnie);
+    expect(johnnies.length).toBe(100);
+    for (const u of johnnies) {
+      expect(u.tier).toBe(3);
+      expect(u.price).toBe(0);
+      expect(u.traits.map((t) => TRAITS[t].kind)).toEqual(['faction', 'role']);
+      expect(UNITS).not.toContain(u);
+    }
+    expect(UNIT_BY_ID['johnnie-astral-defender'].attackTicks).toBe(15);
+    expect(UNIT_BY_ID['johnnie-astral-deadeye'].attackTicks).toBe(12);
+  });
+});
+
+describe('fight-start order', () => {
+  test("Johnnie leaps after every other passive, so buffs by position (an ally beside it) still reach it", () => {
+    // A test-only unit: at the start of the fight, notes where its Johnnie ally stands.
+    const seen: { x: number; y: number }[] = [];
+    SKILLS.testwatch = {
+      id: 'testwatch',
+      name: 'Test Watch',
+      desc: '',
+      values: () => ({}),
+      cast() {},
+      atStart(api, caster) {
+        for (const a of api.alliesOf(caster)) if (a.id !== caster.id) seen.push({ x: a.x, y: a.y });
+      },
+    };
+    UNIT_BY_ID.testwatcher = { ...UNIT_BY_ID.footman, id: 'testwatcher', mana: 99_999, skill: 'testwatch' };
+    const state = createGame(7, [
+      { id: 'a', name: 'A', isBot: false },
+      { id: 'b', name: 'B', isBot: false },
+    ]);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    // Johnnie first on the board, so it comes before the watcher in fighter order.
+    a.board[0] = { uid: 1, defId: 'johnnie-astral-fighter', star: 1 };
+    a.board[1] = { uid: 2, defId: 'testwatcher', star: 1 };
+    b.board[3] = { uid: 3, defId: 'paladin', star: 1 };
+    b.board[4] = { uid: 4, defId: 'paladin', star: 1 };
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const start = r.fighters[0];
+    expect(seen).toEqual([{ x: start.x, y: start.y }]); // not moved yet
+    expect(r.events.some((e) => e.type === 'dash' && e.id === 0 && e.t === 0)).toBe(true); // then it leapt
+    delete SKILLS.testwatch;
+    delete UNIT_BY_ID.testwatcher;
+  });
+});
+
+describe('Johnnie beside Mia', () => {
+  test("gets Mia's attack speed aura even when it comes first on the board, then leaps", () => {
+    const state = createGame(7, [
+      { id: 'a', name: 'A', isBot: false },
+      { id: 'b', name: 'B', isBot: false },
+    ]);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[0] = { uid: 1, defId: 'johnnie-cultoffire-fighter', star: 1 };
+    a.board[1] = { uid: 2, defId: 'mia', star: 1 };
+    b.board[3] = { uid: 3, defId: 'paladin', star: 1 };
+    b.board[4] = { uid: 4, defId: 'paladin', star: 1 };
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const johnnie = r.fighters.findIndex((f) => f.defId === 'johnnie-cultoffire-fighter');
+    expect(r.events.some((e) => e.type === 'buff' && e.effect === 'pyreaura' && e.id === johnnie)).toBe(true);
+    expect(r.events.some((e) => e.type === 'dash' && e.id === johnnie && e.t === 0)).toBe(true);
+  });
+});
+
+describe('Johnnie leap and Hunter', () => {
+  test("a Hunter Johnnie's leap already hits through the shred", () => {
+    const state = createGame(7, [
+      { id: 'a', name: 'A', isBot: false },
+      { id: 'b', name: 'B', isBot: false },
+    ]);
+    const [a, b] = state.players;
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+      p.items = [];
+    }
+    a.board[3] = { uid: 1, defId: 'johnnie-astral-hunter', star: 1 };
+    a.board[10] = { uid: 2, defId: 'natalie', star: 1 }; // Hunter 2 with the Johnnie
+    b.board[2] = { uid: 3, defId: 'paladin', star: 2 };
+    b.board[3] = { uid: 4, defId: 'paladin', star: 2 };
+    b.board[4] = { uid: 5, defId: 'paladin', star: 2 };
+    const leap = (traits: boolean) =>
+      simulateCombat({ rng: 1 }, a, b, { traits: [traits, traits] }).events.find((e) => e.type === 'effect' && e.effect === 'partycrasher') as { damage: number } | undefined;
+    const withHunter = leap(true)!.damage;
+    const without = leap(false)!.damage;
+    expect(withHunter).toBeGreaterThan(without);
   });
 });

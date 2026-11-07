@@ -1,11 +1,11 @@
 import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type IceArrowPower, type WardPower } from './commanders';
 import { essenceTriggers } from './essence';
-import { BOARD_COLS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
+import { stageOf, BOARD_COLS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side, type Point } from './grid';
 import { activeItems, fieldStats, heldBy, leadsOf } from './inventory';
 import { EQUIPMENT, ITEMS, type HealingSpring, type LowHpFury, type StackingPassive } from './items';
 import { nextFloat, nextInt, shuffle } from './rng';
-import { SKILLS, type SkillApi } from './skills';
+import { lineThrough, SKILLS, type SkillApi } from './skills';
 import { applyMods, attackInterval, BURN_SECONDS, type DamageType, type Stats, type StatKey, baseStats } from './stats';
 import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
@@ -98,6 +98,7 @@ export interface SimOptions {
   // For the balance script: switch traits off per side, or scale hp/atk.
   traits?: [boolean, boolean];
   statMult?: [number, number];
+  round?: number; // the game round, for effects that grow by stage (Angela's Love Beam)
 }
 
 interface SimFighter extends Fighter {
@@ -113,6 +114,7 @@ interface SimFighter extends Fighter {
   stunnedUntil: number;
   ward: WardPower | null; // Kagura's umbrella, until it opens (see checkWard)
   refund: number; // Angela's protection: share of max mana regained after each cast
+  loveBeam: { every: number; heal: number; damage: number } | null; // Angela's card: every `every` ticks
   castMana: number; // flat mana regained after each cast (Purple Buff)
   chill: { effect: string; radius: number; attackSpeed: number; linger: number } | null; // Dominance Ice aura
   hurtMana: number; // Dominance Ice: extra share of mana from taking hits
@@ -209,7 +211,9 @@ function withCopies(rng: { rng: number }, p: Player): Player {
   return extra.length ? { ...p, items: [...p.items, ...extra] } : p;
 }
 
-function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chosen: Record<string, string>, out: SimFighter[]): void {
+function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chosen: Record<string, string>, out: SimFighter[], stage = 1): void {
+  const beam = powersOf(p).loveBeam;
+  const beaming = beam ? protectedUids(p) : new Set<number>();
   const tiles = traitTiles(levels);
   const allStats = fieldStats(p, levels, chosen, scale);
   p.board.forEach((u, cell) => {
@@ -277,6 +281,10 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       stunnedUntil: 0,
       ward: u.uid === markedUid(p, 'ward') ? (powersOf(p).ward ?? null) : null,
       refund: protectedUids(p).has(u.uid) ? (powersOf(p).protect?.refund ?? 0) : 0,
+      loveBeam:
+        beam && beaming.has(u.uid)
+          ? { every: Math.round(beam.every * TICKS_PER_SECOND), heal: beam.heal, damage: beam.damage[Math.min(stage, beam.damage.length) - 1] }
+          : null,
       castMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].castMana ?? 0)),
       chill: items.map(({ id }) => ITEMS[id].chill).find((s) => s) ?? null,
       hurtMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].hurtMana ?? 0)),
@@ -351,8 +359,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   const fighters: SimFighter[] = [];
   const chosen = opts.chosen ?? {};
-  deploy(withCopies(rng, home), 0, traits[0], scale[0], chosen, fighters);
-  deploy(withCopies(rng, away), 1, traits[1], scale[1], chosen, fighters);
+  const stage = stageOf(opts.round ?? 1);
+  deploy(withCopies(rng, home), 0, traits[0], scale[0], chosen, fighters, stage);
+  deploy(withCopies(rng, away), 1, traits[1], scale[1], chosen, fighters, stage);
   const start = fighters.map(snapshot);
 
   const occupied = new Int16Array(GRID_W * GRID_H).fill(-1);
@@ -987,6 +996,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         stunnedUntil: 0,
         ward: null,
         refund: 0,
+        loveBeam: null,
         castMana: 0,
         chill: null,
         hurtMana: 0,
@@ -1057,6 +1067,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         ground.set(key, { source: fighters[source.id], x: c.x, y: c.y, perSecond, type, until, effect });
       }
       events.push({ t, type: 'ground', effect, cells: cells.map(({ x, y }) => ({ x, y })), until });
+    },
+    shred: (who, by) => {
+      const target = fighters[who.id];
+      target.shred = Math.max(target.shred, fighters[by.id].stats.armorShred);
     },
     showProjectile: (from, to, seconds, effect) => {
       events.push({ t, type: 'projectile', effect, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, until: t + Math.round(seconds * TICKS_PER_SECOND) });
@@ -1270,6 +1284,32 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // Item pulses (e.g. Keris' Justice): from a living holder, hitting every living enemy (or those in the
   // densest 3x3). They fire even while the holder is stunned.
+  // Angela's card: each beaming hero shoots a line through its target (or the nearest enemy) to the board's
+  // edge, healing allies on it and hitting enemies.
+  function fireLoveBeams(t: number): void {
+    if (t === 0) return;
+    for (const f of fighters) {
+      const beam = f.loveBeam;
+      if (!beam || f.hp <= 0 || t % beam.every !== 0) continue;
+      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      if (!enemies.length) continue;
+      const aim = f.target && f.target.hp > 0 ? f.target : nearest(f, enemies);
+      if (aim.x === f.x && aim.y === f.y) continue;
+      const cells = lineThrough(f, aim);
+      api.showProjectile(f, cells[cells.length - 1] ?? aim, 0.3, 'lovebeam');
+      for (const c of cells) {
+        const there = fighters.find((o) => o.hp > 0 && o.x === c.x && o.y === c.y);
+        if (!there) continue;
+        if (there.side === f.side) api.heal(there, there.maxHp * beam.heal);
+        else {
+          const dealt = damage(there, beam.damage, 'magic', f);
+          events.push({ t, type: 'effect', effect: 'lovebeam', by: f.id, target: there.id, damage: dealt, hp: there.hp });
+          afterDamage(there, t);
+        }
+      }
+    }
+  }
+
   function fireItemPulses(t: number): void {
     if (t === 0) return;
     for (const f of fighters) {
@@ -1456,10 +1496,12 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireProvoke();
     fireBeasts();
     fireSheep();
-    // Skill passives, from the starting positions.
-    for (const f of fighters) {
-      const skill = UNIT_BY_ID[f.defId].skill;
-      if (skill) SKILLS[skill].atStart?.(api, f);
+    // Skill passives, from the starting positions; ones that move the unit last.
+    for (const late of [false, true]) {
+      for (const f of fighters) {
+        const skill = UNIT_BY_ID[f.defId].skill;
+        if (skill && !!SKILLS[skill].atStartLate === late) SKILLS[skill].atStart?.(api, f);
+      }
     }
   }
 
@@ -1467,6 +1509,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const f of fighters) if (f.hp > 0) gainMana(f, f.stats.manaRegen / TICKS_PER_SECOND);
     firePulses(t);
     fireItemPulses(t);
+    fireLoveBeams(t);
     fireRepeats(t);
     fireGround(t);
     fireSprings(t);

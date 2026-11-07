@@ -16,8 +16,8 @@ describe('hero portraits', () => {
     const hex = (tier: number) => TIER_COLORS[tier].toString(16).padStart(6, '0');
     expect(plate('phove')).toBe(hex(1));
     expect(plate('balia')).toBe(hex(5));
-    expect(plate('wanderingbastion')).toBe(hex(5));
-    expect(plate('eidolon')).toBe(hex(7));
+    expect(plate('cyborg')).toBe(hex(5));
+    expect(plate('bossalpha')).toBe(hex(7));
     expect(new Set(Object.values(TIER_COLORS)).size).toBe(Object.keys(TIER_COLORS).length);
   });
 });

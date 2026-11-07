@@ -17,6 +17,10 @@ export interface UnitDef {
   attackTicks: number; // ticks between attacks
   skill?: string; // skill id (see skills/); without one the unit uses the placeholder cast
   shop?: false; // false: never in the shop or the pool; only handed out (e.g. by a trait reward)
+  price?: number; // gold to buy (and what it sells for), if not its tier
+  // Johnson's Johnnie: one def per faction + role pair (see JOHNNIES). Never in the shared pool: it shows
+  // up in the shop only for the player whose Johnnie it is (Player.johnnie).
+  johnnie?: true;
   locked?: true; // in a player's shop only once something unlocks it for them (Player.unlocked)
   shopTier?: Tier; // the shop odds column it's rolled under, if not its own tier
   freeSlot?: true; // doesn't count toward the board limit (level)
@@ -99,9 +103,16 @@ export interface Player {
   chests?: { kills: number; earned: number; waiting: number }; // Equipment Chests: kills toward the next, earned so far, not opened yet
   deathsSaved?: number; // lethal hits survived so far (Nana)
   hurt?: { taken: number; paid: number }; // damage taken toward Nana's gold, and payouts made
-  trove?: { points: number; rolledRound: number; opens: number; lastRoll: number | null; bust: boolean }; // Kaela's Treasure Grove
+  trove?: { points: number; rolls: number; rolledRound: number; opens: number; lastRoll: number | null; bust: boolean }; // Kaela's Treasure Grove
   luck?: { rolled: number[]; last: string | null }; // Lucky Dice: card rolls done (by round), and the latest prize
   mirrors?: number; // Mirror Devices won, waiting for a unit to copy
+  mirrorBar?: { steps: number; made: number }; // Amon's Mirror Bar: steps filled, devices it has made
+  starGold?: number; // gold paid so far by Amon's card
+  freya?: { trait: string | null; claimed: number[] };
+  rallied?: { trait: string | null; heroes: string[] }; // Cyclops's low-hp rally, once given: the trait and heroes it gave
+  heirGold?: number;
+  freeSlot?: number | null; // the shop slot whose hero is free this round (Guiness), until bought or refreshed
+  freeHeroes?: number; // Guiness's card: after-fight shops left that get a free hero // gold Cyclops's powers paid from knockouts so far // Freya: the blessed role, and the reward levels (1-3) claimed
   survivorGold?: number; // gold paid so far by Ruby's card
   streak?: number; // fights against players: +n won in a row, -n lost in a row
   // Lunox's Twilight Blessing: the unit (uid) it's on, or null until placed; its rolled trait; heroes it gave;
@@ -111,6 +122,8 @@ export interface Player {
   blood?: { blessed: string[]; uses: number; rounds: number[] };
   // Luo Yi's Essence Altar: the hero on it (off the board and bench) and the items it held, locked in its core.
   essence?: { hero: Unit | null; items: Item[] };
+  // Johnson's Johnnie's Den: the Johnnies on offer (def ids) until one is picked, then the one picked.
+  johnnie?: { offer: string[]; defId: string | null };
   echo?: { defId: string; given: number }; // Luo Yi's card: the hero it hands out, and copies given so far
   altars?: Partial<Record<'altar' | 'secondAltar', number>>; // Dyroth's altars: the round each next earns a use, once one is spent
   altarUses?: Partial<Record<'altar' | 'secondAltar', number>>; // uses banked when the last one was spent

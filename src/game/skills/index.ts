@@ -7,6 +7,7 @@ import { altarSpark } from './altarSpark';
 import { ashenWall } from './ashenWall';
 import { ashStorm } from './ashStorm';
 import { craterFall } from './craterFall';
+import { partyCrasher } from './partyCrasher';
 import { cryptSeal } from './cryptSeal';
 import { dragonLance } from './dragonLance';
 import { dragonsDominion } from './dragonsDominion';
@@ -70,6 +71,7 @@ export { ASHEN_WALL } from './ashenWall';
 export { ASH_STORM } from './ashStorm';
 export { aheadStrip, beyond, coneAhead, coneBehind, facingStrip } from './areas';
 export { CRATER_FALL } from './craterFall';
+export { PARTY_CRASHER } from './partyCrasher';
 export { CRYPT_SEAL } from './cryptSeal';
 export { DRAGON_LANCE } from './dragonLance';
 export { DRAGONS_DOMINION } from './dragonsDominion';
@@ -126,4 +128,4 @@ export { freeCellNextTo, pickEnemy } from './dashStrike';
 export { STARFALL_AEGIS } from './starfallAegis';
 
 // Every unit skill. A unit without one uses the placeholder cast (CAST_MULT x atk as magic).
-export const SKILLS: Record<string, SkillDef> = Object.fromEntries([phantomExecution, powerOfChaos, starfallAegis, rendingBite, mournfulShot, fallingStar, soulOrbit, stormPursuit, rampage, gloomVolley, pyreFrenzy, dragonLance, commandersMark, polarBarrage, spiritArchers, sappingTouch, tariPenyembuh, shovelSlam, guardiansStrike, tidalSurge, mistWard, mistyJab, mistBoomerang, inkedStrike, unfoldingTale, mythMadeFlesh, talesEnd, shadeBolts, stormFlurry, galeShot, altarSpark, graveWhisper, ashStorm, etherBeam, starward, cometLunge, zodiacSlam, thunderWhirl, puppetSnare, pyreBlast, dreadDescent, kindleTwice, drakeRend, skyReap, undyingFury, ashenWall, cryptSeal, dragonsDominion, prajuritsOath, phantomStep, wyrmFrenzy, stormFists, wanderersVolley, bladeDescent, craterFall, fateThread, stalkersMark, beastMaul, spectralCataclysm].map((s) => [s.id, s]));
+export const SKILLS: Record<string, SkillDef> = Object.fromEntries([phantomExecution, powerOfChaos, starfallAegis, rendingBite, mournfulShot, fallingStar, soulOrbit, stormPursuit, rampage, gloomVolley, pyreFrenzy, dragonLance, commandersMark, polarBarrage, spiritArchers, sappingTouch, tariPenyembuh, shovelSlam, guardiansStrike, tidalSurge, mistWard, mistyJab, mistBoomerang, inkedStrike, unfoldingTale, mythMadeFlesh, talesEnd, shadeBolts, stormFlurry, galeShot, altarSpark, graveWhisper, ashStorm, etherBeam, starward, cometLunge, zodiacSlam, thunderWhirl, puppetSnare, pyreBlast, dreadDescent, kindleTwice, drakeRend, skyReap, undyingFury, ashenWall, cryptSeal, dragonsDominion, prajuritsOath, phantomStep, wyrmFrenzy, stormFists, wanderersVolley, bladeDescent, craterFall, fateThread, stalkersMark, beastMaul, spectralCataclysm, partyCrasher].map((s) => [s.id, s]));

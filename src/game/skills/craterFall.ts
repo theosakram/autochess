@@ -3,12 +3,12 @@ import { around, enemiesOn } from './areas';
 import { densestDrop } from './mythMadeFlesh';
 import type { SkillDef } from './types';
 
-// Wandering Bastion (Plane Wanderer, Dauntless): tick, tick, tick, boom. Per star, index 0 = 1★.
+// Cyborg (Plane Wanderer, Dauntless): tick, tick, tick, boom. Per star, index 0 = 1★.
 export const CRATER_FALL = {
   ticks: 3,
   every: 0.4, // seconds between ticks (and before the boom)
-  tick: [0.6, 0.7, 1.5], // of attack, physical, per tick to each enemy in the area
-  boom: [2, 2.4, 5], // of attack, physical, the explosion
+  tick: [0.8, 0.9, 2], // of attack, physical, per tick to each enemy in the area
+  boom: [2.5, 2.8, 6], // of attack, physical, the explosion
 };
 
 export const craterFall: SkillDef = {

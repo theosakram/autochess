@@ -3,7 +3,7 @@ import { around, enemiesOn, within } from './areas';
 import { densestDrop } from './mythMadeFlesh';
 import type { SkillDef } from './types';
 
-// Eidolon (7g Spectre). Per star, index 0 = 1★.
+// Boss Alpha (7g Spectre). Per star, index 0 = 1★.
 export const SPECTRAL_CATACLYSM = {
   impact: [1.6, 2, 5], // of attack, physical, enemies around where it lands
   delay: 0.4, // seconds from the landing to the blast
