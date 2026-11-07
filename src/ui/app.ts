@@ -6,7 +6,7 @@ import { isAlive } from '../game/player';
 import { TRAITS } from '../game/traits';
 import type { GameState, Loc, Player } from '../game/types';
 import { UNIT_BY_ID } from '../game/units';
-import { createMeter, meterHtml, recordEvent, type Meter } from './meter';
+import { createMeter, meterHtml, recordEvent, type Meter, type MeterTab } from './meter';
 import { MIST_WARES } from '../game/mistShop';
 import type { AltarKey } from '../game/altar';
 import { Stage, type Playback } from './stage/stage';
@@ -57,6 +57,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let hpBefore: Map<string, number> | null = null;
   // Damage of the fight on screen, or of the last one during prep.
   let meter: Meter | null = null;
+  let meterTab: MeterTab = 'dealt';
   // Trait whose detail popup is open.
   let openTrait: string | null = null;
   // Unit whose Magic Orb choice is open.
@@ -183,7 +184,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     // Repaints are rebuilds; a long panel stays where it was scrolled to.
     const scrolled = panel.firstElementChild?.scrollTop ?? 0;
     panel.innerHTML =
-      railPanel === 'synergy' ? traitsPanelHtml(p) : railPanel === 'damage' ? meterHtml(meter) : railPanel === 'equipment' ? armoryHtml(p, picked, draggingGear) : '';
+      railPanel === 'synergy' ? traitsPanelHtml(p) : railPanel === 'damage' ? meterHtml(meter, meterTab) : railPanel === 'equipment' ? armoryHtml(p, picked, draggingGear) : '';
     if (panel.firstElementChild) panel.firstElementChild.scrollTop = scrolled;
   }
 
@@ -225,7 +226,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     slot('hud').innerHTML = hudHtml(state, p, opponent?.name ?? null);
     slot('rail').innerHTML = railHtml(railPanel, p);
     renderPanel();
-    slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen);
+    slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool);
     slot('grave').innerHTML = `<div class="graves">${essenceAltarHtml(p)}${graveHtml(p)}${sideShopsHtml(p)}</div>`;
     // You, bottom left, right above your gold.
     slot('commander').innerHTML = `<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen)}</div>`;
@@ -404,6 +405,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         railPanel = railPanel === panel ? null : panel;
         slot('panel').innerHTML = '';
         render();
+      } else if (a === 'meterTab') {
+        meterTab = btn.dataset.tab as MeterTab;
+        renderPanel();
       } else if (a === 'closeTrait') showTrait(null);
       else if (a === 'mistBuy') {
         const slot = Number(btn.dataset.slot);

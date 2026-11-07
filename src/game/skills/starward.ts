@@ -31,6 +31,6 @@ export const starward: SkillDef = {
       .filter((a) => a.hp < a.maxHp)
       .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp || a.id - b.id)
       .slice(0, STARWARD.healed) as SkillFighter[];
-    for (const a of hurt) api.heal(a, a.maxHp * share);
+    for (const a of hurt) api.heal(a, a.maxHp * share, caster);
   },
 };

@@ -41,6 +41,25 @@ export function lineThrough(from: Point, to: Point): Point[] {
   }
 }
 
+// lineThrough, `width` cells wide: each of its cells plus its neighbours across the line (sideways for a
+// mostly-vertical line, up and down for a mostly-horizontal one). `to` is always in it.
+export function wideLine(from: Point, to: Point, width = 3): Point[] {
+  const vertical = Math.abs(to.y - from.y) >= Math.abs(to.x - from.x);
+  const half = Math.floor(width / 2);
+  const seen = new Set<string>();
+  const cells: Point[] = [];
+  for (const c of lineThrough(from, to)) {
+    for (let o = -half; o <= half; o++) {
+      const p = vertical ? { x: c.x + o, y: c.y } : { x: c.x, y: c.y + o };
+      const k = `${p.x},${p.y}`;
+      if (p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H || seen.has(k)) continue;
+      seen.add(k);
+      cells.push(p);
+    }
+  }
+  return cells;
+}
+
 // The cell `n` steps past `to`, carrying on the line from `from` through it (stopped at the board's edge).
 export function beyond(from: Point, to: Point, n: number): Point {
   const dx = to.x - from.x;

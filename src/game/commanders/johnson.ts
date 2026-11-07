@@ -5,6 +5,7 @@ import type { CommanderDef, JohnniePower } from './types';
 export const JOHNSON = {
   johnnie: { offer: 5 } satisfies JohnniePower,
   card: { hybridAtk: 0.35, hp: 0.3 },
+  cardPool: 5, // the card: Johnnie rolls in the shop as if its pool had this many more copies
 };
 
 export const johnson: CommanderDef = {
@@ -20,7 +21,9 @@ export const johnson: CommanderDef = {
   card: {
     name: 'Family Business',
     icon: '💼',
-    selfDesc: `Every Johnnie gets +${pct(JOHNSON.card.hybridAtk)} attack and magic attack and +${pct(JOHNSON.card.hp)} max HP.`,
-    self: { johnnieBuff: JOHNSON.card },
+    selfDesc:
+      `Every Johnnie gets +${pct(JOHNSON.card.hybridAtk)} attack and magic attack and +${pct(JOHNSON.card.hp)} max HP, ` +
+      `and your Johnnie turns up in the shop more often (as if it had ${JOHNSON.cardPool} more copies).`,
+    self: { johnnieBuff: JOHNSON.card, johnniePool: JOHNSON.cardPool },
   },
 };

@@ -8,14 +8,15 @@ import { rewardText } from '../game/traits/format';
 import { claimable } from '../game/freya';
 import { shopPrice } from '../game/shop';
 import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
-import { BASE_REWARD, baseReward, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
+import { BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, EQUIPMENT_GROUPS, isItemCard, ITEMS, type ItemDef } from '../game/items';
+import { MIRROR } from '../game/mirror';
 import { MIST_WARES, mistCoins } from '../game/mistShop';
 import { ALTAR_KEYS, altarOf, altarStatus, nextTier, offerBlock, type AltarKey } from '../game/altar';
 import { orbOptions } from '../game/orb';
 import { SKILLS, type SkillDef } from '../game/skills';
-import { copiesOf, findCopies } from '../game/merge';
+import { copiesOf, findCopies, mergeSize } from '../game/merge';
 import { MAX_ITEMS_PER_UNIT } from '../game/config';
 import { boardCount, freeSlotCount, interest, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
 import { attackInterval, type DamageType, type StatKey, type StatMod, type Stats } from '../game/stats';
@@ -83,12 +84,15 @@ type DescSource = { desc: string; values(): Record<string, string[]>; damage?: S
 const levelsHtml = (vals: string[], current: number) =>
   vals.map((v, i) => `<span class="${i === current - 1 || (vals.length === 1 && current > 0) ? 'on' : ''}">${v}</span>`).join('<i> / </i>');
 
-// A skill's damage numbers are coloured by damage type: red physical, teal magic. 'attack' follows the hero's basic attack.
-function damageClass(src: DescSource, key: string, attackType: DamageType): string {
+// A skill's damage numbers are coloured by damage type: red physical, teal magic. 'attack' follows the hero's basic attack;
+// 'higher' follows its bigger stat (uncoloured without stats).
+function damageClass(src: DescSource, key: string, attackType: DamageType, s?: Stats): string {
   const kind = src.damage?.[key];
-  const type = kind === 'attack' ? attackType : kind;
+  const type = kind === 'attack' ? attackType : kind === 'higher' ? s && higherType(s) : kind;
   return type === 'physical' || type === 'magic' ? `dmg-${type}` : '';
 }
+
+const higherType = (s: Stats): DamageType => (s.ap > s.atk ? 'magic' : 'physical');
 
 const wrapDamage = (cls: string, html: string) => (cls ? `<em class="${cls}">${html}</em>` : html);
 
@@ -576,7 +580,7 @@ const dockIcon = (name: keyof typeof DOCK_ICONS) =>
 
 // The dock along the bottom: leveling, the shop and the fight button, always in view so buying never
 // hides the board. Drop a unit anywhere on it to sell.
-export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: Record<string, string>, incomeOpen = false): string {
+export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: Record<string, string>, incomeOpen = false, pool: Record<string, number> = {}): string {
   const levelCost = levelUpCost(p);
   const levelBtn =
     levelCost === null
@@ -599,7 +603,7 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
         <button class="dock-icon lock${p.shopLocked ? ' on' : ''}" data-action="toggleLock" title="${lockTitle}">${dockIcon(p.shopLocked ? 'locked' : 'unlocked')}<small>${p.shopLocked ? 'Locked' : 'Lock'}</small></button>
       </div>
     </div>
-    <div class="shop-cards${p.shopLocked ? ' locked' : ''}">${shopCardsHtml(p, locked, chosen)}</div>
+    <div class="shop-cards${p.shopLocked ? ' locked' : ''}">${shopCardsHtml(p, locked, chosen, pool)}</div>
     ${
       locked
         ? `<button data-action="skip" class="fight-btn skip">Skip <kbd>Space</kbd></button>`
@@ -608,7 +612,22 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
   </section>`;
 }
 
-function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string>): string {
+// What buying one more copy of `id` would do: the star it makes (if any) and the 1★ copies held toward it.
+function starUp(p: Player, id: string): { makes: number; ones: number; size: number } {
+  const size = mergeSize(id);
+  if (p.blood?.blessed.includes(id)) return { makes: 0, ones: 0, size };
+  const ones = findCopies(p, id, 1).length;
+  const twos = findCopies(p, id, 2).length;
+  const makes = ones + 1 < size ? 0 : twos + 1 < size ? 2 : 3;
+  return { makes, ones, size };
+}
+
+// Copies of `id` this player holds, board and bench, by star.
+function ownedStars(p: Player, id: string): number[] {
+  return [...p.board, ...p.bench].flatMap((u) => (u?.defId === id ? [u.star] : [])).sort((a, b) => b - a);
+}
+
+function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string>, pool: Record<string, number>): string {
   const counts = playerTraitCounts(p);
   return p.shop
     .map((id, slot) => {
@@ -626,25 +645,42 @@ function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string
         </button>`;
       }
       const def = UNIT_BY_ID[id];
-      const upgrade = findCopies(p, id, 1).length >= 2;
-      const owned = [...p.board, ...p.bench].reduce((n, u) => n + (u?.defId === id ? copiesOf(u) : 0), 0);
-      // Traits you already field: what buying (and fielding) this one would bring the count to.
+      const up = starUp(p, id);
+      const stars = ownedStars(p, id);
       const fielded = p.board.some((u) => u?.defId === id);
+      // Traits you already field are lit up: what buying (and fielding) this one brings the count to,
+      // and whether that reaches the trait's next breakpoint.
       const traits = def.traits
         .map((t) => {
           const n = counts[t] ?? 0;
-          const gain = n > 0 && !fielded ? `<em>${n}→${n + 1}</em>` : '';
-          return `<span class="shop-trait${gain ? ' have' : ''}"><span class="t-name">${traitBadgeHtml(t)} ${TRAITS[t].name}</span>${gain}</span>`;
+          if (!n) return `<span class="shop-trait"><span class="t-name">${traitBadgeHtml(t)} ${TRAITS[t].name}</span></span>`;
+          const next = fielded ? n : n + 1;
+          const hits = !fielded && traitLevel(t, next) > traitLevel(t, n);
+          const title = fielded ? `You field ${n} ${TRAITS[t].name}; this hero already counts` : `You field ${n} ${TRAITS[t].name}; fielding this makes ${next}${hits ? ', reaching the next bonus' : ''}`;
+          return `<span class="shop-trait have${hits ? ' hits' : ''}" title="${title}"><span class="t-name">${traitBadgeHtml(t)} ${TRAITS[t].name}</span><em>${fielded ? `✓${n}` : `${n}→${next}`}</em></span>`;
         })
         .join('');
-      const tag = upgrade ? '<span class="up" title="Buying this makes a 2-star">★★</span>' : owned ? `<span class="owned">own ${owned}</span>` : '';
-      return `<button class="shop-card tier-${def.tier}${upgrade ? ' upgrade' : ''}" data-action="buy" data-slot="${slot}" ${locked || p.gold < shopPrice(p, slot) ? 'disabled' : ''}>
+      // Star-up progress: pips for the 1★ copies held toward the next merge (this one would be the next).
+      const pips = stars.length && !up.makes
+        ? `<span class="shop-pips" title="${up.ones} of ${up.size} copies toward 2★">${Array.from({ length: up.size }, (_, i) => `<i class="${i < up.ones ? 'on' : i === up.ones ? 'next' : ''}"></i>`).join('')}</span>`
+        : '';
+      const where = fielded ? 'on board' : 'on bench';
+      const tag = up.makes
+        ? `<span class="shop-flag up" title="Buying this makes a ${up.makes}-star">${'★'.repeat(up.makes)} STAR UP</span>`
+        : stars.length
+          ? `<span class="shop-flag owned" title="You have ${stars.map((x) => `${x}★`).join(', ')} ${where}">✓ Have ${stars.map((x) => `${x}★`).join(' ')}</span>`
+          : '';
+      const left = id in pool ? pool[id] + p.shop.filter((x) => x === id).length : null;
+      const leftTag =
+        left === null ? '' : ` <small class="shop-left${left <= 2 ? ' low' : ''}" title="Copies left to buy (the pool plus this shop) of ${POOL_SIZE[def.tier]}">(${left}/${POOL_SIZE[def.tier]})</small>`;
+      const cls = up.makes ? ' upgrade' : stars.length ? ' have' : '';
+      return `<button class="shop-card tier-${def.tier}${cls}" data-action="buy" data-slot="${slot}" ${locked || p.gold < shopPrice(p, slot) ? 'disabled' : ''}>
         ${portraitHtml(id, 'shop-face')}
         <span class="shop-body">
-          <span class="unit-name">${isChosen(chosen, id) ? '👑 ' : ''}${def.name}</span>
+          <span class="unit-name">${isChosen(chosen, id) ? '👑 ' : ''}${def.name}${leftTag}</span>
           <span class="traits">${traits || '<span class="shop-trait none">no traits</span>'}</span>
         </span>
-        <b class="cost">${shopPrice(p, slot)}g</b>${p.freeSlot === slot ? '<span class="free-tag">FREE</span>' : ''}${tag}
+        <b class="cost">${shopPrice(p, slot)}g</b>${p.freeSlot === slot ? '<span class="free-tag">FREE</span>' : ''}${tag}${pips}
       </button>`;
     })
     .join('');
@@ -661,7 +697,7 @@ const RAIL: { id: RailPanel; icon: string; name: string }[] = [
 // The sidebar's icons. Equipment counts what's waiting for a hero, so new loot isn't missed while
 // another panel is open.
 export function railHtml(open: RailPanel | null, p: Player): string {
-  const loose = p.items.filter((it) => it.holder === null).length + p.orbs.length + (p.mistOrbs ?? []).filter((o) => o.holder === null).length;
+  const loose = p.items.filter((it) => it.holder === null).length + p.orbs.length + (p.mistOrbs ?? []).filter((o) => o.holder === null).length + (p.mirrors ?? 0);
   const buttons = RAIL.map(({ id, icon, name }) => {
     const badge = id === 'equipment' && loose ? `<b class="rail-badge">${loose}</b>` : '';
     return `<button class="rail-btn${id === open ? ' on' : ''}" data-action="rail" data-panel="${id}" title="${name}" aria-label="${name}">${icon}${badge}</button>`;
@@ -714,7 +750,13 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
         <span class="item-icon">🔮</span>${p.orbs.length > 1 ? `<b>×${p.orbs.length}</b>` : ''}
       </div>`
     : '';
-  const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
+  // Mirror Devices: click to pick a unit to copy.
+  const mirrorChip = p.mirrors
+    ? `<button class="usable-chip" data-action="openMirror" title="${MIRROR.name}: ${MIRROR.desc} Click to use.">
+        <span class="item-icon">${MIRROR.icon}</span>${p.mirrors > 1 ? `<b>×${p.mirrors}</b>` : ''}
+      </button>`
+    : '';
+  const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
 
   const heroes = p.board
     .flatMap((u) => (u && !UNIT_BY_ID[u.defId].piece ? [u] : []))
@@ -1014,13 +1056,14 @@ function skillHtml(skillId: string | undefined, star: number, s: Stats, attackTy
 function skillDescHtml(src: DescSource, star: number, s: Stats, attackType: DamageType): string {
   const values = src.values();
   const base: [RegExp, (s: Stats) => number][] = [
+    [/^ of (?:its )?higher of attack and magic attack/, (x) => Math.max(x.atk, x.ap)],
     [/^ of (?:its )?magic attack/, (x) => x.ap],
     [/^ of (?:its )?attack/, (x) => x.atk],
     [/^ of its max HP/, (x) => x.hp],
   ];
   return src.desc.replace(/\{(\w+)\}/g, (match: string, key: string, offset: number, whole: string) => {
     const after = whole.slice(offset + match.length);
-    const cls = damageClass(src, key, attackType);
+    const cls = damageClass(src, key, attackType, s);
     const shown = wrapDamage(cls, levelsHtml(values[key], star));
     const cur = values[key][star - 1] ?? values[key][0];
     // A threshold ('left below 8% of its max HP') is the enemy's HP, not a number this hero has.
@@ -1320,7 +1363,7 @@ function freyaHtml(p: Player): string {
   return `<div class="grove"><div class="freya-roles">${chips}</div>${extra}${progress}${claims ? `<div class="grove-actions">${claims}</div>` : ''}</div>`;
 }
 
-// Amon's Mirror Bar (steps toward the next Mirror Device) and his card's gold. Devices are used from the Grove line.
+// Amon's Mirror Bar (steps toward the next Mirror Device) and his card's gold. Devices go to the inventory.
 function mirrorBarLineHtml(p: Player): string {
   const pw = powersOf(p);
   const lines: string[] = [];
@@ -1346,14 +1389,11 @@ function chestLineHtml(p: Player): string {
 }
 
 // Kaela's Treasure Grove: points on a track to the max, Roll (one a round, banked) and Open (cash in), what the
-// latest roll did and the latest prize; plus any Mirror Devices waiting for a unit.
+// latest roll did and the latest prize. (Mirror Devices it wins go to the inventory.)
 function groveHtml(p: Player, round: number): string {
   const power = powersOf(p).trove;
-  const mirrors = p.mirrors
-    ? `<button class="grove-btn" data-action="openMirror">👥 Use Mirror Device${p.mirrors > 1 ? ` ×${p.mirrors}` : ''}</button>`
-    : '';
   const last = p.luck?.last ? `<p class="commander-text">🍀 Last prize: <b>${p.luck.last}</b></p>` : '';
-  if (!power) return last + mirrors;
+  if (!power) return last;
   const t = p.trove ?? { points: 0, rolls: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false };
   const left = Math.max(0, round - t.rolls);
   const spent = t.opens >= power.opens;
@@ -1368,10 +1408,10 @@ function groveHtml(p: Player, round: number): string {
       <button class="grove-btn" data-action="rollDice" ${!left || spent ? 'disabled' : ''}>🎲 Roll${left > 1 ? ` ×${left}` : !left ? 'ed' : ''}</button>
       <button class="grove-btn" data-action="openTrove" ${spent || t.points <= 0 ? 'disabled' : ''}>💰 Open Trove</button>
     </div>
-  </div>${last}${mirrors}`;
+  </div>${last}`;
 }
 
-// Mirror Device (won from the Lucky Dice): pick one of your units to copy.
+// Mirror Device (from the inventory): pick one of your units to copy.
 export function mirrorPickHtml(p: Player): string {
   const options = [...p.board, ...p.bench]
     .flatMap((u) => (u && UNIT_BY_ID[u.defId].shop !== false ? [u] : []))
@@ -1379,8 +1419,8 @@ export function mirrorPickHtml(p: Player): string {
   return modalHtml(
     'closeMirror',
     'trait-popup',
-    `<h2 class="trait-title">👥 Mirror Device</h2>
-    <p class="trait-desc">${MIST_WARES.mirror.desc}</p>
+    `<h2 class="trait-title">${MIRROR.icon} ${MIRROR.name}${p.mirrors! > 1 ? ` ×${p.mirrors}` : ''}</h2>
+    <p class="trait-desc">${MIRROR.desc}</p>
     <div class="orb-options">${options.join('') || '<p class="meta">Nothing to copy.</p>'}</div>`,
   );
 }
@@ -1514,7 +1554,7 @@ export function blessPickHtml(p: Player): string {
     'closeBless',
     'trait-popup',
     `<h2 class="trait-title">🌗 Twilight Blessing</h2>
-    <p class="trait-desc">One of the hero's own traits is rolled at random; that hero counts +1 toward it while fielded, on top of any Magic Orb. It stays with this very hero: sell it and the blessing is gone.${powersOf(p).twilight?.heroes ? ` You also get ${powersOf(p).twilight!.heroes} random 1- or 2-cost heroes of the rolled trait.` : ''}</p>
+    <p class="trait-desc">One of the hero's own traits is rolled at random; that hero counts +1 toward it while fielded, on top of any Magic Orb. It stays with this very hero: sell it and the blessing is gone.${powersOf(p).twilight?.heroes ? ` You also get ${powersOf(p).twilight!.heroes} random heroes of the rolled trait, their costs rolled with your current shop odds.` : ''}</p>
     <div class="orb-options">${options.join('') || '<p class="meta">No hero to bless.</p>'}</div>`,
   );
 }

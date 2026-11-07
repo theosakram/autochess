@@ -112,7 +112,7 @@ export { STORM_FLURRY } from './stormFlurry';
 export { SKY_REAP } from './skyReap';
 export { orbCells, SOUL_ORBIT } from './soulOrbit';
 export { SPIRIT_ARCHERS } from './spiritArchers';
-export { knifePath, STORM_PURSUIT } from './stormPursuit';
+export { STORM_PURSUIT } from './stormPursuit';
 export { TALES_END } from './talesEnd';
 export { TARI_PENYEMBUH } from './tariPenyembuh';
 export { within } from './areas';
@@ -123,7 +123,7 @@ export { pickSpread, UNFOLDING_TALE } from './unfoldingTale';
 export { WANDERERS_VOLLEY } from './wanderersVolley';
 export { WYRM_FRENZY } from './wyrmFrenzy';
 export { ZODIAC_SLAM } from './zodiacSlam';
-export { pathTo, lineThrough } from './areas';
+export { pathTo, lineThrough, wideLine } from './areas';
 export { freeCellNextTo, pickEnemy } from './dashStrike';
 export { STARFALL_AEGIS } from './starfallAegis';
 

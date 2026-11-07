@@ -4,7 +4,7 @@ import { TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { dist, GRID_H, GRID_W, type Point } from './grid';
 import { JIMAT } from './items';
-import { PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, knifePath, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, TRAITS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -16,6 +16,7 @@ function fakeBattle(enemyCells: Point[]) {
   const all = [caster, ...enemies];
   const log = {
     hits: [] as { target: number; raw: number; effect: string; basic: boolean }[],
+    hitTypes: [] as string[], // damage type of each hit, same order as `hits`
     dashes: [] as Point[],
     guards: [] as number[],
     shields: [] as { amount: number; seconds: number }[],
@@ -44,8 +45,9 @@ function fakeBattle(enemyCells: Point[]) {
   };
   // Enemies whose next hit kills them (to test kill-chains).
   const fragile = new Set<number>();
-  const record = (target: SkillFighter, raw: number, effect: string, basic: boolean) => {
+  const record = (target: SkillFighter, raw: number, effect: string, basic: boolean, type: string) => {
     log.hits.push({ target: target.id, raw, effect, basic });
+    log.hitTypes.push(type);
     log.order.push(`hit:${target.id}`);
     if (!fragile.has(target.id)) return false;
     target.hp = 0;
@@ -58,8 +60,8 @@ function fakeBattle(enemyCells: Point[]) {
       return alive.length ? alive.reduce((a, b) => (dist(f, b) < dist(f, a) ? b : a)) : null;
     },
     occupant: (p) => all.find((f) => f.hp > 0 && f.x === p.x && f.y === p.y) ?? null,
-    hit: (s, target, raw, _type, effect) => ((s.dealt += raw), record(target, raw, effect, false)),
-    basicHit: (_s, target, raw, _type, effect) => record(target, raw, effect, true),
+    hit: (s, target, raw, type, effect) => ((s.dealt += raw), record(target, raw, effect, false, type)),
+    basicHit: (_s, target, raw, type, effect) => record(target, raw, effect, true, type),
     safestCell: () => ({ x: 6, y: 5 }),
     dashTo: (f, to) => {
       f.x = to.x;
@@ -500,6 +502,20 @@ describe('Falling Star', () => {
     expect(b.log.dashes).toEqual([]);
     expect(b.log.hits[0]).toMatchObject({ target: 1, raw: b.caster.stats.ap * FALLING_STAR.ap[1] });
   });
+
+  test('the strike hits every enemy within 1 tile of where she lands, not just her target', () => {
+    // (0,0) is the farthest; (1,1) and (0,2) crowd around it; (5,0) is far from everything.
+    const b = fakeBattle([{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 2 }, { x: 6, y: 0 }]);
+    b.caster.stats = unitStats(UNIT_BY_ID.katarina, 1);
+    b.cast('fallingstar');
+    const land = b.log.dashes[0];
+    expect(dist(land, { x: 0, y: 0 })).toBe(1);
+    const near = [1, 2, 3, 4].filter((id) => dist(land, b.enemies[id - 1]) <= 1);
+    expect(near).toContain(1);
+    expect(near.length).toBeGreaterThan(1);
+    expect(b.log.hits.map((h) => h.target).sort()).toEqual(near);
+    expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * FALLING_STAR.ap[0] && h.effect === 'fallingstar')).toBe(true);
+  });
 });
 
 describe('Soul Orbit', () => {
@@ -547,33 +563,29 @@ describe('Storm Pursuit', () => {
     expect([UNIT_BY_ID.gufron.name, UNIT_BY_ID.gufron.range, UNIT_BY_ID.gufron.mana]).toEqual(['Gufron', 1, 40]);
   });
 
-  test('a knife flies 3 tiles, stopped at the edge', () => {
-    expect(knifePath({ x: 3, y: 3 }, { x: 1, y: -1 }).map((p) => `${p.x},${p.y}`)).toEqual(['4,2', '5,1', '6,0']);
-    expect(knifePath({ x: 5, y: 3 }, { x: 1, y: 0 }).map((p) => `${p.x},${p.y}`)).toEqual(['6,3']);
-  });
-
-  test('7 knives fan out (never straight back), hitting each enemy they pass, then again on the recall', () => {
+  test('knives fill a cone ahead toward his target (3, 5, 7 wide), hitting each enemy in it, then again on the recall', () => {
     for (const star of [1, 3] as const) {
-      // Caster (3,5), side 0, facing up. (3,3) is on the straight-ahead knife, (5,3) on the up-right diagonal,
-      // (1,5) on the left one; (4,3) is between knives: never hit.
-      const b = fakeBattle([{ x: 3, y: 3 }, { x: 5, y: 3 }, { x: 1, y: 5 }, { x: 4, y: 3 }]);
+      // Caster (3,5), side 0, target straight up at (3,4). In the cone: (3,4) row 1, (1,3) row 2, (0,2) row 3.
+      // Out of it: (1,4) is beside the first row, (3,6) is behind him, (6,4) is off to the side.
+      const b = fakeBattle([{ x: 3, y: 4 }, { x: 1, y: 3 }, { x: 0, y: 2 }, { x: 1, y: 4 }, { x: 3, y: 6 }, { x: 6, y: 4 }]);
       b.caster.star = star;
       b.caster.stats = unitStats(UNIT_BY_ID.gufron, star);
       b.cast('stormpursuit');
       const by = (id: number) => b.log.hits.filter((h) => h.target === id).length;
-      expect([by(1), by(2), by(3), by(4)]).toEqual([1, 1, 1, 0]);
+      expect([1, 2, 3, 4, 5, 6].map(by)).toEqual([1, 1, 1, 0, 0, 0]);
       expect(b.log.repeats[0]).toMatchObject({ seconds: STORM_PURSUIT.recall, times: 1 });
       b.log.repeats[0].fn();
-      expect([by(1), by(2), by(3), by(4)]).toEqual([2, 2, 2, 0]);
+      expect([1, 2, 3, 4, 5, 6].map(by)).toEqual([2, 2, 2, 0, 0, 0]);
       expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * STORM_PURSUIT.ap[star - 1] && h.effect === 'stormpursuit' && !h.basic)).toBe(true);
     }
   });
 
-  test('nothing goes straight back', () => {
-    const b = fakeBattle([{ x: 3, y: 4 }]);
-    b.caster.y = 3; // enemy right behind it at (3,4)
+  test('the cone turns toward his target: one to the side gets a sideways cone', () => {
+    // Target at (5,5), to his right: the cone opens rightward, so (6,3) (2 right, 2 up) is in it and (3,3) above him isn't.
+    const b = fakeBattle([{ x: 5, y: 5 }, { x: 6, y: 3 }, { x: 3, y: 3 }]);
+    b.caster.stats = unitStats(UNIT_BY_ID.gufron, 1);
     b.cast('stormpursuit');
-    expect(b.log.hits).toEqual([]);
+    expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
   });
 });
 
@@ -1802,6 +1814,29 @@ describe('Mage skills', () => {
       expect(b.log.hits.every((h) => h.raw === b.caster.stats.ap * ETHER_BEAM.ap[star - 1])).toBe(true);
     }
   });
+
+  test('Ether Beam hits a target off the 8 directions (a knight-move away), every tick', () => {
+    // From (3,5), (4,2) is 1 across and 3 up: not straight or diagonal.
+    const b = fakeBattle([{ x: 4, y: 2 }]);
+    b.caster.stats = unitStats(UNIT_BY_ID.gourd, 1);
+    b.cast('etherbeam');
+    for (let i = 0; i < ETHER_BEAM.ticks - 1; i++) b.log.repeats[0].fn();
+    expect(b.log.hits.filter((h) => h.target === 1)).toHaveLength(ETHER_BEAM.ticks);
+  });
+
+  test('Ether Beam follows its target when it moves, and turns to the nearest enemy when it dies', () => {
+    const b = fakeBattle([{ x: 3, y: 2 }, { x: 0, y: 3 }]);
+    b.caster.stats = unitStats(UNIT_BY_ID.gourd, 1);
+    b.cast('etherbeam');
+    const [first, second] = b.enemies;
+    first.x = 6; // it steps aside: the beam swings after it
+    b.log.repeats[0].fn();
+    expect(b.log.hits.at(-1)!.target).toBe(1);
+    first.hp = 0; // it falls: the beam turns to the other enemy
+    b.log.repeats[0].fn();
+    expect(b.log.hits.at(-1)!.target).toBe(2);
+    expect(second.hp).toBeGreaterThan(0);
+  });
 });
 
 describe('Starward', () => {
@@ -2750,13 +2785,34 @@ describe("Wanderer's Volley", () => {
     expect([UNIT_BY_ID.moscow.range, UNIT_BY_ID.moscow.attackTicks]).toEqual([4, 12]);
   });
 
-  test('a 3-wide projectile to the far end of the board, hitting everyone in its path', () => {
-    // From (3,5) facing up: (3,4), (2,1), (4,0) are in the path; (0,2) and (6,0) aren't.
+  test('a 3-wide projectile through its target to the edge, hitting everyone in its path', () => {
+    // From (3,5), target (3,4) straight up: (2,1), (4,0) are in the path too; (0,2) and (6,0) aren't.
     const b = fakeBattle([{ x: 3, y: 4 }, { x: 2, y: 1 }, { x: 4, y: 0 }, { x: 0, y: 2 }, { x: 6, y: 0 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.moscow, 1);
     b.cast('wanderersvolley');
     expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2, 3]);
     expect(b.log.hits.every((h) => h.raw === b.caster.stats.atk * WANDERERS_VOLLEY.atk[0] && !h.basic)).toBe(true);
+  });
+
+  test('aims at its target wherever it is: off to the side, or at an odd angle', () => {
+    // Target (6,3): 3 right and 2 up, a mostly-sideways line. (3,5)'s column straight ahead is empty.
+    const side = fakeBattle([{ x: 6, y: 3 }, { x: 3, y: 1 }]);
+    side.caster.stats = unitStats(UNIT_BY_ID.moscow, 1);
+    side.cast('wanderersvolley');
+    expect(side.log.hits.map((h) => h.target)).toEqual([1]);
+    // Target (5,1): 2 right and 4 up. Neighbours across the line get hit too; (0,0) far off it doesn't.
+    const odd = fakeBattle([{ x: 5, y: 1 }, { x: 4, y: 2 }, { x: 0, y: 0 }]);
+    odd.caster.stats = unitStats(UNIT_BY_ID.moscow, 1);
+    odd.cast('wanderersvolley');
+    expect(odd.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
+  });
+
+  test('wideLine always holds the target and is 3 wide across the line', () => {
+    for (const to of [{ x: 6, y: 3 }, { x: 5, y: 1 }, { x: 0, y: 0 }, { x: 4, y: 2 }]) {
+      expect(wideLine({ x: 3, y: 5 }, to).some((c) => c.x === to.x && c.y === to.y)).toBe(true);
+    }
+    // Straight up from (3,5): columns 2-4, rows 4 down to 0.
+    expect(wideLine({ x: 3, y: 5 }, { x: 3, y: 4 })).toHaveLength(15);
   });
 });
 
@@ -2898,11 +2954,11 @@ describe('Fate Thread', () => {
 });
 
 describe("Stalker's Mark", () => {
-  test('Amon has stats per star just below Fanny (mana: 30 / 30 / 20), melee', () => {
+  test('Amon has stats per star just below Fanny (mana: 40 / 40 / 20), melee', () => {
     const at = (star: Star) => unitStats(UNIT_BY_ID.amon, star);
     expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3900, 7020, 48000]);
     expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([235, 355, 760]);
-    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([30, 30, 20]);
+    expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([40, 40, 20]);
     expect([UNIT_BY_ID.amon.name, UNIT_BY_ID.amon.range, UNIT_BY_ID.amon.attackTicks]).toEqual(['Amon', 1, 13]);
   });
 
@@ -2918,6 +2974,37 @@ describe("Stalker's Mark", () => {
     expect(dist(b.log.dashes[1], { x: 3, y: 4 })).toBe(1);
     expect(b.log.hits).toEqual([{ target: 1, raw: b.caster.stats.atk * STALKERS_MARK.atk[0], effect: 'stalkersmark', basic: false }]);
     expect(b.log.busy).toEqual([true, false]);
+    expect(b.log.hits.some((h) => h.effect === 'stalkersknife')).toBe(false); // knives are 3★ only
+  });
+
+  test('3★: after the strike, 3 knives at different random enemies, then a dash beside the nearest', () => {
+    const b = fakeBattle([{ x: 3, y: 4 }, { x: 0, y: 0 }, { x: 6, y: 0 }, { x: 1, y: 2 }, { x: 5, y: 2 }]);
+    b.caster.star = 3;
+    b.caster.stats = unitStats(UNIT_BY_ID.amon, 3);
+    b.cast('stalkersmark');
+    b.log.repeats[0].fn();
+    const knives = b.log.hits.filter((h) => h.effect === 'stalkersknife');
+    expect(knives).toHaveLength(STALKERS_MARK.knives);
+    expect(new Set(knives.map((h) => h.target)).size).toBe(STALKERS_MARK.knives);
+    expect(knives.every((h) => h.raw === b.caster.stats.atk * STALKERS_MARK.knife)).toBe(true);
+    // The strike comes first, the knives after it, then a second strike on the nearest enemy.
+    expect(b.log.hits.map((h) => h.effect)).toEqual(['stalkersmark', 'stalkersknife', 'stalkersknife', 'stalkersknife', 'stalkersmark']);
+    const last = b.log.hits[b.log.hits.length - 1];
+    expect(last.raw).toBe(b.caster.stats.atk * STALKERS_MARK.atk[2]);
+    expect(dist(b.log.dashes[b.log.dashes.length - 1], b.enemies[last.target - 1])).toBe(1);
+    expect(b.log.rolls.length).toBe(STALKERS_MARK.knives);
+    expect(b.log.busy).toEqual([true, false]);
+  });
+
+  test('3★ knives with fewer enemies than knives: all 3 still land, repeating targets', () => {
+    const b = fakeBattle([{ x: 3, y: 4 }, { x: 0, y: 0 }]);
+    b.caster.star = 3;
+    b.caster.stats = unitStats(UNIT_BY_ID.amon, 3);
+    b.cast('stalkersmark');
+    b.log.repeats[0].fn();
+    const knives = b.log.hits.filter((h) => h.effect === 'stalkersknife');
+    expect(knives).toHaveLength(STALKERS_MARK.knives);
+    expect(new Set(knives.map((h) => h.target))).toEqual(new Set([1, 2]));
   });
 
   test('in combat: an adjacent enemy left under the threshold is executed, through shields', () => {
@@ -2933,8 +3020,8 @@ describe("Stalker's Mark", () => {
     }
     // Sturdy enough that its hits leave them low rather than one-shot them.
     a.board[3] = { uid: 1, defId: 'amon', star: 1 };
-    b.board[3] = { uid: 2, defId: 'titan', star: 2 };
-    b.board[4] = { uid: 3, defId: 'titan', star: 2 };
+    b.board[3] = { uid: 2, defId: 'titan', star: 1 };
+    b.board[4] = { uid: 3, defId: 'titan', star: 1 };
     const r = simulateCombat({ rng: 1 }, a, b);
     const me = r.fighters.find((f) => f.defId === 'amon')!.id;
     const executions = r.events.filter((e) => e.type === 'effect' && e.effect === 'execute');
@@ -2979,6 +3066,18 @@ describe('Spectral Cataclysm', () => {
     expect(blast.map((h) => h.target).sort()).toEqual(reached);
     expect(reached).not.toContain(5);
     expect(blast.every((h) => h.raw === atk * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
+    expect(b.log.hitTypes.every((t) => t === 'physical')).toBe(true);
+  });
+
+  test('scales off magic attack and deals magic damage when magic attack is the higher', () => {
+    const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }]);
+    b.caster.stats = { ...unitStats(UNIT_BY_ID.bossalpha, 1), ap: 900 };
+    b.cast('spectralcataclysm');
+    b.log.repeats[0].fn();
+    const hits = b.log.hits;
+    expect(hits.length).toBeGreaterThan(0);
+    expect(b.log.hitTypes.every((t) => t === 'magic')).toBe(true);
+    expect(hits.filter((h) => h.effect === 'spectralcataclysm').every((h) => h.raw === 900 * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
   });
 });
 
@@ -3018,8 +3117,10 @@ describe('Party Crasher (Johnnie)', () => {
 
   test('a Johnnie for every faction + role pair, each a 3-gold hero that costs nothing, attack speed by role', () => {
     const johnnies = Object.values(UNIT_BY_ID).filter((u) => u.johnnie);
-    expect(johnnies.length).toBe(100);
+    expect(johnnies.length).toBe(7 * 8);
+    const left = ['mistbender', 'mooneater', 'storyweaver', 'phasewarper', 'scavenger'];
     for (const u of johnnies) {
+      expect(u.traits.some((t) => left.includes(t))).toBe(false);
       expect(u.tier).toBe(3);
       expect(u.price).toBe(0);
       expect(u.traits.map((t) => TRAITS[t].kind)).toEqual(['faction', 'role']);

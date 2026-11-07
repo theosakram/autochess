@@ -1,4 +1,5 @@
 import { canClaim, gainUnit, type Result } from './actions';
+import { MIRROR } from './mirror';
 import { nextFloat, nextInt } from './rng';
 import { TRAITS } from './traits';
 import type { GameState, Player } from './types';
@@ -112,19 +113,13 @@ export const MIST_WARES: Record<string, MistWare> = Object.fromEntries(
     shield(3),
     {
       id: 'mirror',
-      name: 'Mirror Device',
-      icon: '👥',
+      name: MIRROR.name,
+      icon: MIRROR.icon,
       price: 80,
-      desc: 'Copy one of your units: a new 1-star copy of it, from the pool.',
+      desc: `Goes to your inventory. ${MIRROR.desc}`,
       weight: 1,
-      choose: 'unit',
-      apply(state: GameState, p: Player, choice: string | undefined) {
-        const unit = [...p.board, ...p.bench].find((u) => u && String(u.uid) === choice);
-        if (!unit) return 'Pick one of your units to copy';
-        if (!state.pool[unit.defId]) return `No ${UNIT_BY_ID[unit.defId].name} left to copy`;
-        if (!canClaim(p, unit.defId)) return 'Bench is full';
-        state.pool[unit.defId]--;
-        gainUnit(state, p, unit.defId);
+      apply(_state: GameState, p: Player) {
+        p.mirrors = (p.mirrors ?? 0) + 1;
         return null;
       },
     } satisfies MistWare,

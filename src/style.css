@@ -396,24 +396,37 @@ main { min-width: 0; min-height: 0; }
   color: #14161c;
   font-size: 14px;
 }
-.shop-card .owned, .shop-card .up {
+.shop-flag {
   position: absolute;
-  bottom: 3px;
-  left: 9px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: #000a;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  padding: 2px 7px;
+  border-bottom-right-radius: 6px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
-.shop-card .up { color: var(--accent); }
+.shop-flag.owned { background: #3fb950; color: #0d1a0e; }
+.shop-flag.up { background: var(--accent); color: #14161c; animation: shop-pulse 1s ease-in-out infinite alternate; }
+@keyframes shop-pulse { from { filter: brightness(1); } to { filter: brightness(1.35); } }
+/* 1★ copies held toward the next merge. */
+.shop-pips { position: absolute; bottom: 5px; left: 8px; display: flex; gap: 3px; padding: 2px 3px; border-radius: 4px; background: #000a; }
+.shop-pips i { width: 7px; height: 7px; border-radius: 50%; border: 1px solid #3fb950; }
+.shop-pips i.on { background: #3fb950; }
+.shop-pips i.next { border-style: dashed; border-color: var(--accent); }
+.shop-left { font-size: 11px; font-weight: 600; color: var(--muted); }
+.shop-left.low { color: #ff8a8a; font-weight: 700; }
 .shop-trait { display: flex; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; font-size: 13px; color: #c9ccd6; white-space: nowrap; }
 .shop-trait .t-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .shop-trait em { flex: none; font-style: normal; color: var(--accent); font-weight: 700; }
 .shop-trait.none { color: var(--muted); font-style: italic; }
-.shop-trait.have { color: var(--text); font-weight: 600; }
-/* Buying this completes a merge. */
-.shop-card.upgrade { box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
+.shop-trait.have { margin-left: -3px; padding: 0 3px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); font-weight: 600; }
+.shop-trait.hits { background: color-mix(in srgb, var(--accent) 38%, transparent); }
+/* You already have this hero; buying it completes a merge. */
+.shop-card.have { box-shadow: 0 0 0 2px #3fb950; }
+.shop-card.upgrade { box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent); }
 .shop-card:disabled { opacity: 0.45; cursor: not-allowed; }
 .shop-card:not(:disabled):hover { filter: brightness(1.2); }
 
@@ -435,6 +448,10 @@ main { min-width: 0; min-height: 0; }
 .meter-bar span, .meter-legend span { transition: width 0.15s; }
 .meter .attack { background: #e08a3a; }
 .meter .skill { background: #4a8ff0; }
+.meter .meter-bar.heal .skill, .meter-legend .heal { background: #4caf50; }
+.meter-tabs { display: flex; gap: 4px; margin: 0 0 8px; }
+.meter-tabs button { flex: 1; padding: 3px 0; border-radius: 5px; border: 1px solid #3a3f4d; background: var(--cell); color: var(--muted); font-size: 12px; font-weight: 600; }
+.meter-tabs button.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 18%, var(--cell)); }
 .meter-empty, .meter-legend { color: var(--muted); margin: 8px 0 0; }
 .meter-legend span { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 3px 0 6px; }
 
@@ -741,6 +758,10 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   user-select: none;
 }
 .item-chip .item-icon { font-size: 16px; }
+/* A usable item in the inventory (Mirror Device): click to use, not to equip. */
+.usable-chip { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; background: var(--cell); border: 1px solid var(--accent); color: var(--text); font-size: 12px; cursor: pointer; }
+.usable-chip .item-icon { font-size: 16px; }
+.usable-chip:hover { filter: brightness(1.2); }
 .item-chip { touch-action: none; }
 /* The copy of an item chip that follows the pointer while dragging. */
 .drag-ghost {
@@ -1195,3 +1216,4 @@ button.commander-tab:hover { border-color: var(--accent); }
 .freya-step { padding: 0 6px; border-radius: 999px; background: #00000040; color: var(--muted); }
 .freya-step.ready { background: var(--accent); color: #14161c; font-weight: 700; }
 .freya-step.done { color: #4caf50; }
+.shop-card:has(.shop-flag) .free-tag { top: 22px; }

@@ -160,12 +160,8 @@ export function payCard(state: GameState, p: Player, cardId: string): void {
   if (pickXp) addXp(p, pickXp);
   for (const id of [...(pickItem ? [pickItem] : []), ...startItems]) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
   if (pickChest) addChests(p, pickChest);
-  // Lunox's Twilight Blessing (his power, or his card on another commander): handed out now, placed later.
-  const tw = powersOf(p).twilight;
-  if (tw && !p.twilight) {
-    p.twilight = { holder: null, trait: null };
-    p.gold += tw.gold;
-  }
+  // Lunox's card on another commander: the Twilight Blessing comes with it.
+  grantTwilight(p);
   // Luo Yi's card: its first copy.
   payEcho(state, p);
 }
@@ -175,6 +171,16 @@ export function payCommander(state: GameState, p: Player): void {
   const innate = COMMANDERS[p.commander!].innate;
   for (const id of innate.startItems ?? []) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
   if (innate.startChests) addChests(p, innate.startChests);
+  // Lunox: the Twilight Blessing is his innate power, there from the start.
+  grantTwilight(p);
+}
+
+// Lunox's Twilight Blessing, once a game, with its gold: handed out now, placed later.
+function grantTwilight(p: Player): void {
+  const tw = powersOf(p).twilight;
+  if (!tw || p.twilight) return;
+  p.twilight = { holder: null, trait: null };
+  p.gold += tw.gold;
 }
 
 // Equipment Chests waiting to be opened (see inventory.openChest). They don't count toward an item's chest limit.

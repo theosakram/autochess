@@ -16,6 +16,6 @@ export const tariPenyembuh: SkillDef = {
       .alliesOf(caster)
       .filter((a) => a.hp < a.maxHp)
       .reduce<ReturnType<typeof api.alliesOf>[number] | null>((low, a) => (!low || a.hp / a.maxHp < low.hp / low.maxHp ? a : low), null);
-    if (hurt) api.heal(hurt, caster.stats.ap * TARI_PENYEMBUH.ap[caster.star - 1]);
+    if (hurt) api.heal(hurt, caster.stats.ap * TARI_PENYEMBUH.ap[caster.star - 1], caster);
   },
 };

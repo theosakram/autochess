@@ -369,6 +369,9 @@ export class Stage {
           if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 22, '900');
           else pop(e.target, String(e.damage), e.type === 'cast' ? COLORS.spell : COLORS.text, e.type === 'cast' ? 19 : 16, '900');
           break;
+        case 'mana':
+          for (const [id, mana] of e.mana) setBar(id, 'mana', mana);
+          break;
         case 'skill':
           flash(e.id, COLORS.mana, 400);
           setBar(e.id, 'mana', 0);

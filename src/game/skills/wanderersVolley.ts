@@ -1,6 +1,5 @@
-import { GRID_H } from '../grid';
 import { pct } from '../traits/format';
-import { aheadStrip, enemiesOn } from './areas';
+import { enemiesOn, lineThrough, wideLine } from './areas';
 import type { SkillDef } from './types';
 
 // Moscow (Plane Wanderer, Deadeye). Per star, index 0 = 1★.
@@ -11,13 +10,16 @@ export const WANDERERS_VOLLEY = {
 export const wanderersVolley: SkillDef = {
   id: 'wanderersvolley',
   name: "Wanderer's Volley",
-  desc: 'Looses a projectile 3 tiles wide that flies to the far end of the board ahead of it, hitting every enemy in its path for {atk} of attack as physical damage.',
+  desc: 'Looses a projectile 3 tiles wide through its target to the edge of the board, hitting every enemy in its path for {atk} of attack as physical damage.',
   damage: { atk: 'physical' },
   values: () => ({ atk: WANDERERS_VOLLEY.atk.map(pct) }),
-  cast(api, caster) {
-    const end = { x: caster.x, y: caster.side === 0 ? 0 : GRID_H - 1 };
-    api.showProjectile(caster, end, 0.3, 'wanderersvolley');
+  cast(api, caster, target) {
+    // Aimed at a living enemy: its target, else the nearest.
+    const aim = target.hp > 0 ? target : api.nearestEnemy(caster);
+    if (!aim || (aim.x === caster.x && aim.y === caster.y)) return;
+    const line = lineThrough(caster, aim);
+    api.showProjectile(caster, line[line.length - 1] ?? aim, 0.3, 'wanderersvolley');
     const raw = caster.stats.atk * WANDERERS_VOLLEY.atk[caster.star - 1];
-    for (const e of enemiesOn(api, caster, aheadStrip(caster))) api.hit(caster, e, raw, 'physical', 'wanderersvolley');
+    for (const e of enemiesOn(api, caster, wideLine(caster, aim))) api.hit(caster, e, raw, 'physical', 'wanderersvolley');
   },
 };

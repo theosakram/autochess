@@ -35,6 +35,8 @@ export interface Fighter {
 }
 
 // Mana values are after the event, rounded for display. Regen between events isn't logged.
+const MANA_REPORT_TICKS = 3; // how often regen mana is sent to the view
+
 export type CombatEvent =
   | { t: number; type: 'move'; id: number; x: number; y: number }
   | {
@@ -51,7 +53,9 @@ export type CombatEvent =
     }
   // Damage from an effect (a trait pulse, or an item's when `by` is set) rather than an attack.
   | { t: number; type: 'effect'; effect: string; by?: number; target: number; damage: number; hp: number; crit?: true }
-  | { t: number; type: 'heal'; id: number; amount: number; hp: number }
+  | { t: number; type: 'heal'; id: number; amount: number; hp: number; by?: number } // by: the healer, if not `id` itself
+  // Mana from regen (Stargazer etc.), reported every MANA_REPORT_TICKS for units whose mana changed: [id, mana] pairs.
+  | { t: number; type: 'mana'; mana: [number, number][] }
   // `until` is the tick the stun wears off.
   | { t: number; type: 'stun'; id: number; by: number; until: number; effect?: string } // effect: how it looks (e.g. 'sheep')
   // Units `ids` are linked by `by`: they share damage (see SkillApi.link).
@@ -196,16 +200,18 @@ export function defenseMult(defense: number): number {
 }
 
 // Items like the Thief Tool copy random equipment for one fight: a copy of the player whose holders also
-// hold those (different, random, never the copier itself). The player's own items stay untouched.
+// hold those (random, one per group list for the holder's attack type, never the copier itself). The
+// player's own items stay untouched.
 function withCopies(rng: { rng: number }, p: Player): Player {
   const extra: Player['items'] = [];
   for (const it of p.items) {
-    const n = it.holder === null ? 0 : (ITEMS[it.id].copies ?? 0);
-    if (!n || !p.board.some((u) => u?.uid === it.holder)) continue;
-    const pool = EQUIPMENT.filter((id) => !ITEMS[id].copies);
-    for (let k = 0; k < n && pool.length; k++) {
-      const [id] = pool.splice(nextInt(rng, pool.length), 1);
-      extra.push({ uid: -1 - extra.length - it.uid * 10, id, tier: 1, holder: it.holder });
+    const rule = ITEMS[it.id].copies;
+    const holder = it.holder === null ? undefined : p.board.find((u) => u?.uid === it.holder);
+    if (!rule || !holder) continue;
+    for (const groups of rule[UNIT_BY_ID[holder.defId].attackType ?? 'physical']) {
+      const pool = EQUIPMENT.filter((id) => !ITEMS[id].copies && groups.includes(ITEMS[id].group!));
+      if (!pool.length) continue;
+      extra.push({ uid: -1 - extra.length - it.uid * 10, id: pool[nextInt(rng, pool.length)], tier: 1, holder: it.holder });
     }
   }
   return extra.length ? { ...p, items: [...p.items, ...extra] } : p;
@@ -447,7 +453,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
           .sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp || x.id - y.id)[0];
         if (low) {
           events.push({ t, type: 'effect', effect: 'frostmercy', by: killer.id, target: low.id, damage: 0, hp: low.hp });
-          api.heal(low, low.maxHp * killer.killHeal);
+          api.heal(low, low.maxHp * killer.killHeal, killer);
         }
       }
       // Ruby's Cloak: its marked enemy fell.
@@ -741,14 +747,14 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   // Revitalize: the first drop under the threshold leaves a healing spring on the holder's tile.
-  const springs: { side: Side; cells: Point[]; heal: number; every: number; next: number; left: number; effect: string }[] = [];
+  const springs: { by: number; side: Side; cells: Point[]; heal: number; every: number; next: number; left: number; effect: string }[] = [];
   function checkSpring(f: SimFighter, t: number): void {
     if (!f.spring || f.hp >= f.maxHp * f.spring.below) return;
     const s = f.spring;
     f.spring = null;
     const cells = [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => ({ x: f.x + dx, y: f.y + dy }))).filter((c) => c.x >= 0 && c.y >= 0 && c.x < GRID_W && c.y < GRID_H);
     const every = Math.round(s.every * TICKS_PER_SECOND);
-    springs.push({ side: f.side, cells, heal: s.heal, every, next: t, left: Math.round(s.seconds / s.every), effect: s.effect });
+    springs.push({ by: f.id, side: f.side, cells, heal: s.heal, every, next: t, left: Math.round(s.seconds / s.every), effect: s.effect });
     events.push({ t, type: 'ground', effect: s.effect, cells, until: t + Math.round(s.seconds * TICKS_PER_SECOND) });
     fireSprings(t);
   }
@@ -758,7 +764,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       for (const c of s.cells) {
         const id = occupied[gridIndex(c)];
         const ally = id >= 0 ? fighters[id] : null;
-        if (ally && ally.side === s.side && ally.hp > 0) api.heal(ally, ally.maxHp * s.heal);
+        if (ally && ally.side === s.side && ally.hp > 0) api.heal(ally, ally.maxHp * s.heal, fighters[s.by]);
       }
       s.left--;
       s.next = t + s.every;
@@ -931,12 +937,12 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     stun: (who, seconds, by) => {
       disable(fighters[who.id], seconds, fighters[by.id]);
     },
-    heal: (who, amount) => {
+    heal: (who, amount, by) => {
       const f = fighters[who.id];
       const healed = Math.min(f.maxHp - f.hp, Math.round(amount * healMult(f)));
       if (f.hp <= 0 || healed <= 0) return 0;
       f.hp += healed;
-      events.push({ t, type: 'heal', id: f.id, amount: healed, hp: f.hp });
+      events.push({ t, type: 'heal', id: f.id, amount: healed, hp: f.hp, ...(by && by.id !== f.id && { by: by.id }) });
       return healed;
     },
     minionsOf: (f) => fighters.filter((m) => m.owner === f.id && m.hp > 0),
@@ -1300,7 +1306,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       for (const c of cells) {
         const there = fighters.find((o) => o.hp > 0 && o.x === c.x && o.y === c.y);
         if (!there) continue;
-        if (there.side === f.side) api.heal(there, there.maxHp * beam.heal);
+        if (there.side === f.side) api.heal(there, there.maxHp * beam.heal, f);
         else {
           const dealt = damage(there, beam.damage, 'magic', f);
           events.push({ t, type: 'effect', effect: 'lovebeam', by: f.id, target: there.id, damage: dealt, hp: there.hp });
@@ -1505,8 +1511,20 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     }
   }
 
+  const shownMana = new Map<number, number>();
   for (; t < MAX_COMBAT_TICKS && alive(0) && alive(1); t++) {
     for (const f of fighters) if (f.hp > 0) gainMana(f, f.stats.manaRegen / TICKS_PER_SECOND);
+    // Regen moves mana between hits; without this the bar would only catch up on the next attack.
+    if (t % MANA_REPORT_TICKS === 0) {
+      const mana: [number, number][] = [];
+      for (const f of fighters) {
+        if (f.hp <= 0 || !f.stats.manaRegen) continue;
+        const now = Math.floor(f.mana);
+        if (shownMana.get(f.id) !== now) mana.push([f.id, now]);
+        shownMana.set(f.id, now);
+      }
+      if (mana.length) events.push({ t, type: 'mana', mana });
+    }
     firePulses(t);
     fireItemPulses(t);
     fireLoveBeams(t);

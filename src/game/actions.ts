@@ -7,12 +7,13 @@ import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
 import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, type MarkKind } from './commanders';
 import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
-import { cardRolls, openTrove, rollTrove, useMirror } from './luckyDice';
+import { cardRolls, openTrove, rollTrove } from './luckyDice';
+import { useMirror } from './mirror';
 import { offer, type AltarKey } from './altar';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
-import { absorb, bloodMerge, bloodRoom, copiesOf, findCopies, mergeUnits, promote, slotsOf } from './merge';
+import { absorb, bloodMerge, bloodRoom, copiesOf, findCopies, mergeSize, mergeUnits, nearMerge, promote, slotsOf } from './merge';
 import { addXp, boardCount, isAlive, levelUpCost } from './player';
 import { refreshShop, shopPrice } from './shop';
 import { TRAITS } from './traits';
@@ -40,7 +41,7 @@ export type Action =
   | { type: 'pickItem'; item: string } // one of the basic items on offer
   | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (a roll a round, unused ones bank up)
   | { type: 'openTrove' } // Kaela: cash in the Trove's points
-  | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device won from the dice
+  | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device from the inventory
   | { type: 'offer'; altar: AltarKey; unit: number } // Dyroth: offer a hero (uid) on one of his altars
   | { type: 'bless'; unit: number } // Lunox: place the Twilight Blessing on a hero (uid)
   | { type: 'bloodPact'; unit: number } // Alice: use a Blood Pact on a hero (uid)
@@ -65,7 +66,7 @@ function slotsAt(p: Player, loc: Loc): (Unit | null)[] | null {
 
 // A full bench is fine if this copy completes a merge.
 export function canClaim(p: Player, defId: string): boolean {
-  return p.bench.includes(null) || findCopies(p, defId, 1).length >= 2 || bloodRoom(p, defId) !== null;
+  return p.bench.includes(null) || nearMerge(p, defId) || bloodRoom(p, defId) !== null;
 }
 
 // Moves a shop unit onto the bench (no payment) and merges. Check canClaim first.
@@ -85,11 +86,11 @@ export function gainUnit(state: GameState, p: Player, defId: string): void {
   if (free >= 0) {
     p.bench[free] = { uid: state.nextUid++, defId, star: 1 };
   } else {
-    // Absorbed straight into the pair it completes.
-    const [keep, other] = findCopies(p, defId, 1);
+    // Absorbed straight into the set it completes.
+    const [keep, ...others] = findCopies(p, defId, 1);
     const keeper = slotsOf(p, keep.area)[keep.index]!;
     promote(p, keeper, 2);
-    absorb(p, keeper, other);
+    for (const loc of others.slice(0, mergeSize(defId) - 2)) absorb(p, keeper, loc);
   }
   mergeUnits(p, defId);
 }

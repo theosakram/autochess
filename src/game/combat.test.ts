@@ -177,6 +177,26 @@ describe('traits', () => {
     };
     expect(firstCast([true, true])).toBeLessThan(firstCast([false, false]));
   });
+
+  test('regen mana reaches the view between hits (mana events), only for units that regen', () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    field(a, [['luoyi', 1, 15], ['mathilda', 1, 18]]);
+    field(b, [['footman', 1, 3]]);
+    const r = simulateCombat({ rng: 1 }, a, b, { traits: [true, true] });
+    const mathilda = r.fighters.find((f) => f.defId === 'mathilda')!.id;
+    const footman = r.fighters.find((f) => f.defId === 'footman')!.id;
+    const mana = r.events.flatMap((e) => (e.type === 'mana' ? e.mana : []));
+    const hers = mana.filter(([id]) => id === mathilda);
+    // Before her first attack or hit, her bar already climbs.
+    const firstHit = r.events.find((e) => (e.type === 'attack' || e.type === 'cast') && (e.id === mathilda || e.target === mathilda))?.t ?? Infinity;
+    const early = r.events.filter((e) => e.type === 'mana' && e.t < firstHit && e.mana.some(([id]) => id === mathilda));
+    expect(early.length).toBeGreaterThan(1);
+    expect(hers.length).toBeGreaterThan(0);
+    expect(mana.some(([id]) => id === footman)).toBe(false);
+    const off = simulateCombat({ rng: 1 }, a, b, { traits: [false, false] });
+    expect(off.events.some((e) => e.type === 'mana')).toBe(false);
+  });
 });
 
 describe('dragon altar', () => {

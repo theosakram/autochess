@@ -7,11 +7,14 @@ import { TRAITS } from '../game/traits';
 import { UNIT_BY_ID } from '../game/units';
 import { portraitOf } from './portraits';
 
-// Damage dealt by the viewer's side in one fight, filled in as playback replays events.
+// Damage dealt, damage taken and healing done by the viewer's side in one fight, filled in as playback
+// replays events. A summon's numbers count for its owner.
 export interface Meter {
   fight: Fight;
   side: Side;
   byUnit: Map<number, { attack: number; skill: number }>;
+  taken: Map<number, { attack: number; skill: number }>; // attack: from basic attacks; skill: everything else
+  healed: Map<number, number>; // healing each unit did (to itself or allies)
   byTrait: Map<string, number>; // damage from effects with no unit behind them, e.g. lightning
   dead: Set<number>;
   live: boolean;
@@ -20,15 +23,28 @@ export interface Meter {
 
 export function createMeter(fight: Fight, viewerId: string): Meter {
   const side: Side = fight.home === viewerId ? 0 : 1;
-  const byUnit = new Map(fight.result.fighters.filter((f) => f.side === side).map((f) => [f.id, { attack: 0, skill: 0 }]));
-  return { fight, side, byUnit, byTrait: new Map(), dead: new Set(), live: true, summons: new Map() };
+  const mine = fight.result.fighters.filter((f) => f.side === side);
+  const byUnit = new Map(mine.map((f) => [f.id, { attack: 0, skill: 0 }]));
+  const taken = new Map(mine.map((f) => [f.id, { attack: 0, skill: 0 }]));
+  const healed = new Map(mine.map((f) => [f.id, 0]));
+  return { fight, side, byUnit, taken, healed, byTrait: new Map(), dead: new Set(), live: true, summons: new Map() };
 }
 
 export function recordEvent(m: Meter, e: CombatEvent): void {
+  const owner = (id: number) => m.summons.get(id)?.owner ?? id;
   if (e.type === 'summon') {
     m.summons.set(e.fighter.id, { owner: e.owner, side: e.fighter.side });
-  } else if (e.type === 'attack' || e.type === 'cast') {
-    const tally = m.byUnit.get(m.summons.get(e.id)?.owner ?? e.id);
+  } else if (e.type === 'heal') {
+    const by = owner(e.by ?? e.id);
+    if (m.healed.has(by)) m.healed.set(by, m.healed.get(by)! + e.amount);
+    return;
+  }
+  if (e.type === 'attack' || e.type === 'cast' || e.type === 'effect') {
+    const hurt = m.taken.get(owner(e.target));
+    if (hurt) hurt[e.type === 'attack' ? 'attack' : 'skill'] += e.damage;
+  }
+  if (e.type === 'attack' || e.type === 'cast') {
+    const tally = m.byUnit.get(owner(e.id));
     if (tally) tally[e.type === 'cast' ? 'skill' : 'attack'] += e.damage;
   } else if (e.type === 'effect') {
     if (e.by !== undefined) {
@@ -44,17 +60,38 @@ export function recordEvent(m: Meter, e: CombatEvent): void {
   }
 }
 
-export function meterHtml(m: Meter | null): string {
-  if (!m) return `<aside class="meter"><h3>Damage</h3><p class="meter-empty">Fight to see who carried.</p></aside>`;
-  const units = [...m.byUnit].map(([id, d]) => {
+export type MeterTab = 'dealt' | 'taken' | 'healing';
+
+const TABS: { id: MeterTab; name: string; title: string }[] = [
+  { id: 'dealt', name: 'Dealt', title: 'Damage dealt' },
+  { id: 'taken', name: 'Taken', title: 'Damage taken' },
+  { id: 'healing', name: 'Healing', title: 'Healing done' },
+];
+
+type Row = { key: string; label: string; tier: number; attack: number; skill: number; dead: boolean };
+
+export function meterHtml(m: Meter | null, tab: MeterTab = 'dealt'): string {
+  const tabs = `<nav class="meter-tabs">${TABS.map((t) => `<button class="${t.id === tab ? 'on' : ''}" data-action="meterTab" data-tab="${t.id}" title="${t.title}">${t.name}</button>`).join('')}</nav>`;
+  const title = TABS.find((t) => t.id === tab)!.title;
+  if (!m) return `<aside class="meter"><h3>${title}</h3>${tabs}<p class="meter-empty">Fight to see who carried.</p></aside>`;
+  const unitRow = (id: number, attack: number, skill: number): Row => {
     const f = m.fight.result.fighters[id];
-    return { key: `u${id}`, label: `${portraitOf(f.defId)} ${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, ...d, dead: m.dead.has(id) };
-  });
-  const traits = [...m.byTrait].map(([id, dmg]) => {
-    const src = TRAITS[id] ?? ITEMS[id] ?? COMMANDER_EFFECTS[id];
-    return { key: id, label: `${src.icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
-  });
-  const rows = [...units, ...traits].sort((a, b) => b.attack + b.skill - (a.attack + a.skill));
+    return { key: `u${id}`, label: `${portraitOf(f.defId)} ${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, attack, skill, dead: m.dead.has(id) };
+  };
+  let rows: Row[];
+  if (tab === 'dealt') {
+    const traits = [...m.byTrait].map(([id, dmg]) => {
+      const src = TRAITS[id] ?? ITEMS[id] ?? COMMANDER_EFFECTS[id];
+      return { key: id, label: `${src.icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
+    });
+    rows = [...[...m.byUnit].map(([id, d]) => unitRow(id, d.attack, d.skill)), ...traits];
+  } else if (tab === 'taken') {
+    rows = [...m.taken].map(([id, d]) => unitRow(id, d.attack, d.skill));
+  } else {
+    // Healing has one colour: it's all in the "skill" part of the bar.
+    rows = [...m.healed].map(([id, n]) => unitRow(id, 0, n));
+  }
+  rows.sort((a, b) => b.attack + b.skill - (a.attack + a.skill));
   const top = Math.max(1, ...rows.map((r) => r.attack + r.skill));
   const total = rows.reduce((n, r) => n + r.attack + r.skill, 0);
 
@@ -62,15 +99,20 @@ export function meterHtml(m: Meter | null): string {
     .map(
       (r) => `<li class="${r.dead ? 'dead' : ''}${r.tier ? ` tier-${r.tier}` : ' trait-row'}">
         <div class="meter-label"><span>${r.label}</span><b>${r.attack + r.skill}</b></div>
-        <div class="meter-bar">
+        <div class="meter-bar${tab === 'healing' ? ' heal' : ''}">
           <span class="attack" style="width:${(r.attack / top) * 100}%"></span><span class="skill" style="width:${(r.skill / top) * 100}%"></span>
         </div>
       </li>`,
     )
     .join('');
+  const legend =
+    tab === 'healing'
+      ? '<p class="meter-legend"><span class="heal"></span>healing, its own and on allies</p>'
+      : `<p class="meter-legend"><span class="attack"></span>${tab === 'taken' ? 'from attacks' : 'attacks'} <span class="skill"></span>${tab === 'taken' ? 'from skills &amp; effects' : 'skills &amp; effects'}</p>`;
   return `<aside class="meter">
-    <h3>${m.live ? 'Damage' : 'Last fight'} <small>${total}</small></h3>
+    <h3>${m.live ? title : `${title}, last fight`} <small>${total}</small></h3>
+    ${tabs}
     <ul>${body}</ul>
-    <p class="meter-legend"><span class="attack"></span>attacks <span class="skill"></span>skills &amp; effects</p>
+    ${legend}
   </aside>`;
 }

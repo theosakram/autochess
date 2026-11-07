@@ -34,6 +34,33 @@ function twoStar(state: GameState, p: Player, defId: string): void {
   }
 }
 
+describe('Boss Alpha merges four at a time', () => {
+  test('4 x 1★ -> 2★, 4 x 2★ -> 3★; three copies stay apart', () => {
+    const state = newGame();
+    const p = state.players[0];
+    const buy = () => {
+      p.shop[0] = 'bossalpha';
+      expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    };
+    for (let i = 0; i < 3; i++) buy();
+    expect(owned(p)).toEqual(['bossalpha1', 'bossalpha1', 'bossalpha1']);
+    buy();
+    expect(owned(p)).toEqual(['bossalpha2']);
+    for (let i = 0; i < 12; i++) buy();
+    expect(owned(p)).toEqual(['bossalpha3']);
+  });
+
+  test('with a full bench, the fourth copy still completes the merge', () => {
+    const state = newGame();
+    const p = state.players[0];
+    for (let i = 0; i < 3; i++) put(p, 'bossalpha', i);
+    p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: ++uid, defId: 'val', star: 1 }));
+    p.shop[0] = 'bossalpha';
+    expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    expect(owned(p).filter((x) => x.startsWith('bossalpha'))).toEqual(['bossalpha2']);
+  });
+});
+
 describe('Spectre', () => {
   test('seven units at 1, 2, 3, 3, 4, 5, 7 gold; the 7-gold is Spectre only', () => {
     const units = UNITS.filter((u) => u.shop !== false && u.traits.includes('spectre')).sort((a, b) => a.tier - b.tier || a.id.localeCompare(b.id));

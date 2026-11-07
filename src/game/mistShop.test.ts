@@ -71,14 +71,19 @@ describe('Mist Shop', () => {
     expect(s.mr).toBeCloseTo(plain.mr * 1.02);
   });
 
-  test('Mirror copies one of your units from the pool', () => {
+  test('Mirror goes to the inventory, to copy one of your units from the pool whenever you like', () => {
     const { state, p } = setup();
     p.mistShop = ['mirror', 'blade1', 'blade1'];
     const pool = state.pool.uranus;
-    expect(buy(state, p, 0).ok).toBe(false); // needs a pick
-    expect(buy(state, p, 0, '9001').ok).toBe(true);
+    expect(buy(state, p, 0).ok).toBe(true); // no pick: it's an item
+    expect(p.mirrors).toBe(1);
+    expect([...p.board, ...p.bench].filter((u) => u?.defId === 'uranus')).toHaveLength(1);
+    // Later: use it.
+    expect(applyAction(state, p.id, { type: 'useMirror', unit: 9001 }).ok).toBe(true);
+    expect(p.mirrors).toBe(0);
     expect([...p.board, ...p.bench].filter((u) => u?.defId === 'uranus')).toHaveLength(2);
     expect(state.pool.uranus).toBe(pool - 1);
+    expect(applyAction(state, p.id, { type: 'useMirror', unit: 9001 }).ok).toBe(false); // none left
   });
 
   test('orbs are held like items: +1 while the holder is fielded, movable, back to inventory when it leaves', async () => {

@@ -1,10 +1,17 @@
 import { MAX_ITEMS_PER_UNIT } from './config';
 import type { Loc, Player, Star, Unit } from './types';
+import { UNIT_BY_ID } from './units';
 
 const MAX_STAR = 3;
 
+// Same-star copies that merge into one of the next star (3, or more for some units).
+export const mergeSize = (defId: string) => UNIT_BY_ID[defId]?.mergeSize ?? 3;
+
 // 1★ copies a unit is made of; what goes back to the pool when it leaves play.
-export const copiesOf = (u: Unit) => u.copies ?? 3 ** (u.star - 1);
+export const copiesOf = (u: Unit) => u.copies ?? mergeSize(u.defId) ** (u.star - 1);
+
+// Owning this many 1★ copies means the next one completes a star-up.
+export const nearMerge = (p: Player, defId: string) => findCopies(p, defId, 1).length >= mergeSize(defId) - 1;
 
 // Alice's Blood Pact: copies needed for 1, 2, 3 and "4" stars on a blessed hero (it can't go past the last).
 export const BLOOD_STEPS = [1, 3, 9, 13];
@@ -83,15 +90,16 @@ export function promote(p: Player, keeper: Unit, star: Star): void {
   (p.promotions ??= []).push({ defId: keeper.defId, star });
 }
 
-// Combine every set of three same-star copies, cascading 1★ -> 2★ -> 3★.
+// Combine every full set of same-star copies (mergeSize), cascading 1★ -> 2★ -> 3★.
 export function mergeUnits(p: Player, defId: string): void {
   if (p.blood?.blessed.includes(defId)) return bloodMerge(p, defId);
+  const size = mergeSize(defId);
   for (let star = 1; star < MAX_STAR; star++) {
     let copies = findCopies(p, defId, star as Star);
-    while (copies.length >= 3) {
+    while (copies.length >= size) {
       const [keep, ...rest] = copies;
       const keeper = slotsOf(p, keep.area)[keep.index]!;
-      for (const loc of rest.slice(0, 2)) absorb(p, keeper, loc);
+      for (const loc of rest.slice(0, size - 1)) absorb(p, keeper, loc);
       promote(p, keeper, (star + 1) as Star);
       copies = findCopies(p, defId, star as Star);
     }

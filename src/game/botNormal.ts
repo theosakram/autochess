@@ -4,6 +4,7 @@ import { COMMANDERS } from './commanders';
 import { REROLL_COST, STAR_MULT, stageRound } from './config';
 import { equipBlock } from './inventory';
 import { isItemCard, ITEMS } from './items';
+import { mergeSize } from './merge';
 import { levelUpCost } from './player';
 import { nextInt } from './rng';
 import { tileSeating, traitCounts, traitLevel } from './traits';
@@ -32,7 +33,7 @@ type Card = { defId: string; star: number };
 const power = (defId: string, star: number) => (UNIT_BY_ID[defId].tier + 1) * STAR_MULT[star - 1];
 const owned = (p: Player) => [...p.board, ...p.bench].filter((u): u is Unit => u !== null && !UNIT_BY_ID[u.defId].piece);
 
-// Three of a kind merge into one of the next star, as buying does.
+// A full set of a kind (mergeSize) merges into one of the next star, as buying does.
 function merged(cards: Card[]): Card[] {
   const out = cards.slice();
   for (let again = true; again; ) {
@@ -40,8 +41,8 @@ function merged(cards: Card[]): Card[] {
     for (const c of out) {
       if (c.star >= 3) continue;
       const same = out.filter((d) => d.defId === c.defId && d.star === c.star);
-      if (same.length < 3) continue;
-      for (const d of same) out.splice(out.indexOf(d), 1);
+      if (same.length < mergeSize(c.defId)) continue;
+      for (const d of same.slice(0, mergeSize(c.defId))) out.splice(out.indexOf(d), 1);
       out.push({ defId: c.defId, star: c.star + 1 });
       again = true;
       break;
@@ -127,7 +128,7 @@ function shopPass(state: GameState, p: Player, reserve: number): void {
     if (p.gold < cost) continue;
     const worth = buyWorth(p, id);
     // A copy that completes a star-up is worth dipping into the bank for.
-    const triple = owned(p).filter((u) => u.defId === id && u.star === 1).length >= 2;
+    const triple = owned(p).filter((u) => u.defId === id && u.star === 1).length >= mergeSize(id) - 1;
     if (worth < B.buyMin || (!triple && p.gold - cost < reserve)) continue;
     if (!applyAction(state, p.id, { type: 'buy', slot: i }).ok && sellWorst(state, p, worth)) applyAction(state, p.id, { type: 'buy', slot: i });
   }

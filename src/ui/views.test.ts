@@ -4,7 +4,7 @@ import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
 import { traitBadgeHtml } from './traitBadges';
-import { armoryHtml, bearerDetailHtml, galleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
 import { SKILLS } from '../game/skills';
 
 describe('orb choice popup', () => {
@@ -18,6 +18,40 @@ describe('orb choice popup', () => {
     const html = orbChoiceHtml(p, 900);
     expect(html).not.toContain('data-trait=');
     for (const trait of orbOptions(42, 'angela')) expect(html).toContain(`data-action="useOrb" data-orb-trait="${trait}"`);
+  });
+});
+
+describe('shop cards', () => {
+  const setup = () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    p.gold = 100;
+    p.shop = ['val', 'bossalpha', null, null, null];
+    return { state, p, html: () => shopDockHtml(p, state.round, false, state.chosen, false, state.pool) };
+  };
+
+  test('owned heroes are flagged with their stars; a copy that completes a merge says STAR UP', () => {
+    const { p, html } = setup();
+    expect(html()).not.toContain('shop-flag');
+    p.bench[0] = { uid: 1, defId: 'val', star: 1 };
+    expect(html()).toContain('✓ Have 1★');
+    p.bench[1] = { uid: 2, defId: 'val', star: 1 };
+    expect(html()).toContain('★★ STAR UP');
+    // Boss Alpha merges four at a time: two copies are not enough.
+    p.bench[2] = { uid: 3, defId: 'bossalpha', star: 1 };
+    p.bench[3] = { uid: 4, defId: 'bossalpha', star: 1 };
+    expect(html().match(/STAR UP/g)).toHaveLength(1);
+    p.bench[4] = { uid: 5, defId: 'bossalpha', star: 1 };
+    expect(html().match(/STAR UP/g)).toHaveLength(2);
+  });
+
+  test('traits you field are lit with the count buying brings; copies left in the pool are shown', () => {
+    const { state, p, html } = setup();
+    p.board[0] = { uid: 1, defId: 'harley', star: 1 }; // shares Necromancer with Val
+    expect(html()).toMatch(/shop-trait have[^"]*"[^>]*>.*?<em>1→2<\/em>/);
+    expect(html()).toContain(`(${state.pool.val + 1}/25)`);
   });
 });
 

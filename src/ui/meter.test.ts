@@ -28,6 +28,44 @@ describe('damage meter', () => {
     // Only the viewer's units are listed.
     expect([...m.byUnit.keys()].every(mine)).toBe(true);
     expect(meterHtml(m)).toContain(String(expected));
+
+    // Damage taken: everything that landed on the viewer's units.
+    const takenExpected = fight.result.events.reduce(
+      (n, e) => ((e.type === 'attack' || e.type === 'cast' || e.type === 'effect') && fight.result.fighters[e.target] && mine(e.target) ? n + e.damage : n),
+      0,
+    );
+    expect([...m.taken.values()].reduce((n, d) => n + d.attack + d.skill, 0)).toBe(takenExpected);
+    expect(meterHtml(m, 'taken')).toContain(String(takenExpected));
+    // Healing done: every heal credited to the viewer's units.
+    const healExpected = fight.result.events.reduce(
+      (n, e) => (e.type === 'heal' && fight.result.fighters[e.by ?? e.id] && mine(e.by ?? e.id) ? n + e.amount : n),
+      0,
+    );
+    expect([...m.healed.values()].reduce((n, d) => n + d, 0)).toBe(healExpected);
+    expect(meterHtml(m, 'healing')).toContain('data-tab="healing"');
+  });
+});
+
+describe('meter heals', () => {
+  test('a heal counts for its healer, not the unit healed', () => {
+    const fight = {
+      home: 'a',
+      result: {
+        fighters: [
+          { id: 0, side: 0, defId: 'melina', star: 1 },
+          { id: 1, side: 0, defId: 'titan', star: 1 },
+          { id: 2, side: 1, defId: 'titan', star: 1 },
+        ],
+        events: [],
+      },
+    } as unknown as Parameters<typeof createMeter>[0];
+    const m = createMeter(fight, 'a');
+    recordEvent(m, { t: 1, type: 'heal', id: 1, by: 0, amount: 50, hp: 100 });
+    recordEvent(m, { t: 2, type: 'heal', id: 1, amount: 20, hp: 120 });
+    recordEvent(m, { t: 3, type: 'attack', id: 2, target: 1, damage: 30, hp: 90, mana: 0, targetMana: 0 });
+    expect(m.healed.get(0)).toBe(50);
+    expect(m.healed.get(1)).toBe(20);
+    expect(m.taken.get(1)).toEqual({ attack: 30, skill: 0 });
   });
 });
 

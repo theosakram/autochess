@@ -84,6 +84,7 @@ export interface CommanderPower {
   luckyRolls?: { round: number; min: number; max: number }[];
   johnnie?: JohnniePower; // Johnson: Johnnie's Den (see johnnie.ts)
   johnnieBuff?: { hybridAtk: number; hp: number }; // Johnson's card: every Johnnie gets these shares more
+  johnniePool?: number; // Johnson's card: extra copies the player's Johnnie rolls with in the shop
   mirrorBar?: MirrorBarPower; // Amon (see mirrorBar.ts)
   starGold?: StarGoldPower; // Amon's card
   rally?: RallyPower; // Cyclops: once, at low hp (see cyclops.ts in game/)
@@ -172,7 +173,7 @@ export interface BloodPower {
   perCopy: number;
 }
 
-// Lunox's Twilight Blessing: `gold` when it's handed out, and `heroes` random 1- or 2-cost heroes of the rolled
+// Lunox's Twilight Blessing: `gold` when it's handed out, and `heroes` random heroes (costs by the shop odds) of the rolled
 // trait once it's placed.
 export interface EssencePower {
   share: number; // of the altar hero's stats and its items' stats the core's holder gets

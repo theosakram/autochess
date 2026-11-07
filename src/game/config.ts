@@ -99,7 +99,7 @@ export const BASE_CRIT_DAMAGE = 1.5;
 export const BASE_DAMAGE = 2;
 
 // Copies of each unit in the shared pool, indexed by tier - 1.
-export const POOL_SIZE: Record<number, number> = { 1: 29, 2: 22, 3: 18, 4: 12, 5: 10, 7: 6 }; // copies per unit, by tier
+export const POOL_SIZE: Record<number, number> = { 1: 25, 2: 25, 3: 18, 4: 15, 5: 9, 7: 18 }; // copies per unit, by tier (7: Boss Alpha, who merges 4 at a time)
 
 // XP (= gold, at GOLD_PER_XP 1) needed to go from level n to n + 1, indexed by n - 1.
 // Players start at level 3, so the first two entries only matter for tests.

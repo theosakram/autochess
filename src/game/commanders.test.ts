@@ -11,7 +11,7 @@ import { claimable } from './freya';
 import { checkRally, heroValue, payHeirs } from './cyclops';
 import { bloodStars } from './blood';
 import { copiesOf, mergeUnits } from './merge';
-import { STAR_MULT } from './config';
+import { SHOP_ODDS, STAR_MULT } from './config';
 import { ICE_LONGBOW } from './items';
 import { playerTraitCounts } from './traits';
 import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, DYROTH, hurtPlayer, KAELA, KAGURA, KENZO, LUKAS, NANA, payCard, RUBY, markedUid, markKinds, powersOf, protectedUids } from './commanders';
@@ -888,13 +888,26 @@ describe('Lunox', () => {
     return { state, p };
   }
 
-  test('the blessing comes with the card pick (plus 6 gold), and only once', () => {
-    const { p } = lunoxGame('lukas');
+  test('the blessing is innate: it (plus 6 gold) comes with picking Lunox, before any card, and only once', () => {
+    const state = createGame(9, SEEDS);
+    const p = state.players[0];
+    const before = p.gold;
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'lunox' }).ok).toBe(true);
     expect(p.twilight).toEqual({ holder: null, trait: null });
-    expect(p.gold).toBe(LUNOX.twilight.gold);
+    expect(p.gold).toBe(before + LUNOX.twilight.gold);
+    // Any card later (his own included) hands out no second blessing or its gold.
+    const { p: q } = lunoxGame('lukas');
+    expect(q.twilight).toEqual({ holder: null, trait: null });
+    expect(q.gold).toBe(0);
   });
 
-  test('blessing a hero rolls one of its own traits, +1 on top of the Magic Orb, and gives 3 heroes of it (1-2 cost)', () => {
+  test("on another commander, Lunox's card brings the blessing", () => {
+    const { p } = lunoxGame('lunox', 'lukas');
+    expect(p.twilight).toEqual({ holder: null, trait: null });
+    expect(p.gold).toBe(LUNOX.other.gold);
+  });
+
+  test('blessing a hero rolls one of its own traits, +1 on top of the Magic Orb, and gives 2 heroes of it (costs by shop odds)', () => {
     const { state, p } = lunoxGame('lunox');
     p.board[3] = { uid: 950, defId: 'dyroth', star: 1 }; // Gustiwana Fighter
     p.orb = { defId: 'dyroth', trait: 'gustiwana' };
@@ -905,11 +918,28 @@ describe('Lunox', () => {
     expect(playerTraitCounts(p)[trait]).toBe((before[trait] ?? 0) + 1);
     expect(before.gustiwana).toBe(2); // the hero plus the orb; a Gustiwana roll makes it 3
     expect(p.twilight!.gifts).toHaveLength(LUNOX.twilight.heroes);
+    expect(LUNOX.twilight.heroes).toBe(2);
     for (const id of p.twilight!.gifts!) {
       expect(UNIT_BY_ID[id].traits).toContain(trait);
-      expect([1, 2]).toContain(UNIT_BY_ID[id].tier);
+      expect(SHOP_ODDS[p.level - 1][UNIT_BY_ID[id].tier - 1]).toBeGreaterThan(0); // a cost this level's shop rolls
     }
     expect(applyAction(state, p.id, { type: 'bless', unit: 950 }).ok).toBe(false); // once
+  });
+
+  test('the gifted heroes follow the shop odds: at a high level, pricier ones turn up', () => {
+    const tiers = new Set<number>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const state = createGame(seed, SEEDS);
+      const p = state.players[0];
+      expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'lunox' }).ok).toBe(true);
+      p.level = 10;
+      p.bench.fill(null);
+      p.board.fill(null);
+      p.board[3] = { uid: 950, defId: 'dyroth', star: 1 };
+      expect(applyAction(state, p.id, { type: 'bless', unit: 950 }).ok).toBe(true);
+      for (const id of p.twilight!.gifts!) tiers.add(UNIT_BY_ID[id].tier);
+    }
+    expect([...tiers].some((t) => t >= 3)).toBe(true);
   });
 
   test('it stays with that very hero: a second copy has none, and selling the hero loses it', () => {
@@ -926,9 +956,9 @@ describe('Lunox', () => {
     expect(playerTraitCounts(p)[trait]).toBe(1);
   });
 
-  test('Eclipse on Lunox: 8 gold on the pick (with his 6), and the first time the blessed trait reaches 6, 18 gold, once', () => {
+  test('Eclipse on Lunox: 8 gold on the pick (his 6 came with Lunox already), and the first time the blessed trait reaches 6, 18 gold, once', () => {
     const { state, p } = lunoxGame('lunox');
-    expect(p.gold).toBe(LUNOX.twilight.gold + LUNOX.cardGold);
+    expect(p.gold).toBe(LUNOX.cardGold);
     expect(LUNOX.cardGold).toBe(8);
     expect(LUNOX.twilightGold.gold).toBe(18);
     const trait = 'gustiwana';

@@ -121,11 +121,3 @@ export function cardRolls(state: GameState, p: Player): void {
   }
 }
 
-// Copies one of the player's units with a Mirror Device they won.
-export function useMirror(state: GameState, p: Player, uid: number): string | null {
-  if (!p.mirrors) return 'You have no Mirror Device';
-  const err = MIST_WARES.mirror.apply(state, p, String(uid));
-  if (err) return err;
-  p.mirrors--;
-  return null;
-}

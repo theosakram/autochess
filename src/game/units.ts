@@ -113,7 +113,7 @@ export const UNITS: UnitDef[] = [
   // Plane Wanderers: raised by the Necromancer grave (one per player, rolled once), never in the shop.
   { id: 'gatotkaca', name: 'Gatotkaca', tier: 5, traits: [FI], hp: 4075, atk: 215, ap: 215, armor: 36, mr: 36, mana: 50, range: 1, attackTicks: 13, honorary: { trait: NE, icon: '🧭' }, skill: 'bladedescent', shop: false, freeSlot: true, starStats: { hp: [4075, 7335, 50535], atk: [215, 320, 680], ap: [215, 320, 680], mana: [50, 50, 20] } },
   { id: 'moscow', name: 'Moscow', tier: 5, traits: [DE], hp: 3365, atk: 220, ap: 220, armor: 24, mr: 24, mana: 50, range: 4, attackTicks: 12, honorary: { trait: NE, icon: '🧭' }, skill: 'wanderersvolley', shop: false, freeSlot: true, starStats: { hp: [3365, 6415, 44205], atk: [220, 330, 705], ap: [220, 330, 705], mana: [50, 50, 20] } },
-  { id: 'amon', name: 'Amon', tier: 5, traits: [HU], hp: 3900, atk: 235, ap: 235, armor: 36, mr: 36, mana: 30, range: 1, attackTicks: 13, honorary: { trait: NE, icon: '🧭' }, skill: 'stalkersmark', shop: false, freeSlot: true, starStats: { hp: [3900, 7020, 48000], atk: [235, 355, 760], ap: [235, 355, 760], mana: [30, 30, 20] } },
+  { id: 'amon', name: 'Amon', tier: 5, traits: [HU], hp: 3900, atk: 235, ap: 235, armor: 36, mr: 36, mana: 40, range: 1, attackTicks: 13, honorary: { trait: NE, icon: '🧭' }, skill: 'stalkersmark', shop: false, freeSlot: true, starStats: { hp: [3900, 7020, 48000], atk: [235, 355, 760], ap: [235, 355, 760], mana: [40, 40, 20] } },
   { id: 'cyborg', name: 'Cyborg', tier: 5, traits: [DN], hp: 4400, atk: 230, ap: 230, armor: 36, mr: 36, mana: 40, range: 1, attackTicks: 15, honorary: { trait: NE, icon: '🧭' }, skill: 'craterfall', shop: false, freeSlot: true, starStats: { hp: [4400, 7920, 54000], atk: [230, 345, 740], ap: [230, 345, 740], mana: [40, 40, 20] } },
   { id: 'novaria', name: 'Novaria', tier: 5, traits: [SG], hp: 3200, atk: 165, ap: 165, armor: 24, mr: 24, mana: 50, range: 4, attackTicks: 13, attackType: 'magic', honorary: { trait: NE, icon: '🧭' }, skill: 'fatethread', shop: false, freeSlot: true, starStats: { hp: [3200, 5760, 40000], atk: [165, 250, 540], ap: [165, 250, 540], mana: [50, 50, 20] } },
   // Dropped by Vex's Myth Made Flesh inside a fight; its hp and attack come from Vex.
@@ -127,14 +127,15 @@ export const UNITS: UnitDef[] = [
   // Lukas's Divine Beast (see commanders/): a board piece that fires once when a fight starts, never a fighter.
   { id: 'divinebeast', name: 'Divine Beast', tier: 5, traits: [], hp: 1, atk: 0, ap: 0, armor: 0, mr: 0, mana: 100, range: 1, attackTicks: 10, shop: false, freeSlot: true, piece: true },
   // The only 7-gold unit: in a player's shop (rolled with the 5-golds) once Spectre unlocks it for them.
-  { id: 'bossalpha', name: 'Boss Alpha', tier: 7, traits: [SP], hp: 6500, atk: 370, ap: 370, armor: 36, mr: 36, mana: 50, range: 1, attackTicks: 10, skill: 'spectralcataclysm', locked: true, shopTier: 5, starStats: { hp: [6500, 11700, 80000], atk: [370, 555, 1180], ap: [370, 555, 1180], mana: [50, 50, 20] } },
+  { id: 'bossalpha', name: 'Boss Alpha', tier: 7, traits: [SP], hp: 6500, atk: 370, ap: 370, armor: 36, mr: 36, mana: 50, range: 1, attackTicks: 10, skill: 'spectralcataclysm', locked: true, shopTier: 5, mergeSize: 4, starStats: { hp: [6500, 11700, 80000], atk: [370, 555, 1180], ap: [370, 555, 1180], mana: [50, 50, 20] } },
 ];
 
 // Johnson's Johnnie: a 3-gold hero with one faction and one role, any pair; free to buy (worth nothing sold).
 // One def per pair, all sharing the same stats and skill. Kept out of UNITS: they're nobody's until
 // Johnson's pick, and they'd flood every hero list.
-const FACTIONS = [astral, cultOfFire, dragonAltar, gustiwana, mistbender, mooneater, necromancer, skybringer, spectre, storyweaver].map((t) => t.id);
-const ROLES = [dauntless, deadeye, defender, fighter, hunter, mage, phasewarper, scavenger, stargazer, weaponMaster].map((t) => t.id);
+// Not every trait: Mistbender, Mooneater, Storyweaver, Phasewarper and Scavenger are left out.
+const FACTIONS = [astral, cultOfFire, dragonAltar, gustiwana, necromancer, skybringer, spectre].map((t) => t.id);
+const ROLES = [dauntless, deadeye, defender, fighter, hunter, mage, stargazer, weaponMaster].map((t) => t.id);
 export const JOHNNIE_FACTIONS = FACTIONS;
 export const JOHNNIE_ROLES = ROLES;
 export const johnnieId = (faction: string, role: string) => `johnnie-${faction}-${role}`;

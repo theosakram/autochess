@@ -158,9 +158,9 @@ export interface ItemDef {
   // Item slots it takes on its holder (default 1); it also counts as that many items wherever item count
   // matters (e.g. who leads a trait, Angela's halo).
   slots?: number;
-  // Unique: each fight, the holder also gets this many different random equipment copied from the pool
-  // (never itself), for that fight only.
-  copies?: number;
+  // Unique: each fight, the holder also gets random equipment copied from the pool (never itself), for that
+  // fight only: one from each list of groups, picked by the holder's basic attack type.
+  copies?: Record<'physical' | 'magic', EquipmentGroup[][]>;
   // Never dropped, offered or copied: only a commander card hands it out.
   exclusive?: true;
   // Unique: every `kills` enemies the holder kills, across fights, earn an Equipment Chest, up to `max` a game.

@@ -17,11 +17,11 @@ function pickTier(state: GameState, level: number): number {
 }
 
 // Weighted by remaining copies, so contested units get rarer for everyone. The player's own Johnnie
-// (Johnson) rolls with its tier as if it had a full pool that never runs out: it's theirs alone.
+// (Johnson) rolls with its tier as if it had a full pool that never runs out (Johnson's card adds copies): it's theirs alone.
 function drawFromTier(state: GameState, tier: number, p?: Player): string | null {
   const defs = UNITS.filter((u) => (u.shopTier ?? u.tier) === tier && u.shop !== false && (!u.locked || !!p?.unlocked?.includes(u.id)));
   const johnnie = p?.johnnie?.defId && UNIT_BY_ID[p.johnnie.defId].tier === tier ? p.johnnie.defId : null;
-  const own = johnnie ? POOL_SIZE[tier] : 0;
+  const own = johnnie ? POOL_SIZE[tier] + (powersOf(p!).johnniePool ?? 0) : 0;
   const total = defs.reduce((n, d) => n + state.pool[d.id], 0) + own;
   if (total === 0) return null;
   let r = nextInt(state, total);

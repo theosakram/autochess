@@ -108,6 +108,7 @@ export const EFFECT_COLORS: Record<string, number> = {
   fatethread: 0xc77dff,
   fatelink: 0xc77dff,
   stalkersmark: 0xff5a36,
+  stalkersknife: 0xff5a36,
   execute: 0xff2d2d,
   beastmaul: 0xc9a26b,
   divinebeast: 0xffe9a8,

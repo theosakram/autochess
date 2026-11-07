@@ -66,8 +66,8 @@ export interface SkillApi {
   dropAggro(f: SkillFighter): void;
   // Stuns `target` for `seconds` (a longer stun it already has wins).
   stun(target: SkillFighter, seconds: number, by: SkillFighter): void;
-  // Restores up to `amount` hp (never past max). Returns how much it actually healed.
-  heal(target: SkillFighter, amount: number): number;
+  // Restores up to `amount` hp (never past max), credited to `by` (else the target). Returns how much it actually healed.
+  heal(target: SkillFighter, amount: number, by?: SkillFighter): number;
   // `f` makes a full basic attack on `target` right now, at any range: it can crit, roll Fighter's
   // hit-again, lifesteal and gain mana like any attack. Counters can't trigger counters.
   counterAttack(f: SkillFighter, target: SkillFighter): void;
@@ -110,8 +110,9 @@ export interface SkillDef {
   // One description for every star; each {key} is filled from values(), one value per star.
   desc: string;
   values(): Record<string, string[]>; // a value the same at every star may be given once
-  // Which {key}s are damage, and of what type ('attack': its basic attack's type), for the hero details.
-  damage?: Record<string, DamageType | 'attack'>;
+  // Which {key}s are damage, and of what type ('attack': its basic attack's type; 'higher': magic if its
+  // magic attack is above its attack, else physical), for the hero details.
+  damage?: Record<string, DamageType | 'attack' | 'higher'>;
   cast(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
   // A passive: runs once when the fight starts (positions are the starting ones).
   atStart?(api: SkillApi, caster: SkillFighter): void;

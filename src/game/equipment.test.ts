@@ -735,26 +735,40 @@ describe('Thief Tool', () => {
     expect(applyAction(state, p.id, { type: 'equip', item: 62, unit: 900 }).ok).toBe(false);
   });
 
-  test('each fight it copies 2 different random equipment onto its holder, for that fight only', () => {
-    const state = createGame(1, SEEDS);
-    const [a, b] = state.players;
-    for (const p of state.players) {
-      p.board.fill(null);
-      p.bench.fill(null);
-      p.items = [];
+  // Fights its holder with the Tool under a few seeds; returns the groups of what got copied each time.
+  const copiedGroups = (defId: string) =>
+    [1, 2, 3, 7, 11, 19].map((rng) => {
+      const state = createGame(1, SEEDS);
+      const [a, b] = state.players;
+      for (const p of state.players) {
+        p.board.fill(null);
+        p.bench.fill(null);
+        p.items = [];
+      }
+      a.board[3] = { uid: 1, defId, star: 2 };
+      a.items = [{ uid: 63, id: 'thieftool', tier: 1, holder: 1 }];
+      b.board[3] = { uid: 2, defId: 'knight', star: 2 };
+      const r = simulateCombat({ rng }, a, b);
+      const ids = r.fighters.find((f) => f.side === 0)!.items.map((i) => i.id);
+      expect(ids).toContain('thieftool');
+      expect(a.items).toHaveLength(1); // the player keeps just the Tool
+      const copies = ids.filter((id) => id !== 'thieftool');
+      for (const id of copies) expect(EQUIPMENT).toContain(id);
+      return copies.map((id) => ITEMS[id].group!);
+    });
+
+  test('a physical holder gets 1 physical item and 1 armor copied, for that fight only', () => {
+    expect(UNIT_BY_ID.knight.attackType ?? 'physical').toBe('physical');
+    for (const groups of copiedGroups('knight')) expect(groups).toEqual(['physical', 'armor']);
+    expect(THIEF_TOOL.copies.physical).toEqual([['physical'], ['armor']]);
+  });
+
+  test('a magic holder gets 1 magic or hybrid item and 1 armor copied', () => {
+    expect(UNIT_BY_ID.val.attackType).toBe('magic');
+    for (const [first, second] of copiedGroups('val')) {
+      expect(['magic', 'hybrid']).toContain(first);
+      expect(second).toBe('armor');
     }
-    a.board[3] = { uid: 1, defId: 'knight', star: 2 };
-    a.items = [{ uid: 63, id: 'thieftool', tier: 1, holder: 1 }];
-    b.board[3] = { uid: 2, defId: 'knight', star: 2 };
-    const r = simulateCombat({ rng: 7 }, a, b);
-    const me = r.fighters.find((f) => f.side === 0)!;
-    const ids = me.items.map((i) => i.id);
-    expect(ids).toContain('thieftool');
-    const copies = ids.filter((id) => id !== 'thieftool');
-    expect(copies).toHaveLength(THIEF_TOOL.copies);
-    expect(new Set(copies).size).toBe(THIEF_TOOL.copies);
-    for (const id of copies) expect(EQUIPMENT).toContain(id);
-    expect(a.items).toHaveLength(1); // the player keeps just the Tool
   });
 });
 

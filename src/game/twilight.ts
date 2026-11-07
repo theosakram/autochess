@@ -1,11 +1,13 @@
 import { draw } from './altar';
 import { powersOf } from './commanders';
+import { SHOP_ODDS } from './config';
 import { nextInt } from './rng';
 import { playerTraitCounts } from './traits';
 import type { GameState, Player, Tier } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
 
-// Lunox's Twilight Blessing: handed out once, when the commander card is picked (see commanders.payCard). The player
+// Lunox's Twilight Blessing: handed out once: on picking Lunox (his innate power), or with his card on another
+// commander (see commanders.payCommander / payCard). The player
 // blesses one hero (that very unit, not its type): one of its own traits is rolled at random and the hero
 // counts +1 toward it while fielded, stacking with the Magic Orb. Selling the hero loses the blessing; merging
 // keeps it on the merged hero. Blessing also hands out heroes of the rolled trait (Lunox's own power).
@@ -30,15 +32,26 @@ export function bless(state: GameState, p: Player, uid: number): string | null {
   const trait = traits[nextInt(state, traits.length)];
   const gifts: string[] = [];
   for (let i = 0; i < powersOf(p).twilight!.heroes; i++) {
-    // 1 or 2 gold, at random among the costs that still have one of this trait in the pool.
-    const tiers = ([1, 2] as Tier[]).filter((t) => UNITS.some((u) => u.tier === t && u.shop !== false && !u.locked && u.traits.includes(trait) && (state.pool[u.id] ?? 0) > 0));
-    const pick = tiers.length ? tiers : ([1, 2] as Tier[]);
-    const id = draw(state, pick[nextInt(state, pick.length)], trait);
+    const tier = giftTier(state, p, trait);
+    const id = tier ? draw(state, tier, trait) : null;
     if (id) gifts.push(id);
   }
   (p.gifts ??= []).push(...gifts);
   p.twilight = { ...p.twilight!, holder: uid, trait, gifts };
   return null;
+}
+
+// A cost for one gifted hero of `trait`, rolled with the player's current shop odds among the costs that
+// still have one of the trait in the pool. If the odds give none of those (e.g. only pricier ones are
+// left at a low level), the cheapest of them. Null if the trait has none left at all.
+function giftTier(state: GameState, p: Player, trait: string): Tier | null {
+  const odds = SHOP_ODDS[p.level - 1];
+  const tiers = ([1, 2, 3, 4, 5] as Tier[]).filter((t) => UNITS.some((u) => u.tier === t && u.shop !== false && !u.locked && u.traits.includes(trait) && (state.pool[u.id] ?? 0) > 0));
+  if (!tiers.length) return null;
+  const total = tiers.reduce((n, t) => n + odds[t - 1], 0);
+  if (!total) return tiers[0];
+  let r = nextInt(state, total);
+  return tiers.find((t) => (r -= odds[t - 1]) < 0)!;
 }
 
 // The blessed hero, if the player still has it.

@@ -1,6 +1,7 @@
 import { dist, GRID_H, GRID_W, type Point } from '../grid';
 import type { DamageType } from '../stats';
 import { pct } from '../traits/format';
+import { around, enemiesOn } from './areas';
 import type { SkillApi, SkillDef, SkillFighter } from './types';
 
 // Who a dash strike goes after. Ties (and a fight's first seconds, before anyone has dealt damage)
@@ -41,16 +42,19 @@ export interface DashStrike {
   scale: number[]; // of `stat`
   stat: 'atk' | 'ap';
   type: DamageType;
+  area?: true; // hits every enemy on the tiles around where it lands, not just the target
 }
 
-// Dashes beside the chosen enemy and strikes it once (a skill hit). Already beside it, or it's
-// boxed in: strikes from where it stands.
+// Dashes beside the chosen enemy and strikes it once (a skill hit); with `area`, strikes every enemy
+// on the 8 tiles around where it lands instead. Already beside it, or it's boxed in: strikes from where it stands.
 export function dashStrike(cfg: DashStrike): SkillDef {
   const statName = cfg.stat === 'ap' ? 'magic attack' : 'attack';
   return {
     id: cfg.id,
     name: cfg.name,
-    desc: `Dashes to ${PICKERS[cfg.target].label} and strikes it for {scale} of ${statName} as ${cfg.type} damage.`,
+    desc: cfg.area
+      ? `Dashes to ${PICKERS[cfg.target].label}, then strikes every enemy within 1 tile of her for {scale} of ${statName} as ${cfg.type} damage.`
+      : `Dashes to ${PICKERS[cfg.target].label} and strikes it for {scale} of ${statName} as ${cfg.type} damage.`,
     damage: { scale: cfg.type },
     values: () => ({ scale: cfg.scale.map(pct) }),
     cast(api, caster) {
@@ -58,7 +62,10 @@ export function dashStrike(cfg: DashStrike): SkillDef {
       if (!victim) return;
       const landing = freeCellNextTo(api, victim, caster);
       if (landing && dist(caster, victim) > 1) api.dashTo(caster, landing);
-      api.hit(caster, victim, caster.stats[cfg.stat] * cfg.scale[caster.star - 1], cfg.type, cfg.id);
+      const raw = caster.stats[cfg.stat] * cfg.scale[caster.star - 1];
+      const struck = cfg.area ? enemiesOn(api, caster, around(caster)) : [victim];
+      if (cfg.area && !struck.includes(victim) && dist(caster, victim) <= 1) struck.push(victim);
+      for (const e of struck) if (e.hp > 0) api.hit(caster, e, raw, cfg.type, cfg.id);
     },
   };
 }

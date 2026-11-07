@@ -23,6 +23,7 @@ export interface UnitDef {
   johnnie?: true;
   locked?: true; // in a player's shop only once something unlocks it for them (Player.unlocked)
   shopTier?: Tier; // the shop odds column it's rolled under, if not its own tier
+  mergeSize?: number; // same-star copies that merge into the next star (default 3)
   freeSlot?: true; // doesn't count toward the board limit (level)
   summon?: true; // only exists inside a fight, summoned by a skill: never owned, shown or sold
   // A commander's board piece (e.g. Lukas's Divine Beast): placed like a unit, but takes no slot, never
