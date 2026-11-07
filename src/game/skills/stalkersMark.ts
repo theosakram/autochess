@@ -16,6 +16,7 @@ export const stalkersMark: SkillDef = {
   desc:
     'Passive: an enemy on the tiles around it left below {execute} of its max HP is executed. ' +
     `Active: vanishes to the safest tile, so its attackers lose it, then ${STALKERS_MARK.back}s later strikes back at its prey for {atk} of attack as physical damage.`,
+  damage: { atk: 'physical' },
   values: () => ({ execute: STALKERS_MARK.execute.map(pct), atk: STALKERS_MARK.atk.map(pct) }),
   executeBelow: STALKERS_MARK.execute,
   cast(api, caster, target) {

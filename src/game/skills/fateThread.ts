@@ -15,6 +15,7 @@ export const fateThread: SkillDef = {
   desc:
     'Passive: when combat starts, it threads the fates of {linked} enemies together: while it lives, damage any of them takes ' +
     'is shared, {share} of it dealt to each of the others. Active: strikes its target for {ap} of magic attack as magic damage.',
+  damage: { ap: 'magic' },
   values: () => ({
     linked: FATE_THREAD.linked.map((n) => (n === Infinity ? 'all' : String(n))),
     share: FATE_THREAD.share.map(pct),

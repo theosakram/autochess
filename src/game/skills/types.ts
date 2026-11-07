@@ -53,6 +53,8 @@ export interface SkillApi {
   //  - a fighter (no `mirror`): moves and attacks on its own with `atk` (as attack and magic attack),
   //    and stays when the owner dies.
   summon(owner: SkillFighter, defId: string, opts: { hpShare: number; mirror?: number; atk?: number; at?: Point }): SkillFighter | null;
+  // Takes one of its summons off the board (gone, not killed: nothing counts it as a death by a hit).
+  dismiss(minion: SkillFighter): void;
   // `f`'s living summons.
   minionsOf(f: SkillFighter): SkillFighter[];
   // Taunts `target` for `seconds`: it must go after `by` (while `by` lives).
@@ -69,6 +71,15 @@ export interface SkillApi {
   // `f` makes a full basic attack on `target` right now, at any range: it can crit, roll Fighter's
   // hit-again, lifesteal and gain mana like any attack. Counters can't trigger counters.
   counterAttack(f: SkillFighter, target: SkillFighter): void;
+  // `f` makes a full basic attack on `target` right now, at any range, dealing `mult` x its usual damage:
+  // crits, hit-again, lifesteal, mana and every item on-hit effect work as for any attack.
+  attack(f: SkillFighter, target: SkillFighter, mult: number): void;
+  // Rooted: it never walks. No basic: it never basic-attacks, and casts (at any range) once its mana is full.
+  stance(f: SkillFighter, s: { rooted?: boolean; noBasic?: boolean }): void;
+  // No stuns, taunts or enemy displacement for the next `seconds` (never shortens immunity it has).
+  ccImmune(f: SkillFighter, seconds: number): void;
+  // Alive, not stunned and not frozen.
+  canAct(f: SkillFighter): boolean;
   // Gives `f` mana (up to its max).
   giveMana(f: SkillFighter, amount: number): void;
   // A random integer in [0, n), from the fight's seeded randomness (fights still replay exactly).
@@ -95,7 +106,9 @@ export interface SkillDef {
   name: string;
   // One description for every star; each {key} is filled from values(), one value per star.
   desc: string;
-  values(): Record<string, string[]>;
+  values(): Record<string, string[]>; // a value the same at every star may be given once
+  // Which {key}s are damage, and of what type ('attack': its basic attack's type), for the hero details.
+  damage?: Record<string, DamageType | 'attack'>;
   cast(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
   // A passive: runs once when the fight starts (positions are the starting ones).
   atStart?(api: SkillApi, caster: SkillFighter): void;
@@ -106,4 +119,10 @@ export interface SkillDef {
   onAttacked?(api: SkillApi, caster: SkillFighter, attacker: SkillFighter): void;
   // A passive: runs after each of the unit's own basic attacks (the target may have died to it).
   onBasicHit?(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
+  // A passive: runs once after each of the unit's whole basic attacks, Fighter's hit-again included
+  // (counters too; not enhanced basic hits from skills).
+  afterAttack?(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
+  // A passive: each of its basic attacks is `shots` basic hits of `power` x a normal one (each sets off
+  // on-hit and item effects; mana comes once per attack). Asked anew for every attack.
+  volley?(caster: SkillFighter): { shots: number; power: number };
 }

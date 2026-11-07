@@ -3,7 +3,7 @@ import type { ItemDef } from './types';
 
 // Per tier; the tier is the Cult of Fire level, so index 0 = Cult of Fire 2.
 export const OFFERING = {
-  share: [0.25, 0.4, 0.6, 1.25], // of the holder's attack, added to every Cult of Fire unit
+  share: [0.15, 0.25, 0.5, 1], // of the holder's attack, added to every Cult of Fire unit
 };
 
 export const offering: ItemDef = {

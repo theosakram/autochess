@@ -2,7 +2,7 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const GUSTIWANA = {
-  defense: [15, 35, 60, 150], // armor and mr for Gustiwana units
+  defense: [12, 20, 36, 600], // armor and mr for Gustiwana units
   items: {
     pool: ['keris', 'blangkon', 'jimat'],
     grants: [1, 2, 3, 3], // items owned per level, handed out in random order

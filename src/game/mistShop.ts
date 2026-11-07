@@ -90,17 +90,17 @@ const orb = (kind: 'faction' | 'role', pick: boolean): MistWare => ({
 export const MIST_WARES: Record<string, MistWare> = Object.fromEntries(
   [
     {
-      id: 'mistoracle',
-      name: 'Mist Oracle',
+      id: 'nana',
+      name: 'Nana',
       icon: '🌫️',
       price: 60,
       desc: 'The 5-gold Mistbender, straight to your bench.',
       weight: 0, // only in the shop's first batch
       apply(state: GameState, p: Player) {
-        if (!state.pool.mistoracle) return 'No Mist Oracle left in the pool';
-        if (!canClaim(p, 'mistoracle')) return 'Bench is full';
-        state.pool.mistoracle--;
-        gainUnit(state, p, 'mistoracle');
+        if (!state.pool.nana) return 'No Nana left in the pool';
+        if (!canClaim(p, 'nana')) return 'Bench is full';
+        state.pool.nana--;
+        gainUnit(state, p, 'nana');
         return null;
       },
     } satisfies MistWare,
@@ -150,11 +150,11 @@ function randomWare(state: GameState, pool = Object.values(MIST_WARES)): string 
   return pool[pool.length - 1].id;
 }
 
-// Opens the shop the first time: Mist Oracle in the middle, a cheap ware either side.
+// Opens the shop the first time: Nana in the middle, a cheap ware either side.
 export function openMistShop(state: GameState, p: Player): void {
   if (p.mistShop) return;
   const cheap = CHEAP.map((id) => MIST_WARES[id]);
-  p.mistShop = [randomWare(state, cheap), 'mistoracle', randomWare(state, cheap)];
+  p.mistShop = [randomWare(state, cheap), 'nana', randomWare(state, cheap)];
 }
 
 export const mistCoins = (p: Player) => p.stacks[COIN_TRAIT] ?? 0;

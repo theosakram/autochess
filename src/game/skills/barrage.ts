@@ -23,6 +23,7 @@ export function barrage(cfg: Barrage): SkillDef {
     id: cfg.id,
     name: cfg.name,
     desc: `Hits its target ${cfg.hits} times, ${cfg.every}s apart, each for {scale} of ${statName} as ${cfg.type} damage. These can't crit.`,
+    damage: { scale: cfg.type },
     values: () => ({ scale: cfg.scale.map(pct) }),
     cast(api, caster, target) {
       let victim: SkillFighter | null = target;

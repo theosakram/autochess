@@ -14,8 +14,8 @@ describe('hero portraits', () => {
   test('the plate follows the cost: wanderers are 5-gold gold, the 7-gold is its own colour', () => {
     const plate = (id: string) => portraitHtml(id).match(/--plate:#(\w+)/)![1];
     const hex = (tier: number) => TIER_COLORS[tier].toString(16).padStart(6, '0');
-    expect(plate('wisp')).toBe(hex(1));
-    expect(plate('ancientdragon')).toBe(hex(5));
+    expect(plate('phove')).toBe(hex(1));
+    expect(plate('balia')).toBe(hex(5));
     expect(plate('wanderingbastion')).toBe(hex(5));
     expect(plate('eidolon')).toBe(hex(7));
     expect(new Set(Object.values(TIER_COLORS)).size).toBe(Object.keys(TIER_COLORS).length);

@@ -12,11 +12,13 @@ export const EQUIPMENT_GROUPS: { id: EquipmentGroup; name: string }[] = [
   { id: 'armor', name: 'Armor' },
 ];
 
-// Every `every` seconds the holder hits all enemies for `atkPct` of its attack.
+// Every `every` seconds the holder hits all enemies for `atkPct` of its attack; with `area: '3x3'`, only
+// the enemies in the 3x3 that holds the most of them. Unique: two copies on one unit fire once.
 export interface ItemPulse {
   every: number;
   atkPct: number;
   damageType: DamageType;
+  area?: '3x3';
 }
 
 // While the holder is fielded, every member of trait `to` on its side gains `share` x the holder's

@@ -3,11 +3,11 @@ import { enemiesOn } from './areas';
 import { dashLine } from './phantomExecution';
 import type { SkillDef } from './types';
 
-// Ether Sage (4g Mage). Per star, index 0 = 1★.
+// Gourd (4g Spectre / Mage). Per star, index 0 = 1★.
 export const ETHER_BEAM = {
   ticks: 12,
   every: 0.15, // seconds between ticks
-  ap: [1.5, 1.9, 6.5], // of magic attack, magic, per tick to each enemy on the line
+  ap: [1.2, 1.2, 3.2], // of magic attack, magic, per tick to each enemy on the line
 };
 
 export const etherBeam: SkillDef = {
@@ -16,6 +16,7 @@ export const etherBeam: SkillDef = {
   desc:
     `Channels a beam through its target to the edge of the board: ${ETHER_BEAM.ticks} times, ${ETHER_BEAM.every}s apart, ` +
     'every enemy on the line takes {ap} of magic attack as magic damage.',
+  damage: { ap: 'magic' },
   values: () => ({ ap: ETHER_BEAM.ap.map(pct) }),
   cast(api, caster, target) {
     const aim = target.hp > 0 ? target : api.nearestEnemy(caster);

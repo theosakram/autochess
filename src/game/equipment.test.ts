@@ -84,12 +84,12 @@ describe('War Axe', () => {
     const p = state.players[0];
     p.board.fill(null);
     p.items = [{ uid: 70, id: 'waraxe', tier: 1, holder: 900 }];
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     const levels = playerTraits(p);
     expect(ITEMS.waraxe.trait).toBeUndefined();
     expect(effectiveTier(p.items[0], levels)).toBe(1);
     const s = fieldStats(p, levels, {}).get(900)!;
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels });
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels });
     expect(Math.abs(s.atk - base.atk * (1 + WAR_AXE.atk))).toBeLessThanOrEqual(1); // stats round
     expect(s.spellLifesteal - base.spellLifesteal).toBeCloseTo(WAR_AXE.spellLifesteal);
   });
@@ -103,7 +103,7 @@ describe('War Axe', () => {
         p.bench.fill(null);
         p.items = [];
       }
-      a.board[3] = { uid: 1, defId: 'kindler', star: 2 };
+      a.board[3] = { uid: 1, defId: 'cici', star: 2 };
       a.items = Array.from({ length: axes }, (_, i) => ({ uid: 80 + i, id: 'waraxe', tier: 1, holder: 1 }));
       b.board[3] = { uid: 2, defId: 'titan', star: 2 };
       return simulateCombat({ rng: 1 }, a, b);
@@ -125,9 +125,9 @@ describe("Haas's Claw", () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     const levels = playerTraits(p);
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels });
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels });
     const withClaws = (n: number) => {
       p.items = Array.from({ length: n }, (_, i) => ({ uid: 90 + i, id: 'haasclaw', tier: 1, holder: 900 }));
       return fieldStats(p, levels, {}).get(900)!;
@@ -218,13 +218,13 @@ describe('Inspire', () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     p.items = [
       { uid: 95, id: 'inspire', tier: 1, holder: 900 },
       { uid: 96, id: 'inspire', tier: 1, holder: 900 }, // unique: a second one adds nothing
     ];
     const levels = playerTraits(p);
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels }).attackSpeed;
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels }).attackSpeed;
     for (const [round, bonus] of [[1, 0.2], [4, 0.2], [5, 0.3], [10, 0.3], [11, 0.4], [16, 0.4], [17, 0.5], [55, 0.5]] as const) {
       state.round = round;
       stageItems(state, p);
@@ -246,8 +246,8 @@ describe('Purify', () => {
     }
     a.board[3] = { uid: 1, defId: 'knight', star: 3 };
     if (withPurify) a.items = [{ uid: 97, id: 'purify', tier: 1, holder: 1 }];
-    // The Ash Warden taunts; the Wandering Fist leaps in and stuns.
-    b.board[3] = { uid: 2, defId: 'ashwarden', star: 1 };
+    // Edith stuns; the Wandering Fist leaps in and stuns.
+    b.board[3] = { uid: 2, defId: 'edith', star: 1 };
     b.board[4] = { uid: 3, defId: 'wanderingblade', star: 1 };
     return simulateCombat({ rng: 1 }, a, b);
   }
@@ -267,13 +267,13 @@ describe('Retribution', () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     p.items = [
       { uid: 98, id: 'retribution', tier: 1, holder: 900 },
       { uid: 99, id: 'retribution', tier: 1, holder: 900 }, // unique
     ];
     const levels = playerTraits(p);
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels }).damageAmp;
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels }).damageAmp;
     for (const [round, bonus] of [[2, 0.2], [roundAt(2, 1), 0.3], [roundAt(3, 6), 0.4], [roundAt(4, 1), 0.5], [40, 0.5]] as const) {
       state.round = round;
       stageItems(state, p);
@@ -377,10 +377,10 @@ describe("Berserker's Fury", () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     p.items = [{ uid: 89, id: 'berserkerfury', tier: 1, holder: 900 }];
     const levels = playerTraits(p);
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels });
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels });
     const s = fieldStats(p, levels, {}).get(900)!;
     expect(Math.abs(s.atk - base.atk * (1 + BERSERKER_FURY.atk))).toBeLessThanOrEqual(1);
     expect(s.critChance - base.critChance).toBeCloseTo(BERSERKER_FURY.critChance);
@@ -435,13 +435,13 @@ describe('Sea Halberd', () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     p.items = [
       { uid: 85, id: 'seahalberd', tier: 1, holder: 900 },
       { uid: 84, id: 'seahalberd', tier: 1, holder: 900 },
     ];
     const levels = playerTraits(p);
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels });
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels });
     const s = fieldStats(p, levels, {}).get(900)!;
     expect(s.armorShred - base.armorShred).toBe(SEA_HALBERD.penetration); // once, not twice
   });
@@ -474,7 +474,7 @@ describe('Ice Queen Wand', () => {
       p.bench.fill(null);
       p.items = [];
     }
-    a.board[3] = { uid: 1, defId: 'ethersage', star: 2 }; // a spellcaster: its skill is skill damage
+    a.board[3] = { uid: 1, defId: 'gourd', star: 2 }; // a spellcaster: its skill is skill damage
     a.items = [{ uid: 83, id: 'icequeenwand', tier: 1, holder: 1 }];
     b.board[3] = { uid: 2, defId: 'knight', star: 3 };
     const r = simulateCombat({ rng: 1 }, a, b);
@@ -493,10 +493,10 @@ describe('Ice Queen Wand', () => {
 
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
     p.items = [{ uid: 82, id: 'icequeenwand', tier: 1, holder: 900 }];
     const levels = playerTraits(p);
-    const base = unitStats(UNIT_BY_ID.kindler, 1, { levels });
+    const base = unitStats(UNIT_BY_ID.cici, 1, { levels });
     const s = fieldStats(p, levels, {}).get(900)!;
     expect(Math.abs(s.ap - base.ap * (1 + ICE_QUEEN_WAND.ap))).toBeLessThanOrEqual(1);
     expect(s.spellLifesteal - base.spellLifesteal).toBeCloseTo(ICE_QUEEN_WAND.spellVamp);
@@ -512,7 +512,7 @@ describe('Glowing Wand', () => {
       p.bench.fill(null);
       p.items = [];
     }
-    a.board[3] = { uid: 1, defId: 'ethersage', star: 2 };
+    a.board[3] = { uid: 1, defId: 'gourd', star: 2 };
     a.items = [{ uid: 81, id: 'glowingwand', tier: 1, holder: 1 }];
     b.board[3] = { uid: 2, defId: 'knight', star: 3 };
     const r = simulateCombat({ rng: 1 }, a, b);
@@ -538,7 +538,7 @@ describe('Holy Crystal', () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'ethersage', star: 1 };
+    p.board[0] = { uid: 900, defId: 'gourd', star: 1 };
     p.items = [
       { uid: 79, id: 'holycrystal', tier: 1, holder: 900 },
       { uid: 78, id: 'holycrystal', tier: 1, holder: 900 },
@@ -564,7 +564,7 @@ describe('Divine Glaive', () => {
       p.items = [];
     }
     // A magic basic attacker against a plain knight: its first hit shows the resist it got through.
-    a.board[3] = { uid: 1, defId: 'boneadept', star: 1 };
+    a.board[3] = { uid: 1, defId: 'val', star: 1 };
     a.items = [
       { uid: 77, id: 'divineglaive', tier: 1, holder: 1 },
       { uid: 76, id: 'divineglaive', tier: 1, holder: 1 }, // unique attribute: no extra penetration
@@ -654,7 +654,7 @@ describe('Spellblade Talisman', () => {
       p.bench.fill(null);
       p.items = [];
     }
-    a.board[3] = { uid: 1, defId: 'ethersage', star: 1 };
+    a.board[3] = { uid: 1, defId: 'gourd', star: 1 };
     a.items = [{ uid: 73, id: 'spellbladetalisman', tier: 1, holder: 1 }];
     b.board[3] = { uid: 2, defId: 'knight', star: 1 };
     const r = simulateCombat({ rng: 1 }, a, b);
@@ -679,7 +679,7 @@ describe('Purple Buff', () => {
         p.bench.fill(null);
         p.items = [];
       }
-      a.board[3] = { uid: 1, defId: 'wyrmcaller', star: 2 }; // a one-shot skill, then back to attacking
+      a.board[3] = { uid: 1, defId: 'eudora', star: 2 }; // a one-shot skill, then back to attacking
       if (withBuff) a.items = [{ uid: 72, id: 'purplebuff', tier: 1, holder: 1 }];
       b.board[3] = { uid: 2, defId: 'knight', star: 2 };
       const r = simulateCombat({ rng: 1 }, a, b);
@@ -723,8 +723,8 @@ describe('Thief Tool', () => {
     const state = createGame(1, SEEDS);
     const p = state.players[0];
     p.board.fill(null);
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
-    p.board[1] = { uid: 901, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
+    p.board[1] = { uid: 901, defId: 'cici', star: 1 };
     p.items = [
       { uid: 60, id: 'thieftool', tier: 1, holder: null },
       { uid: 61, id: 'waraxe', tier: 1, holder: 901 },
@@ -767,9 +767,9 @@ describe('Cult of Fire burn', () => {
       p.bench.fill(null);
       p.items = [];
     }
-    // Cult of Fire 2: Kindler and Pyre Guard; the Offering on a plain Knight.
-    a.board[2] = { uid: 1, defId: 'kindler', star: 1 };
-    a.board[3] = { uid: 2, defId: 'pyreguard', star: 1 };
+    // Cult of Fire 2: Cici and Mia; the Offering on a plain Knight.
+    a.board[2] = { uid: 1, defId: 'cici', star: 1 };
+    a.board[3] = { uid: 2, defId: 'mia', star: 1 };
     a.board[4] = { uid: 3, defId: 'knight', star: 1 };
     a.items = [{ uid: 70, id: 'offering', tier: 1, holder: 3 }];
     b.board[3] = { uid: 9, defId: 'titan', star: 3 };

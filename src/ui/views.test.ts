@@ -4,7 +4,8 @@ import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
 import { traitBadgeHtml } from './traitBadges';
-import { armoryHtml, bearerDetailHtml, galleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitInfoHtml } from './views';
+import { armoryHtml, bearerDetailHtml, galleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { SKILLS } from '../game/skills';
 
 describe('orb choice popup', () => {
   // Regression: options carried data-trait, which the click handler treats as "open trait popup",
@@ -13,10 +14,10 @@ describe('orb choice popup', () => {
     const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
     const p = state.players[0];
     p.orbs.push(42);
-    p.board[0] = { uid: 900, defId: 'penari', star: 1 };
+    p.board[0] = { uid: 900, defId: 'angela', star: 1 };
     const html = orbChoiceHtml(p, 900);
     expect(html).not.toContain('data-trait=');
-    for (const trait of orbOptions(42, 'penari')) expect(html).toContain(`data-action="useOrb" data-orb-trait="${trait}"`);
+    for (const trait of orbOptions(42, 'angela')) expect(html).toContain(`data-action="useOrb" data-orb-trait="${trait}"`);
   });
 });
 
@@ -26,8 +27,8 @@ describe('synergy panel', () => {
     const p = state.players[0];
     p.board.fill(null);
     p.bench.fill(null);
-    p.board[0] = { uid: 1, defId: 'kindler', star: 1 };
-    p.board[1] = { uid: 2, defId: 'ashbinder', star: 1 };
+    p.board[0] = { uid: 1, defId: 'cici', star: 1 };
+    p.board[1] = { uid: 2, defId: 'zhuxin', star: 1 };
     p.board[2] = { uid: 3, defId: 'titan', star: 1 };
     p.items = [{ uid: 9, id: 'offering', tier: 1, holder: 3 }];
     const html = traitsPanelHtml(p);
@@ -55,7 +56,7 @@ describe('synergy gallery', () => {
   test("each unit in a trait card lists its other traits as clickable chips", () => {
     const html = galleryHtml(p, state.chosen);
     const card = html.slice(html.indexOf('Skybringer'), html.indexOf('</article>', html.indexOf('Skybringer')));
-    const row = card.slice(card.indexOf('Thunder Lord'), card.indexOf('</li>', card.indexOf('Thunder Lord')));
+    const row = card.slice(card.indexOf('Balang'), card.indexOf('</li>', card.indexOf('Balang')));
     expect(row).toContain('data-trait="fighter"');
     expect(row).not.toContain('data-trait="skybringer"');
   });
@@ -67,13 +68,13 @@ describe('synergy gallery', () => {
     const cols = [...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map((m) => m[1]);
     const col = cols.findIndex((c) => c.includes('data-trait="skybringer"'));
     const cell = (role: string) => [...row(role).matchAll(/<td>([\s\S]*?)<\/td>/g)][col][1];
-    expect(cell('fighter')).toContain('Thunder Lord');
-    expect(cell('mage')).not.toContain('Thunder Lord');
-    // Dalang has two roles, so it's in both rows.
+    expect(cell('fighter')).toContain('Balang');
+    expect(cell('mage')).not.toContain('Balang');
+    // Frank has two roles, so it's in both rows.
     const gw = cols.findIndex((c) => c.includes('data-trait="gustiwana"'));
     const at = (role: string) => [...row(role).matchAll(/<td>([\s\S]*?)<\/td>/g)][gw][1];
-    expect(at('weaponmaster')).toContain('Dalang');
-    expect(at('dauntless')).toContain('Dalang');
+    expect(at('weaponmaster')).toContain('Frank');
+    expect(at('dauntless')).toContain('Frank');
   });
 });
 
@@ -111,7 +112,7 @@ describe('players list', () => {
     ]);
     const [, b, c] = state.players;
     b.board.fill(null);
-    ['boneadept', 'banshee', 'shadewalker', 'cryptwarden', 'wisp', 'gloomshot'].forEach((d, i) => (b.board[i] = { uid: 500 + i, defId: d, star: 1 }));
+    ['val', 'natalie', 'harley', 'tig', 'phove', 'ginger'].forEach((d, i) => (b.board[i] = { uid: 500 + i, defId: d, star: 1 }));
     c.hp = 0;
     c.place = 3;
     const html = playersHtml([b, c], (p) => p.hp, null);
@@ -129,15 +130,15 @@ describe('unit info popup', () => {
   const p = state.players[0];
 
   test('every unit name in the gallery opens it', () => {
-    for (const tab of ['cards', 'grid'] as const) expect(galleryHtml(p, state.chosen, tab)).toContain('data-unit-info="soulreaper"');
+    for (const tab of ['cards', 'grid'] as const) expect(galleryHtml(p, state.chosen, tab)).toContain('data-unit-info="saber"');
   });
 
   test("stats at every star, and the skill with each star's numbers", () => {
-    const html = unitInfoHtml('soulreaper', p);
+    const html = unitInfoHtml('saber', p);
     expect(html).toContain('Soul Orbit');
-    expect(html).toContain('36%');
-    expect(html).toContain('85%');
-    for (const hp of [900, 1620, 2916]) expect(html).toContain(`<td>${hp}</td>`);
+    expect(html).toContain('135%');
+    expect(html).toContain('210%');
+    for (const hp of [2575, 4635, 8760]) expect(html).toContain(`<td>${hp}</td>`);
     expect(html).toContain('data-trait="spectre"');
     expect(unitInfoHtml('wanderingblade', p)).toContain('Not in the shop');
     expect(unitInfoHtml('eidolon', p)).toContain('Spectral Cataclysm');
@@ -151,9 +152,9 @@ describe('equipment panel', () => {
     const p = state.players[0];
     p.board.fill(null);
     p.bench.fill(null);
-    p.board[0] = { uid: 1, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 1, defId: 'cici', star: 1 };
     p.board[1] = { uid: 2, defId: 'divinebeast', star: 1 };
-    p.bench[0] = { uid: 3, defId: 'wisp', star: 1 };
+    p.bench[0] = { uid: 3, defId: 'phove', star: 1 };
     p.items = [{ uid: 9, id: 'keris', tier: 1, holder: 1 }, { uid: 10, id: 'aegis', tier: 1, holder: null }];
     return p;
   };
@@ -189,8 +190,8 @@ describe('equipment panel', () => {
   test('a faction or role orb shows its trait; the Magic Orb stays a 🔮', () => {
     const p = setup();
     p.mistOrbs = [{ uid: 50, trait: 'mage', holder: 1 }];
-    p.board[2] = { uid: 4, defId: 'polaris', star: 1 };
-    p.orb = { defId: 'polaris', trait: 'astral' };
+    p.board[2] = { uid: 4, defId: 'irina', star: 1 };
+    p.orb = { defId: 'irina', trait: 'astral' };
     const html = armoryHtml(p);
     const slot = (uid: number) => html.slice(html.indexOf(`data-orb-unit="${uid}"`)).split('</div>')[0];
     expect(slot(1)).toContain(traitBadgeHtml('mage'));
@@ -207,7 +208,7 @@ describe('item popup', () => {
     const p = state.players[0];
     p.board.fill(null);
     p.bench.fill(null);
-    p.board[0] = { uid: 1, defId: 'penari', star: 1 };
+    p.board[0] = { uid: 1, defId: 'angela', star: 1 };
     p.items = [{ uid: 9, id: 'keris', tier: 1, holder: 1 }, { uid: 10, id: 'waraxe', tier: 1, holder: null }];
     return p;
   };
@@ -215,8 +216,8 @@ describe('item popup', () => {
   test('tells what the item does, who holds it and who may', () => {
     const html = itemDetailHtml(setup(), 9, true);
     expect(html).toContain('Keris');
-    expect(html).toContain('Mortal Strike');
-    expect(html).toContain('Penari');
+    expect(html).toContain('Justice');
+    expect(html).toContain('Angela');
     expect(html).toContain('Only');
     expect(html).toContain('data-action="takeOffItem"');
     expect(html).toContain('data-action="closeItem"');
@@ -248,5 +249,43 @@ describe('grave', () => {
     p.rewardUnit = { necromancer: 'wanderingbastion' };
     expect(graveHtml(p)).toContain(`${traitBadgeHtml('dauntless')} Wandering Bastion`);
     expect(galleryHtml(p, state.chosen)).toContain(`${traitBadgeHtml('dauntless')} Wandering Bastion`);
+  });
+});
+
+describe('skill damage colours', () => {
+  test('every damage key is a real {placeholder} of its skill', () => {
+    for (const s of Object.values(SKILLS)) {
+      const values = s.values();
+      for (const key of Object.keys(s.damage ?? {})) {
+        expect(values[key], `${s.id}.${key}`).toBeDefined();
+        expect(s.desc, `${s.id}.${key}`).toContain(`{${key}}`);
+      }
+    }
+  });
+
+  // Catches a new skill whose text says "... as physical damage" without saying so in `damage`.
+  test('a number the text calls physical or magic damage is tagged that type', () => {
+    for (const s of Object.values(SKILLS)) {
+      for (const m of s.desc.matchAll(/\{(\w+)\}([^{.]*?) as (physical|magic) damage/g)) {
+        const kind = s.damage?.[m[1]];
+        expect(kind === m[3] || kind === 'attack', `${s.id}.${m[1]}`).toBe(true);
+      }
+    }
+  });
+
+  test('hero details colour skill damage: red physical, teal magic, by basic attack type for empowered attacks', () => {
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    const info = (id: string) => unitInfoHtml(id, p);
+    expect(info('suyu')).toContain('class="dmg-physical"');
+    expect(info('suyu')).not.toContain('class="dmg-magic"');
+    expect(info('belle')).toContain('class="dmg-magic"');
+    expect(info('alice')).toContain('class="dmg-magic"');
+    // Cici's double strike is her basic attack: physical.
+    expect(info('cici')).toContain('class="dmg-physical"');
+    p.board[0] = { uid: 77, defId: 'thamar', star: 2 };
+    const pop = unitDetailHtml(p, 77, {}, true);
+    expect(pop).toContain('class="dmg-physical"');
+    expect(pop).toContain('class="calc dmg-physical"');
   });
 });

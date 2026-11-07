@@ -623,6 +623,12 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .trait-desc { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
 .trait-desc span { color: var(--text); }
 .trait-desc span.on { color: var(--accent); font-weight: 700; }
+/* Skill damage numbers by damage type: red physical, teal magic (dim at other stars, bright at this one). */
+.trait-desc em[class^='dmg-'] { font-style: normal; }
+.trait-desc .dmg-physical span { color: #c77a7a; }
+.trait-desc .dmg-physical span.on, .calc.dmg-physical { color: #ff5c5c; }
+.trait-desc .dmg-magic span { color: #6f9fc4; }
+.trait-desc .dmg-magic span.on, .calc.dmg-magic { color: #3cb8ff; }
 .trait-desc i { font-style: normal; opacity: 0.5; }
 .trait-units { display: flex; flex-direction: column; gap: 4px; }
 .trait-units li {
@@ -668,9 +674,16 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .dialog button.grid-unit { width: 100%; border-left: 3px solid var(--tier-color); }
 .dialog button.grid-unit.owned { background: color-mix(in srgb, var(--tier-color) 30%, transparent); }
 .dialog .unit-link:hover, .dialog button.grid-unit:hover { color: var(--accent); text-decoration: underline; }
-.unit-info .trait-title { color: var(--tier-color); }
-.unit-info-cost { padding: 1px 8px; border-radius: 4px; background: var(--tier-color); color: #14161c; font-size: 14px; }
-.info-traits { justify-content: flex-start; margin: 8px 0; }
+.unit-info { position: relative; }
+.unit-info .trait-title { color: var(--tier-color); padding-right: 48px; }
+.unit-info-cost { position: absolute; top: 14px; right: 44px; color: var(--tier-color); font-size: 15px; font-weight: 700; }
+.info-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+.info-traits { display: flex; gap: 6px; font-size: 26px; }
+.dialog .info-trait { padding: 0; border: none; background: none; line-height: 0; cursor: pointer; }
+.dialog .info-trait:hover { filter: brightness(1.3); }
+.info-trait .trait-badge { vertical-align: 0; }
+.info-facts { display: flex; gap: 10px; font-size: 15px; color: var(--muted); }
+.unit-stats tbody th[title] { cursor: help; }
 .unit-stats { width: 100%; border-collapse: collapse; font-size: 13px; }
 .unit-stats th, .unit-stats td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--cell); }
 .unit-stats tbody th { text-align: left; color: var(--muted); font-weight: 400; }
@@ -972,20 +985,23 @@ button.commander-tab:hover { border-color: var(--accent); }
 .home-gallery .meta { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
 .hero-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .dialog .hero-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
   border: 1px solid #3a3f4d;
-  border-left: 3px solid var(--tier-color);
   border-radius: 8px;
   background: var(--cell);
   text-align: left;
 }
 .dialog .hero-card:hover { border-color: var(--accent); filter: brightness(1.15); }
 .hero-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.hero-card-text small { color: var(--muted); font-size: 12px; }
-.hero-card-traits { font-size: 12px; color: #c9ccd6; }
+.hero-card-text { gap: 4px; }
+.hero-card-cost { position: absolute; top: 6px; right: 8px; color: var(--tier-color); font-size: 12px; font-weight: 700; }
+.hero-card-traits { display: flex; gap: 4px; font-size: 22px; }
+.hero-card-traits .trait-badge { vertical-align: 0; }
+.hero-card-range { color: var(--muted); font-size: 12px; }
 .commander-entry .commander-portrait { font-size: 32px; }
 .commander-entry .trait-desc { margin: 4px 0; font-size: 13px; }
 .item-entry .trait-desc { margin: 4px 0; font-size: 13px; }

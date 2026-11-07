@@ -208,7 +208,7 @@ describe('merge', () => {
   test('full bench still allows a buy that completes a merge', () => {
     const state = newGame();
     const p = you(state);
-    const filler = ['footman', 'footman', 'archer', 'imp', 'wisp', 'galekin', 'knight', 'prajurit'];
+    const filler = ['footman', 'footman', 'archer', 'imp', 'phove', 'eudora', 'knight', 'dyroth'];
     filler.forEach((defId, i) => (p.bench[i] = { uid: 1000 + i, defId, star: 1 }));
     buyCopies(state, 'footman', 1);
     expect(p.bench.filter((u) => u?.defId === 'footman').map((u) => u!.star)).toEqual([2]);
@@ -265,13 +265,13 @@ describe('bots', () => {
     const tiles = DRAGON_ALTAR.tiles[0];
     p.board[tiles[0]] = { uid: 1, defId: 'footman', star: 1 };
     p.board[tiles[1]] = { uid: 2, defId: 'archer', star: 1 };
-    p.board[1] = { uid: 3, defId: 'drakeling', star: 1 };
-    p.board[5] = { uid: 4, defId: 'wyrmfang', star: 1 };
+    p.board[1] = { uid: 3, defId: 'siyunyin', star: 1 };
+    p.board[5] = { uid: 4, defId: 'yang', star: 1 };
     p.board[8] = { uid: 5, defId: 'imp', star: 1 };
     runBot(state, p);
     const onAltar = tiles.map((t) => p.board[t]?.defId);
-    expect(onAltar).toContain('drakeling');
-    expect(onAltar).toContain('wyrmfang');
+    expect(onAltar).toContain('siyunyin');
+    expect(onAltar).toContain('yang');
     expect(onAltar.filter(Boolean).length).toBe(4);
   });
 });
@@ -286,7 +286,7 @@ describe('scavenger', () => {
   }
 
   test('level 2 takes the cheapest shop unit for free, after the refresh', () => {
-    const { state, p } = setup(['wisp', 'penari']);
+    const { state, p } = setup(['phove', 'angela']);
     const bonuses = startRound(state);
     const mine = bonuses.find((b) => b.playerId === p.id)!;
     expect(mine.trait).toBe('scavenger');
@@ -301,7 +301,7 @@ describe('scavenger', () => {
   });
 
   test('level 3 also pays 2 gold', () => {
-    const { state, p } = setup(['wisp', 'penari', 'graverobber']);
+    const { state, p } = setup(['phove', 'angela', 'sora']);
     const gold = p.gold;
     const income = roundIncome(p, state.round).total;
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
@@ -312,7 +312,7 @@ describe('scavenger', () => {
   });
 
   test('skipped when the bench is full and the unit would not merge', () => {
-    const { state, p } = setup(['wisp', 'penari']);
+    const { state, p } = setup(['phove', 'angela']);
     p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: 600 + i, defId: 'titan', star: 1 }));
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
     expect(mine.looted).toBeNull();
@@ -363,11 +363,11 @@ describe('shop lock', () => {
     const state = newGame();
     const p = you(state);
     returnShop(state, p); // hand-built shop below, so the old one goes back to the pool first
-    p.shop = ['wraithlord', null, null, null, null];
-    state.pool.wraithlord--;
+    p.shop = ['alice', null, null, null, null];
+    state.pool.alice--;
     expect(applyAction(state, p.id, { type: 'toggleLock' }).ok).toBe(true);
     startRound(state);
-    expect(p.shop).toEqual(['wraithlord', null, null, null, null]);
+    expect(p.shop).toEqual(['alice', null, null, null, null]);
     expect(p.shopLocked).toBe(false);
     startRound(state);
     expect(p.shop.filter(Boolean)).toHaveLength(5);
@@ -377,8 +377,8 @@ describe('shop lock', () => {
   test('Scavenger loots from the kept shop: lock a lone 5-cost and get it next round', () => {
     const state = newGame();
     const p = you(state);
-    p.board[0] = { uid: 700, defId: 'wisp', star: 1 };
-    p.board[1] = { uid: 701, defId: 'penari', star: 1 };
+    p.board[0] = { uid: 700, defId: 'phove', star: 1 };
+    p.board[1] = { uid: 701, defId: 'angela', star: 1 };
     returnShop(state, p);
     p.shop = [null, null, 'titan', null, null];
     state.pool.titan--;
@@ -401,7 +401,7 @@ describe('shop lock', () => {
 
 describe('formation', () => {
   test('more melee than a row holds: the rest go to the next row, every cell different', () => {
-    const ids = ['hazeguard', 'thunderhawk', 'zodiacblade', 'dalang', 'pyromancer', 'wraithlord', 'footman', 'knight', 'archer'];
+    const ids = ['uranus', 'balman', 'hilman', 'frank', 'lola', 'alice', 'footman', 'knight', 'archer'];
     const cells = formation(ids);
     expect(new Set(cells).size).toBe(ids.length);
     expect(cells.every((c) => c >= 0 && c < BOARD_COLS * BOARD_ROWS)).toBe(true);

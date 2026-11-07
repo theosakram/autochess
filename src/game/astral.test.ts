@@ -8,7 +8,7 @@ import { UNIT_BY_ID } from './units';
 import { unitStats } from './traits';
 import { unitDetailHtml } from '../ui/views';
 
-const ASTRALS = ['stardustsquire', 'cometlancer', 'nebulaseer', 'zodiacblade', 'polaris', 'empyrean'];
+const ASTRALS = ['minos', 'martin', 'katarina', 'hilman', 'irina', 'odette'];
 
 function newGame(): GameState {
   const state = createGame(5, [
@@ -39,39 +39,50 @@ const give = (p: Player, holder: number, n: number) => {
 describe('Astral', () => {
   test('six units at tiers 1, 2, 3, 3, 4, 5; the 4g is Deadeye, the 5g Mage', () => {
     expect(ASTRALS.map((id) => UNIT_BY_ID[id].tier)).toEqual([1, 2, 3, 3, 4, 5]);
-    expect(UNIT_BY_ID.polaris.traits).toEqual(['astral', 'deadeye']);
-    expect(UNIT_BY_ID.empyrean.traits).toEqual(['astral', 'mage']);
+    expect(UNIT_BY_ID.irina.traits).toEqual(['astral', 'deadeye']);
+    expect(UNIT_BY_ID.odette.traits).toEqual(['astral', 'mage']);
     expect([2, 4, 6, 10].map((n) => traitLevel('astral', n))).toEqual([1, 2, 3, 4]);
   });
 
   test('the Astral carrying the most items is the Sovereign, inactive items included', () => {
     const state = newGame();
     const p = state.players[0];
-    const [squire, lancer] = field(p, [['stardustsquire', 1, 0], ['cometlancer', 1, 1], ['footman', 1, 2]]);
+    const [squire, lancer] = field(p, [['minos', 1, 0], ['martin', 1, 1], ['footman', 1, 2]]);
     give(p, squire, 2); // Keris works only with Gustiwana, but it's still carried
     give(p, lancer, 1);
-    expect(fieldLeaders(p, activeTraits(p.board))).toEqual({ astral: squire });
+    expect(fieldLeaders(p, activeTraits(p.board))).toEqual({ astral: [squire] });
   });
 
   test('ties go to higher star, then higher tier, then board order; non-Astrals never lead', () => {
     const state = newGame();
     const p = state.players[0];
-    let [a, b] = field(p, [['stardustsquire', 2, 0], ['cometlancer', 1, 1]]);
-    expect(fieldLeaders(p, activeTraits(p.board)).astral).toBe(a);
-    [a, b] = field(p, [['stardustsquire', 1, 0], ['cometlancer', 1, 1]]);
-    expect(fieldLeaders(p, activeTraits(p.board)).astral).toBe(b);
-    const [footman] = field(p, [['footman', 1, 0], ['stardustsquire', 1, 1], ['cometlancer', 1, 2]]);
+    let [a, b] = field(p, [['minos', 2, 0], ['martin', 1, 1]]);
+    expect(fieldLeaders(p, activeTraits(p.board)).astral).toEqual([a]);
+    [a, b] = field(p, [['minos', 1, 0], ['martin', 1, 1]]);
+    expect(fieldLeaders(p, activeTraits(p.board)).astral).toEqual([b]);
+    const [footman] = field(p, [['footman', 1, 0], ['minos', 1, 1], ['martin', 1, 2]]);
     give(p, footman, 3);
-    expect(fieldLeaders(p, activeTraits(p.board)).astral).not.toBe(footman);
+    expect(fieldLeaders(p, activeTraits(p.board)).astral).not.toContain(footman);
     // Inactive trait: no leader.
-    field(p, [['stardustsquire', 1, 0]]);
+    field(p, [['minos', 1, 0]]);
     expect(fieldLeaders(p, activeTraits(p.board))).toEqual({});
+  });
+
+  test('at the 10 breakpoint the top two Astrals are both Sovereigns', () => {
+    const state = newGame();
+    const p = state.players[0];
+    const [squire, lancer, seer] = field(p, [['minos', 1, 0], ['martin', 1, 1], ['katarina', 1, 2]]);
+    give(p, squire, 1);
+    give(p, seer, 2);
+    expect(fieldLeaders(p, { astral: 3 }).astral).toEqual([seer]);
+    expect(fieldLeaders(p, { astral: 4 }).astral).toEqual([seer, squire]);
+    expect(fieldLeaders(p, { astral: 4 }).astral).not.toContain(lancer);
   });
 
   test('Astrals deal more damage, the Sovereign more on top plus hybrid lifesteal; others get nothing', () => {
     const state = newGame();
     const p = state.players[0];
-    const [squire, lancer, footman] = field(p, [['stardustsquire', 1, 0], ['cometlancer', 1, 1], ['footman', 1, 2]]);
+    const [squire, lancer, footman] = field(p, [['minos', 1, 0], ['martin', 1, 1], ['footman', 1, 2]]);
     give(p, squire, 1);
     const s = fieldStats(p, activeTraits(p.board));
     expect(s.get(squire)!.damageAmp).toBeCloseTo(ASTRAL.damageAmp[0] + ASTRAL.sovereignAmp[0]);
@@ -85,12 +96,12 @@ describe('Astral', () => {
   test('combat and the unit card both mark the Sovereign', () => {
     const state = newGame();
     const [a, b] = state.players;
-    const [squire] = field(a, [['stardustsquire', 1, 3], ['cometlancer', 1, 4]]);
+    const [squire] = field(a, [['minos', 1, 3], ['martin', 1, 4]]);
     give(a, squire, 1);
     field(b, [['knight', 1, 3]]);
     const r = simulateCombat({ rng: 1 }, a, b);
-    expect(r.fighters.find((f) => f.defId === 'stardustsquire')!.leads).toEqual(['astral']);
-    expect(r.fighters.find((f) => f.defId === 'cometlancer')!.leads).toEqual([]);
+    expect(r.fighters.find((f) => f.defId === 'minos')!.leads).toEqual(['astral']);
+    expect(r.fighters.find((f) => f.defId === 'martin')!.leads).toEqual([]);
     expect(unitDetailHtml(a, squire, {})).toContain('Astral Sovereign');
   });
 });

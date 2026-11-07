@@ -50,13 +50,16 @@ export interface StatMod {
 // `scale` multiplies hp, atk and ap on top of stars; used by the balance tool.
 export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
   const mult = STAR_MULT[star - 1] * scale;
+  const set = def.starStats;
+  const pick = (base: number, perStar: number[] | undefined) =>
+    !perStar ? base * mult : star === 4 ? perStar[2] * (STAR_MULT[3] / STAR_MULT[2]) * scale : perStar[star - 1] * scale;
   return {
-    hp: def.hp * mult,
-    atk: def.atk * mult,
-    ap: def.ap * mult,
+    hp: pick(def.hp, set?.hp),
+    atk: pick(def.atk, set?.atk),
+    ap: pick(def.ap, set?.ap),
     armor: def.armor,
     mr: def.mr,
-    maxMana: def.mana,
+    maxMana: set?.mana ? set.mana[Math.min(star, 3) - 1] : def.mana,
     manaRegen: 0,
     armorShred: 0,
     magicPen: 0,
@@ -73,7 +76,7 @@ export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
     lifesteal: 0,
     spellLifesteal: 0,
     range: def.range,
-    attackTicks: def.attackTicks,
+    attackTicks: set?.attackTicks ? set.attackTicks[Math.min(star, 3) - 1] : def.attackTicks,
     attackSpeed: 1,
   };
 }

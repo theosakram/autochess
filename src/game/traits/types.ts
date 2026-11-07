@@ -81,8 +81,9 @@ export interface TraitDef {
     topLevel?: number; // from this level, every item works at its max tier
   };
   // While active, the fielded member carrying the most items leads the trait (ties: higher star,
-  // then higher tier, then first on the board). Its mods see `leader: true`.
-  leader?: { title: string; icon: string };
+  // then higher tier, then first on the board). Its mods see `leader: true`. `count` lets more
+  // than one member lead at a given level (default 1).
+  leader?: { title: string; icon: string; count?: (level: number) => number };
   // A counter the player keeps all game. It shows up the first time the trait is active and only
   // grows while it's active: after each fight, and at the start of each round.
   stacks?: {

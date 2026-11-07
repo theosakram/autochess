@@ -107,6 +107,30 @@ export function facingStrip(f: Point, toward: Point, width = 3): Point[] {
   return cells;
 }
 
+// A cone opening out from `origin` in the direction from `from` to `to` (along whichever axis that's
+// mostly off by, vertical on a tie): 3 cells wide one step out, 5 wide two steps out, and so on for
+// `depth` steps. `origin` not included.
+function coneOut(origin: Point, from: Point, to: Point, depth: number): Point[] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const vertical = Math.abs(dy) >= Math.abs(dx);
+  const step = vertical ? Math.sign(dy) || -1 : Math.sign(dx);
+  const cells: Point[] = [];
+  for (let d = 1; d <= depth; d++) {
+    for (let o = -d; o <= d; o++) {
+      const p = vertical ? { x: origin.x + o, y: origin.y + step * d } : { x: origin.x + step * d, y: origin.y + o };
+      if (p.x >= 0 && p.y >= 0 && p.x < GRID_W && p.y < GRID_H) cells.push(p);
+    }
+  }
+  return cells;
+}
+
+// A cone opening out behind `to`, away from `from`.
+export const coneBehind = (from: Point, to: Point, depth = 2) => coneOut(to, from, to, depth);
+
+// A cone opening out from `f` toward `toward`.
+export const coneAhead = (f: Point, toward: Point, depth = 2) => coneOut(f, f, toward, depth);
+
 // A strip `width` cells wide (centred on `f`'s column) from the row right ahead of it to the far edge.
 export function aheadStrip(f: Point & { side: 0 | 1 }, width = 3): Point[] {
   const forward = f.side === 0 ? -1 : 1;
@@ -119,4 +143,21 @@ export function aheadStrip(f: Point & { side: 0 | 1 }, width = 3): Point[] {
     }
   }
   return cells;
+}
+
+// The free cell nearest the middle of the board (her own cell counts as free).
+export function middleCell(api: SkillApi, f: SkillFighter): Point | null {
+  const cx = (GRID_W - 1) / 2;
+  const cy = (GRID_H - 1) / 2;
+  let best: Point | null = null;
+  let bestD = Infinity;
+  for (let x = 0; x < GRID_W; x++) {
+    for (let y = 0; y < GRID_H; y++) {
+      const who = api.occupant({ x, y });
+      if (who && who.id !== f.id) continue;
+      const d = (x - cx) ** 2 + (y - cy) ** 2;
+      if (d < bestD) [best, bestD] = [{ x, y }, d];
+    }
+  }
+  return best;
 }

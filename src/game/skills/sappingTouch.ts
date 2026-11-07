@@ -1,9 +1,9 @@
 import { empoweredAttack } from './empoweredAttack';
 
-// Wisp (1g Scavenger). Per star, index 0 = 1★.
+// Phove (1g Spectre / Scavenger). Per star, index 0 = 1★.
 export const SAPPING_TOUCH = {
-  bonus: [1, 1.25, 2],
-  weaken: [0.2, 0.25, 0.4], // of the target's attack and magic attack
+  bonus: [3.9, 3.9, 5.85], // on top of the attack itself: the enhanced attack deals 490 / 490 / 685%
+  weaken: [0.1, 0.1, 0.12], // of the target's attack and magic attack
   seconds: 4,
 };
 

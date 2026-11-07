@@ -2,8 +2,8 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const DEFENDER = {
-  allies: [25, 40, 110], // armor and magic resist for every ally
-  defenderBonus: [40, 60, 170], // extra on top for Defenders
+  allies: [6, 12, 24], // armor and magic resist for every ally
+  defenderBonus: [20, 30, 60], // extra on top for Defenders
 };
 
 export const defender: TraitDef = {

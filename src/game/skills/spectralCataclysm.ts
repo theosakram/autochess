@@ -17,6 +17,7 @@ export const spectralCataclysm: SkillDef = {
   desc:
     'Leaps into the thick of the enemy (the spot with the most of them around it). The impact hits the tiles around it for {impact} of attack, ' +
     `then ${SPECTRAL_CATACLYSM.delay}s later it explodes outwards, hitting every enemy within ${SPECTRAL_CATACLYSM.radius} tiles for {blast} of attack. All physical.`,
+  damage: { impact: 'physical', blast: 'physical' },
   values: () => ({ impact: SPECTRAL_CATACLYSM.impact.map(pct), blast: SPECTRAL_CATACLYSM.blast.map(pct) }),
   cast(api, caster) {
     const i = caster.star - 1;

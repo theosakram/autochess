@@ -15,8 +15,11 @@ export const DRAGON_ALTAR = {
     ALL_CELLS,
   ],
   // Hp, attack and magic attack for units starting on an altar: other allies, and Dragon Altar units.
-  allyBonus: [0.03, 0.06, 0.1, 1],
-  memberBonus: [0.15, 0.3, 0.5, 2],
+  allyBonus: [0.05, 0.1, 0.16, 1.16],
+  memberMult: 3, // Dragon Altar units get this many times the ally bonus
+  get memberBonus() {
+    return this.allyBonus.map((b) => +(b * this.memberMult).toFixed(4));
+  },
 };
 
 export const dragonAltar: TraitDef = {

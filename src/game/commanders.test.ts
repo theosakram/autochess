@@ -167,7 +167,7 @@ describe('commanders', () => {
     expect(applyAction(state, p.id, { type: 'move', from, to: { area: 'board', index: 3 } }).ok).toBe(false);
     expect(applyAction(state, p.id, { type: 'move', from, to: { area: 'board', index: BOARD_COLS + 3 } }).ok).toBe(true);
     // Swapping a unit into its cell can't push it onto the bench either.
-    p.bench[0] = { uid: 999, defId: 'kindler', star: 1 };
+    p.bench[0] = { uid: 999, defId: 'cici', star: 1 };
     expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 0 }, to: { area: 'board', index: beastCell(p) } }).ok).toBe(false);
   });
 
@@ -320,8 +320,8 @@ describe('Kagura', () => {
   test('own card: +10 gold once, and a separate dance mark gives its hero +30% attack and magic attack and 20% hybrid lifesteal', () => {
     const state = kaguraGame();
     const p = state.players[0];
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
-    p.board[1] = { uid: 901, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
+    p.board[1] = { uid: 901, defId: 'cici', star: 1 };
     applyAction(state, p.id, { type: 'mark', kind: 'ward', unit: 901 });
     const before = fieldStats(p, playerTraits(p), {}).get(900)!;
     // No dance before the card.
@@ -385,9 +385,9 @@ describe('Angela', () => {
     p.bench.fill(null);
     p.items = [];
     // Three heroes; the middle one holds the most items.
-    p.board[0] = { uid: 900, defId: 'kindler', star: 1 };
-    p.board[1] = { uid: 901, defId: 'kindler', star: 1 };
-    p.board[2] = { uid: 902, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
+    p.board[1] = { uid: 901, defId: 'cici', star: 1 };
+    p.board[2] = { uid: 902, defId: 'cici', star: 1 };
     p.items = [
       { uid: 50, id: Object.keys(ITEMS)[0], tier: 1, holder: 901 },
       { uid: 51, id: Object.keys(ITEMS)[1], tier: 1, holder: 901 },
@@ -403,7 +403,7 @@ describe('Angela', () => {
     expect(applyAction(state, p.id, { type: 'mark', kind: 'halo2', unit: 902 }).ok).toBe(false); // the card's second halo
     expect([...protectedUids(p)].sort()).toEqual([900, 901]);
     const stats = fieldStats(p, playerTraits(p), {});
-    const base = unitStats(UNIT_BY_ID.kindler, 1).skillAmp;
+    const base = unitStats(UNIT_BY_ID.cici, 1).skillAmp;
     expect(stats.get(900)!.skillAmp - stats.get(902)!.skillAmp).toBeCloseTo(ANGELA.innate.skillAmp);
     expect(stats.get(902)!.skillAmp).toBeGreaterThanOrEqual(base);
   });
@@ -435,15 +435,15 @@ describe('Angela', () => {
     const [a, b] = state.players;
     a.items = [];
     a.board.fill(null);
-    a.board[3] = { uid: 1, defId: 'kindler', star: 1 };
-    a.marks = { halo: { uid: 1, defId: 'kindler' } };
+    a.board[3] = { uid: 1, defId: 'cici', star: 1 };
+    a.marks = { halo: { uid: 1, defId: 'cici' } };
     b.board.fill(null);
     b.bench.fill(null);
     b.board[3] = { uid: 2, defId: 'knight', star: 2 };
     // Mana on the first attack after the first cast, with and without the halo.
     const manaAfterCast = () => {
       const r = simulateCombat({ rng: 1 }, a, b);
-      const me = r.fighters.find((f) => f.side === 0 && f.defId === 'kindler')!;
+      const me = r.fighters.find((f) => f.side === 0 && f.defId === 'cici')!;
       const cast = r.events.findIndex((e) => e.type === 'skill' && e.id === me.id);
       expect(cast).toBeGreaterThan(-1);
       const next = r.events.slice(cast + 1).find((e) => (e.type === 'attack' || e.type === 'skill') && e.id === me.id);
@@ -616,11 +616,11 @@ describe('Kaela', () => {
     const { state, p } = kaelaGame();
     p.bench.fill(null);
     p.board.fill(null);
-    p.board[0] = { uid: 500, defId: 'kindler', star: 1 };
+    p.board[0] = { uid: 500, defId: 'cici', star: 1 };
     p.mirrors = 1;
     expect(applyAction(state, p.id, { type: 'useMirror', unit: 500 }).ok).toBe(true);
     expect(p.mirrors).toBe(0);
-    expect([...p.bench, ...p.board].filter((u) => u?.defId === 'kindler').length).toBe(2);
+    expect([...p.bench, ...p.board].filter((u) => u?.defId === 'cici').length).toBe(2);
     expect(applyAction(state, p.id, { type: 'useMirror', unit: 500 }).ok).toBe(false);
   });
 
@@ -852,8 +852,8 @@ describe('Lunox', () => {
 
   test('blessing a hero rolls one of its own traits, +1 on top of the Magic Orb, and gives 3 heroes of it (1-2 cost)', () => {
     const { state, p } = lunoxGame('lunox');
-    p.board[3] = { uid: 950, defId: 'prajurit', star: 1 }; // Gustiwana Fighter
-    p.orb = { defId: 'prajurit', trait: 'gustiwana' };
+    p.board[3] = { uid: 950, defId: 'dyroth', star: 1 }; // Gustiwana Fighter
+    p.orb = { defId: 'dyroth', trait: 'gustiwana' };
     const before = playerTraitCounts(p);
     expect(applyAction(state, p.id, { type: 'bless', unit: 950 }).ok).toBe(true);
     const trait = p.twilight!.trait!;
@@ -871,14 +871,14 @@ describe('Lunox', () => {
   test('it stays with that very hero: a second copy has none, and selling the hero loses it', () => {
     const { state, p } = lunoxGame('lukas');
     p.bench.fill(null);
-    p.board[3] = { uid: 951, defId: 'prajurit', star: 1 };
+    p.board[3] = { uid: 951, defId: 'dyroth', star: 1 };
     expect(applyAction(state, p.id, { type: 'bless', unit: 951 }).ok).toBe(true);
     p.bench.fill(null); // drop the gifted heroes so they don't count
     const trait = p.twilight!.trait!;
     expect(playerTraitCounts(p)[trait]).toBe(2);
-    p.board[4] = { uid: 952, defId: 'drakeling', star: 1 };
+    p.board[4] = { uid: 952, defId: 'siyunyin', star: 1 };
     expect(applyAction(state, p.id, { type: 'sell', from: { area: 'board', index: 3 } }).ok).toBe(true);
-    p.board[3] = { uid: 953, defId: 'prajurit', star: 1 }; // another of the same hero
+    p.board[3] = { uid: 953, defId: 'dyroth', star: 1 }; // another of the same hero
     expect(playerTraitCounts(p)[trait]).toBe(1);
   });
 
@@ -888,12 +888,12 @@ describe('Lunox', () => {
     expect(LUNOX.cardGold).toBe(8);
     expect(LUNOX.twilightGold.gold).toBe(18);
     const trait = 'gustiwana';
-    p.board[0] = { uid: 960, defId: 'prajurit', star: 1 };
+    p.board[0] = { uid: 960, defId: 'dyroth', star: 1 };
     p.twilight = { holder: 960, trait, gifts: [] };
     p.gold = 0;
     syncPlayer(state, p);
     expect(p.gold).toBe(0);
-    const others = UNITS.filter((u) => u.id !== 'prajurit' && u.shop !== false && !u.piece && u.traits.includes(trait)).slice(0, 4);
+    const others = UNITS.filter((u) => u.id !== 'dyroth' && u.shop !== false && !u.piece && u.traits.includes(trait)).slice(0, 4);
     others.forEach((u, i) => (p.board[1 + i] = { uid: 961 + i, defId: u.id, star: 1 }));
     expect(playerTraitCounts(p)[trait]).toBeGreaterThanOrEqual(LUNOX.twilightGold.count);
     syncPlayer(state, p);
@@ -905,7 +905,7 @@ describe('Lunox', () => {
   test('on another commander: the blessing and 12 gold, no heroes', () => {
     const { state, p } = lunoxGame('lunox', 'lukas');
     expect(p.gold).toBe(LUNOX.other.gold);
-    p.board[3] = { uid: 970, defId: 'prajurit', star: 1 };
+    p.board[3] = { uid: 970, defId: 'dyroth', star: 1 };
     expect(applyAction(state, p.id, { type: 'bless', unit: 970 }).ok).toBe(true);
     expect(p.twilight!.gifts).toEqual([]);
     expect(powersOf(p).twilightGold).toBeUndefined();

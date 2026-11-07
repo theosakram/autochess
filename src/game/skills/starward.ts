@@ -2,10 +2,10 @@ import { MAX_COMBAT_TICKS, TICKS_PER_SECOND } from '../config';
 import { pct } from '../traits/format';
 import type { SkillDef, SkillFighter } from './types';
 
-// Stardust Squire (1g Defender). Per star, index 0 = 1★.
+// Minos (1g Astral / Defender). Per star, index 0 = 1★.
 export const STARWARD = {
-  shield: [0.1, 0.15, 0.25], // passive: of its own and each flanking ally's max hp, for the whole fight
-  heal: [0.12, 0.16, 0.28], // active: of each healed ally's own max hp
+  shield: [400, 700, 2000], // passive: flat, on itself and each flanking ally, for the whole fight
+  heal: [0.2, 0.25, 0.3], // active: of each healed ally's own max hp
   healed: 2,
 };
 
@@ -13,14 +13,14 @@ export const starward: SkillDef = {
   id: 'starward',
   name: 'Starward',
   desc:
-    'Passive: when combat starts, it and the allies directly left and right of it gain a shield of {shield} of their max HP for the whole fight. ' +
+    'Passive: when combat starts, it and the allies directly left and right of it gain a {shield} shield for the whole fight. ' +
     `Active: heals the ${STARWARD.healed} allies with the lowest HP (itself included) for {heal} of their max HP.`,
-  values: () => ({ shield: STARWARD.shield.map(pct), heal: STARWARD.heal.map(pct) }),
+  values: () => ({ shield: STARWARD.shield.map(String), heal: STARWARD.heal.map(pct) }),
   atStart(api, caster) {
-    const share = STARWARD.shield[caster.star - 1];
+    const amount = STARWARD.shield[caster.star - 1];
     for (const ally of api.alliesOf(caster)) {
       if (ally.y === caster.y && Math.abs(ally.x - caster.x) <= 1) {
-        api.shield(ally, ally.maxHp * share, MAX_COMBAT_TICKS / TICKS_PER_SECOND, `starward${caster.id}`);
+        api.shield(ally, amount, MAX_COMBAT_TICKS / TICKS_PER_SECOND, `starward${caster.id}`);
       }
     }
   },

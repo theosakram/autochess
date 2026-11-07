@@ -9,7 +9,7 @@ import { returnShop } from './shop';
 import { CULT_OF_FIRE, GUSTIWANA, traitCounts } from './traits';
 import type { GameState, Player, Star } from './types';
 
-const GW_UNITS = ['prajurit', 'penari', 'dalang', 'senopati', 'resi', 'batarakala'];
+const GW_UNITS = ['dyroth', 'angela', 'frank', 'kari', 'lunox', 'lance'];
 
 function newGame(): GameState {
   const state = createGame(11, [
@@ -40,9 +40,9 @@ describe('Gustiwana items', () => {
     const p = state.players[0];
     p.board.fill(null);
     p.bench.fill(null);
-    p.board[0] = { uid: 1, defId: 'kindler', star: 1 };
-    p.board[1] = { uid: 2, defId: 'penari', star: 1 };
-    p.orb = { defId: 'kindler', trait: 'gustiwana' };
+    p.board[0] = { uid: 1, defId: 'cici', star: 1 };
+    p.board[1] = { uid: 2, defId: 'angela', star: 1 };
+    p.orb = { defId: 'cici', trait: 'gustiwana' };
     for (const id of ['keris', 'blangkon', 'jimat']) {
       const item = { uid: 500, id, tier: 1, holder: null };
       p.items = [item];
@@ -116,24 +116,46 @@ describe('item effects in combat', () => {
     return simulateCombat({ rng: 1 }, a, b);
   }
 
-  test('Keris: Mortal Strike every 5s hits every enemy for pure damage', () => {
+  test('Keris: Justice every 5s strikes the 3x3 with the most enemies, for pure damage', () => {
+    // Two enemies side by side in the front row (columns 2 and 3), an archer far back in the corner: only the pair is struck.
     const r = duel(
       { id: 'keris', tier: 3 },
-      [['prajurit', 3, 3], ['penari', 3, 17]],
-      [['titan', 3, 3], ['paladin', 3, 6]],
+      [['dyroth', 3, 3], ['angela', 3, 17]],
+      [['titan', 3, 2], ['paladin', 3, 3], ['archer', 3, 20]],
     );
-    const holder = r.fighters.find((f) => f.defId === 'prajurit')!;
+    const holder = r.fighters.find((f) => f.defId === 'dyroth')!;
     const strikes = r.events.filter((e) => e.type === 'effect' && e.effect === 'keris' && e.by === holder.id);
     const every = KERIS.every * TICKS_PER_SECOND;
     expect(strikes.length).toBeGreaterThan(0);
     expect(strikes.every((e) => e.t % every === 0)).toBe(true);
-    expect(new Set(strikes.filter((e) => e.t === every).map((e) => e.type === 'effect' && e.target)).size).toBe(2);
+    const id = (defId: string) => r.fighters.find((f) => f.defId === defId)!.id;
+    const first = new Set(strikes.filter((e) => e.t === every).map((e) => e.type === 'effect' && e.target));
+    expect([...first].sort()).toEqual([id('titan'), id('paladin')].sort());
+  });
+
+  test('Keris: +20% attack and magic attack at every tier; Justice 8 / 15 / 20 / 100% of attack, one per unit', () => {
+    const def = ITEMS.keris;
+    for (const tier of [1, 2, 3, 4]) {
+      expect(def.mods(tier)).toEqual([{ stat: 'atk', pct: 0.2 }, { stat: 'ap', pct: 0.2 }]);
+      expect(def.pulse!(tier)).toEqual({ every: 5, atkPct: [0.08, 0.15, 0.2, 1][tier - 1], damageType: 'pure', area: '3x3' });
+    }
+    // Two Kerises on one unit: Justice still strikes once per 5s.
+    const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }, { id: 'b', name: 'B', isBot: false }]);
+    const [a, b] = state.players;
+    for (const p of state.players) { p.board.fill(null); p.bench.fill(null); p.items = []; }
+    a.board[3] = { uid: 1, defId: 'dyroth', star: 3 };
+    a.board[17] = { uid: 2, defId: 'angela', star: 3 };
+    b.board[3] = { uid: 3, defId: 'titan', star: 3 };
+    a.items = [{ uid: 1, id: 'keris', tier: 1, holder: 1 }, { uid: 2, id: 'keris', tier: 3, holder: 1 }];
+    const r = simulateCombat({ rng: 1 }, a, b);
+    const at5 = r.events.filter((e) => e.type === 'effect' && e.effect === 'keris' && e.t === KERIS.every * TICKS_PER_SECOND);
+    expect(at5).toHaveLength(1);
   });
 
   test('Blangkon: stuns enemies in the 3x3 in front at battle start, and they wait it out', () => {
     // Wearer in my front row, column 3 (a second Gustiwana in the back activates the trait);
     // one enemy right across the middle line, another far off to the side.
-    const r = duel({ id: 'blangkon', tier: 2 }, [['senopati', 1, 3], ['penari', 1, 20]], [['footman', 1, 3], ['archer', 1, 20]]);
+    const r = duel({ id: 'blangkon', tier: 2 }, [['kari', 1, 3], ['angela', 1, 20]], [['footman', 1, 3], ['archer', 1, 20]]);
     const stuns = r.events.filter((e) => e.type === 'stun');
     const across = r.fighters.find((f) => f.defId === 'footman')!;
     const until = BLANGKON.stun[1] * TICKS_PER_SECOND;
@@ -142,9 +164,32 @@ describe('item effects in combat', () => {
     expect(firstAct.t).toBeGreaterThanOrEqual(until);
   });
 
+  test('Blangkon: +20% max HP at every tier, plus Nether (unique): +25 / 35 / 50% more, stun 1 / 1 / 2s', () => {
+    const def = ITEMS.blangkon;
+    for (const tier of [1, 2, 3]) {
+      expect(def.mods(tier)).toEqual([{ stat: 'hp', pct: 0.2 }]);
+      expect(def.unique!(tier)).toEqual([{ stat: 'hp', pct: [0.25, 0.35, 0.5][tier - 1] }]);
+      expect(def.opener!(tier).stunSeconds).toBe([1, 1, 2][tier - 1]);
+    }
+    // Tier 4: +200% in all, a 3s stun.
+    expect(0.2 + def.unique!(4)[0].pct!).toBeCloseTo(2);
+    expect(def.opener!(4).stunSeconds).toBe(3);
+  });
+
+  test('Jimat: 20% lifesteal and spell lifesteal at every tier; Sakti (unique) +25 / 35 / 55 / 150% damage, +65% max HP at tier 4', () => {
+    const def = ITEMS.jimat;
+    for (const tier of [1, 2, 3, 4]) {
+      expect(def.mods(tier)).toEqual([{ stat: 'lifesteal', add: 0.2 }, { stat: 'spellLifesteal', add: 0.2 }]);
+      expect(def.unique!(tier)).toEqual([
+        { stat: 'damageAmp', add: [0.25, 0.35, 0.55, 1.5][tier - 1] },
+        ...(tier === 4 ? [{ stat: 'hp' as const, pct: 0.65 }] : []),
+      ]);
+    }
+  });
+
   test('Jimat: every heal is lifesteal from a hit the holder just dealt', () => {
-    const r = duel({ id: 'jimat', tier: 1 }, [['prajurit', 2, 3], ['dalang', 1, 20]], [['titan', 2, 3]]); // no healer: every heal is lifesteal
-    const holder = r.fighters.find((f) => f.defId === 'prajurit')!;
+    const r = duel({ id: 'jimat', tier: 1 }, [['kari', 2, 3], ['frank', 1, 20]], [['titan', 2, 3]]); // no healer: every heal is lifesteal
+    const holder = r.fighters.find((f) => f.defId === 'kari')!;
     const heals = r.events.filter((e) => e.type === 'heal' && e.id === holder.id);
     expect(heals.length).toBeGreaterThan(0);
     for (const heal of heals) {
@@ -163,15 +208,15 @@ describe('item effects in combat', () => {
   });
 
   test('items do nothing without Gustiwana active', () => {
-    // A lone Gustiwana unit: trait inactive, so no Mortal Strike.
-    const r = duel({ id: 'keris', tier: 3 }, [['prajurit', 3, 3]], [['titan', 3, 3]]);
+    // A lone Gustiwana unit: trait inactive, so no Justice.
+    const r = duel({ id: 'keris', tier: 3 }, [['dyroth', 3, 3]], [['titan', 3, 3]]);
     expect(r.events.some((e) => e.type === 'effect' && e.effect === 'keris')).toBe(false);
     expect(r.fighters[0].items).toEqual([]);
   });
 });
 
 describe('Cult of Fire and the Pyre Offering', () => {
-  const cult = (p: Player) => field(p, [['kindler', 1, 0], ['ashbinder', 1, 15], ['titan', 1, 3], ['footman', 1, 4]]);
+  const cult = (p: Player) => field(p, [['cici', 1, 0], ['zhuxin', 1, 15], ['titan', 1, 3], ['footman', 1, 4]]);
 
   test('one Offering, granted when the cult activates', () => {
     const state = newGame();
@@ -185,10 +230,10 @@ describe('Cult of Fire and the Pyre Offering', () => {
   test('cultists cannot hold it, outsiders can', () => {
     const state = newGame();
     const p = state.players[0];
-    const [kindler, , titan] = cult(p);
+    const [cici, , titan] = cult(p);
     syncItems(state, p);
     const offering = p.items[0].uid;
-    expect(applyAction(state, p.id, { type: 'equip', item: offering, unit: kindler })).toEqual({
+    expect(applyAction(state, p.id, { type: 'equip', item: offering, unit: cici })).toEqual({
       ok: false,
       error: "Cult of Fire units can't hold the Pyre Offering",
     });
@@ -198,15 +243,15 @@ describe('Cult of Fire and the Pyre Offering', () => {
   test("every cultist gains a share of the holder's attack; nobody else does", () => {
     const state = newGame();
     const p = state.players[0];
-    const [kindler, ashbinder, titan, footman] = cult(p);
+    const [cici, zhuxin, titan, footman] = cult(p);
     syncItems(state, p);
     applyAction(state, p.id, { type: 'equip', item: p.items[0].uid, unit: titan });
     const levels = { cultoffire: 1 };
     const without = fieldStats({ ...p, items: [] }, levels);
     const withIt = fieldStats(p, levels);
     const gain = Math.round(withIt.get(titan)!.atk * OFFERING.share[0]);
-    expect(withIt.get(kindler)!.atk).toBe(without.get(kindler)!.atk + gain);
-    expect(withIt.get(ashbinder)!.atk).toBe(without.get(ashbinder)!.atk + gain);
+    expect(withIt.get(cici)!.atk).toBe(without.get(cici)!.atk + gain);
+    expect(withIt.get(zhuxin)!.atk).toBe(without.get(zhuxin)!.atk + gain);
     expect(withIt.get(titan)!.atk).toBe(without.get(titan)!.atk);
     expect(withIt.get(footman)!.atk).toBe(without.get(footman)!.atk);
   });

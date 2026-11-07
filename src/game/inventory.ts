@@ -119,13 +119,13 @@ export function honoraryTraits(items: { id: string }[]): string[] {
   });
 }
 
-// Trait id -> uid of its leader on this board. Every carried item counts, working or not.
+// Trait id -> uids of its leaders on this board. Every carried item counts, working or not.
 export const fieldLeaders = (p: Player, levels: TraitLevels) => traitLeaders(p.board, levels, (uid) => slotsUsed(p, uid));
 
 // The traits a unit leads, by uid.
 export function leadsOf(p: Player, levels: TraitLevels, uid: number): string[] {
   const leaders = fieldLeaders(p, levels);
-  return Object.keys(leaders).filter((id) => leaders[id] === uid);
+  return Object.keys(leaders).filter((id) => leaders[id].includes(uid));
 }
 
 // What an item aura is handing out right now.
@@ -163,7 +163,7 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     const items = activeItems(heldBy(p, u.uid), levels);
     const own = UNIT_BY_ID[u.defId].honorary;
     const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
-    const leads = Object.keys(leaders).filter((id) => leaders[id] === u.uid);
+    const leads = Object.keys(leaders).filter((id) => leaders[id].includes(u.uid));
     const mods: StatMod[] = [...extra];
     // Kagura's card: the dancing hero fights harder.
     const boost = u.uid === markedUid(p, 'boost') ? powersOf(p).boost : undefined;

@@ -2,11 +2,11 @@ import { pct } from '../traits/format';
 import { enemiesOn, row3 } from './areas';
 import type { SkillDef, SkillFighter } from './types';
 
-// Grave Robber (4g Scavenger). Per star, index 0 = 1★.
+// Sora (4g Necromancer / Scavenger). Per star, index 0 = 1★.
 export const SHOVEL_SLAM = {
   slams: 3,
   every: 0.4, // seconds between slams
-  atk: [1.2, 1.4, 2.8], // of attack, physical, per slam to each enemy in the row
+  atk: [2, 2, 10], // of attack, physical, per slam to each enemy in the row
   stun: 0.5, // seconds, per slam
 };
 
@@ -16,6 +16,7 @@ export const shovelSlam: SkillDef = {
   desc:
     `Slams ${SHOVEL_SLAM.slams} times, ${SHOVEL_SLAM.every}s apart, into the 3x1 row around its target: ` +
     `each slam deals {atk} of attack as physical damage and stuns for ${SHOVEL_SLAM.stun}s.`,
+  damage: { atk: 'physical' },
   values: () => ({ atk: SHOVEL_SLAM.atk.map(pct) }),
   cast(api, caster, target) {
     let center: SkillFighter | null = target;

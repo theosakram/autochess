@@ -2,8 +2,8 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const STARGAZER = {
-  selfRegen: [10, 14, 16], // extra mana/sec for Stargazers
-  teamRegen: [6, 10, 12], // mana/sec for every ally, Stargazers included
+  selfRegen: [6, 12, 18], // extra mana/sec for Stargazers
+  teamRegen: [2, 4, 6], // mana/sec for every ally, Stargazers included
 };
 
 export const stargazer: TraitDef = {

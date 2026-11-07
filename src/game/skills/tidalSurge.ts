@@ -2,15 +2,16 @@ import { pct } from '../traits/format';
 import { enemiesOn, lineThrough } from './areas';
 import type { SkillDef } from './types';
 
-// Rara Jonggrang (3g Mooneater): a wave rolls from her through her target. Per star, index 0 = 1★.
+// Kanina (3g Mooneater / Phasewarper / Mage): a wave rolls from her through her target. Per star, index 0 = 1★.
 export const TIDAL_SURGE = {
-  ap: [2.3, 2.7, 9], // of magic attack, magic, to each enemy in the line
+  ap: [5, 5.2, 6.4], // of magic attack, magic, to each enemy in the line
 };
 
 export const tidalSurge: SkillDef = {
   id: 'tidalsurge',
   name: 'Tidal Surge',
   desc: 'Sends a wave 1 tile wide in a straight line through her target to the edge of the board, hitting every enemy it passes for {ap} of magic attack as magic damage.',
+  damage: { ap: 'magic' },
   values: () => ({ ap: TIDAL_SURGE.ap.map(pct) }),
   cast(api, caster, target) {
     const victim = target.hp > 0 ? target : api.nearestEnemy(caster);

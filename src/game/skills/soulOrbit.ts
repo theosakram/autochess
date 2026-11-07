@@ -2,9 +2,9 @@ import { GRID_H, GRID_W, type Point } from '../grid';
 import { pct } from '../traits/format';
 import type { SkillDef } from './types';
 
-// Soulreaper (3g Hunter). Per star, index 0 = 1★.
+// Saber (3g Spectre / Hunter). Per star, index 0 = 1★.
 export const SOUL_ORBIT = {
-  atk: [0.36, 0.4, 0.85], // of attack per orb hit, as physical damage
+  atk: [1.35, 1.35, 2.1], // of attack per orb hit, as physical damage
   orbs: 5,
   seconds: 4, // how long they orbit
   step: 0.5, // seconds per cell the orbs move
@@ -35,6 +35,7 @@ export const soulOrbit: SkillDef = {
   desc:
     `Releases ${SOUL_ORBIT.orbs} soul orbs that circle it for ${SOUL_ORBIT.seconds}s. ` +
     `Every ${SOUL_ORBIT.step}s they move one cell, and each orb hits the enemy in its cell for {atk} of attack as physical damage.`,
+  damage: { atk: 'physical' },
   values: () => ({ atk: SOUL_ORBIT.atk.map(pct) }),
   cast(api, caster) {
     const raw = caster.stats.atk * SOUL_ORBIT.atk[caster.star - 1];

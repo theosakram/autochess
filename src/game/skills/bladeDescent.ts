@@ -17,6 +17,7 @@ export const bladeDescent: SkillDef = {
   desc:
     'Leaps into the thick of the enemy (the spot with the most of them around it), stunning everyone around it for {stun}. ' +
     `Its next basic attack deals {bonus} more damage, and it gains a shield of {shield} of its max HP for ${BLADE_DESCENT.seconds}s.`,
+  damage: { bonus: 'attack' },
   values: () => ({ stun: BLADE_DESCENT.stun.map((s) => `${s}s`), bonus: BLADE_DESCENT.bonus.map(pct), shield: BLADE_DESCENT.shield.map(pct) }),
   cast(api, caster) {
     const i = caster.star - 1;

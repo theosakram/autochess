@@ -28,6 +28,10 @@ export interface UnitDef {
   // Gets this trait's member bonuses without being a member or counting toward it (like an item bearer).
   honorary?: { trait: string; icon: string };
   attackType?: 'physical' | 'magic'; // damage type of basic attacks; physical if unset
+  // Hand-set hp, atk and ap per star (index 0 = 1★), instead of scaling the 1★ stats by STAR_MULT.
+  // A 4★ (from star bonuses) scales the 3★ values by STAR_MULT's 4★/3★ step.
+  // `mana`, if given, sets max mana per star the same way (a 4★ uses the 3★ value).
+  starStats?: { hp: number[]; atk: number[]; ap: number[]; mana?: number[]; attackTicks?: number[] };
 }
 
 export interface Unit {

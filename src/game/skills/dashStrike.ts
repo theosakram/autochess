@@ -6,15 +6,16 @@ import type { SkillApi, SkillDef, SkillFighter } from './types';
 // Who a dash strike goes after. Ties (and a fight's first seconds, before anyone has dealt damage)
 // go to the nearest.
 export const PICKERS = {
-  weakest: { label: 'the enemy with the lowest HP', score: (e: SkillFighter) => -e.hp },
-  deadliest: { label: 'the enemy that has dealt the most damage', score: (e: SkillFighter) => e.dealt },
+  weakest: { label: 'the enemy with the lowest HP', score: (e: SkillFighter, _f: SkillFighter) => -e.hp },
+  deadliest: { label: 'the enemy that has dealt the most damage', score: (e: SkillFighter, _f: SkillFighter) => e.dealt },
+  farthest: { label: 'the farthest enemy', score: (e: SkillFighter, f: SkillFighter) => dist(f, e) },
 };
 
 export function pickEnemy(api: SkillApi, f: SkillFighter, by: keyof typeof PICKERS): SkillFighter | null {
   const score = PICKERS[by].score;
   return api.enemiesOf(f).reduce<SkillFighter | null>((best, e) => {
     if (!best) return e;
-    const [a, b] = [score(e), score(best)];
+    const [a, b] = [score(e, f), score(best, f)];
     return a > b || (a === b && dist(f, e) < dist(f, best)) ? e : best;
   }, null);
 }
@@ -50,6 +51,7 @@ export function dashStrike(cfg: DashStrike): SkillDef {
     id: cfg.id,
     name: cfg.name,
     desc: `Dashes to ${PICKERS[cfg.target].label} and strikes it for {scale} of ${statName} as ${cfg.type} damage.`,
+    damage: { scale: cfg.type },
     values: () => ({ scale: cfg.scale.map(pct) }),
     cast(api, caster) {
       const victim = pickEnemy(api, caster, cfg.target);

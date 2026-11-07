@@ -128,25 +128,24 @@ export function unitStats(def: UnitDef, star: Star, field: Partial<Field> = {}):
   return applyMods(baseStats(def, Math.min(4, star + bonus) as Star | 4, field.scale), unitMods(def, field));
 }
 
-// Trait id -> uid of the unit leading it: for every active trait with a leader, the fielded
-// member carrying the most items; ties go to the higher star, then higher tier, then board order.
-export function traitLeaders(board: (Unit | null)[], levels: TraitLevels, itemCount: (uid: number) => number): Record<string, number> {
-  const leaders: Record<string, number> = {};
-  for (const id of Object.keys(levels)) {
-    if (!TRAITS[id].leader) continue;
+// Trait id -> uids of the units leading it: for every active trait with a leader, the fielded
+// members carrying the most items (as many as `leader.count` allows); ties go to the higher star,
+// then higher tier, then board order.
+export function traitLeaders(board: (Unit | null)[], levels: TraitLevels, itemCount: (uid: number) => number): Record<string, number[]> {
+  const leaders: Record<string, number[]> = {};
+  for (const [id, level] of Object.entries(levels)) {
+    const leader = TRAITS[id].leader;
+    if (!leader) continue;
     const rank = (u: Unit) => [itemCount(u.uid), u.star, UNIT_BY_ID[u.defId].tier];
-    let best: Unit | null = null;
-    for (const u of board) {
-      if (!u || !hasTrait(u, id)) continue;
-      if (!best) {
-        best = u;
-        continue;
-      }
-      const [a, b] = [rank(u), rank(best)];
+    const members = board.filter((u): u is Unit => !!u && hasTrait(u, id));
+    // Stable sort: equal ranks keep board order.
+    members.sort((x, y) => {
+      const [a, b] = [rank(x), rank(y)];
       const k = a.findIndex((n, i) => n !== b[i]);
-      if (k >= 0 && a[k] > b[k]) best = u;
-    }
-    if (best) leaders[id] = best.uid;
+      return k < 0 ? 0 : b[k] - a[k];
+    });
+    const top = members.slice(0, leader.count?.(level) ?? 1).map((u) => u.uid);
+    if (top.length) leaders[id] = top;
   }
   return leaders;
 }

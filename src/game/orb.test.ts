@@ -17,11 +17,11 @@ function newGame(): GameState {
 
 describe('Magic Orb', () => {
   test("offers the unit's own traits plus one random other, the same every time", () => {
-    const opts = orbOptions(1234, 'batarakala');
-    expect(opts.slice(0, 2)).toEqual(UNIT_BY_ID.batarakala.traits);
+    const opts = orbOptions(1234, 'lance');
+    expect(opts.slice(0, 2)).toEqual(UNIT_BY_ID.lance.traits);
     expect(opts).toHaveLength(3);
-    expect(UNIT_BY_ID.batarakala.traits).not.toContain(opts[2]);
-    expect(orbOptions(1234, 'batarakala')).toEqual(opts);
+    expect(UNIT_BY_ID.lance.traits).not.toContain(opts[2]);
+    expect(orbOptions(1234, 'lance')).toEqual(opts);
   });
 
   test('handed out on the fixed rounds', () => {
@@ -31,11 +31,11 @@ describe('Magic Orb', () => {
     expect(p.orbs).toHaveLength(2);
   });
 
-  test('Batara Kala with a Gustiwana orb counts 2; sold it is 0; rebought it is 2 again; a new orb moves it', () => {
+  test('Lance with a Gustiwana orb counts 2; sold it is 0; rebought it is 2 again; a new orb moves it', () => {
     const state = newGame();
     const p = state.players[0];
     p.orbs.push(42);
-    p.board[0] = { uid: 900, defId: 'batarakala', star: 1 };
+    p.board[0] = { uid: 900, defId: 'lance', star: 1 };
     expect(applyAction(state, p.id, { type: 'useOrb', unit: 900, trait: 'gustiwana' }).ok).toBe(true);
     expect(p.orbs).toHaveLength(0);
     expect(traitCounts(p.board, p.orb).gustiwana).toBe(2);
@@ -44,23 +44,23 @@ describe('Magic Orb', () => {
     applyAction(state, p.id, { type: 'sell', from: { area: 'board', index: 0 } });
     expect(traitCounts(p.board, p.orb).gustiwana).toBeUndefined();
 
-    p.board[4] = { uid: 901, defId: 'batarakala', star: 1 };
+    p.board[4] = { uid: 901, defId: 'lance', star: 1 };
     expect(traitCounts(p.board, p.orb).gustiwana).toBe(2);
 
     // A second orb on another unit replaces the first.
     p.orbs.push(7);
-    p.board[5] = { uid: 902, defId: 'prajurit', star: 1 };
+    p.board[5] = { uid: 902, defId: 'dyroth', star: 1 };
     expect(applyAction(state, p.id, { type: 'useOrb', unit: 902, trait: 'gustiwana' }).ok).toBe(true);
-    expect(p.orb).toEqual({ defId: 'prajurit', trait: 'gustiwana' });
-    expect(traitCounts(p.board, p.orb).gustiwana).toBe(3); // Batara Kala 1 + Prajurit 2
+    expect(p.orb).toEqual({ defId: 'dyroth', trait: 'gustiwana' });
+    expect(traitCounts(p.board, p.orb).gustiwana).toBe(3); // Lance 1 + Dyroth 2
   });
 
   test('the random option adds the unit to a trait it does not have', () => {
     const state = newGame();
     const p = state.players[0];
     p.orbs.push(42);
-    p.board[0] = { uid: 900, defId: 'batarakala', star: 1 };
-    const extra = orbOptions(42, 'batarakala')[2];
+    p.board[0] = { uid: 900, defId: 'lance', star: 1 };
+    const extra = orbOptions(42, 'lance')[2];
     applyAction(state, p.id, { type: 'useOrb', unit: 900, trait: extra });
     expect(traitCounts(p.board, p.orb)[extra]).toBe(1);
   });
@@ -68,10 +68,10 @@ describe('Magic Orb', () => {
   test('only offered traits, only with an orb in hand', () => {
     const state = newGame();
     const p = state.players[0];
-    p.board[0] = { uid: 900, defId: 'batarakala', star: 1 };
+    p.board[0] = { uid: 900, defId: 'lance', star: 1 };
     expect(applyAction(state, p.id, { type: 'useOrb', unit: 900, trait: 'gustiwana' }).ok).toBe(false);
     p.orbs.push(42);
-    const notOffered = ['hunter', 'stargazer', 'deadeye'].find((t) => !orbOptions(42, 'batarakala').includes(t))!;
+    const notOffered = ['hunter', 'stargazer', 'deadeye'].find((t) => !orbOptions(42, 'lance').includes(t))!;
     expect(applyAction(state, p.id, { type: 'useOrb', unit: 900, trait: notOffered }).ok).toBe(false);
   });
 });

@@ -57,9 +57,72 @@ const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 export const paths = (d: string) => d.split(/(?=M)/).map((s) => s.trim());
 
+// Icons use absolute M/L/H/V/C/Z only. Tokens: a command letter, or a number.
+const tokens = (d: string) => d.match(/[MLHVCZ]|-?\d*\.?\d+/g) ?? [];
+
+// The icon's true bounds on the 24x24 grid (curves sampled, not just their control points).
+export function iconBounds(d: string): { minX: number; minY: number; maxX: number; maxY: number } {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  let cmd = 'M';
+  let x = 0;
+  let y = 0;
+  const t = tokens(d);
+  for (let i = 0; i < t.length; ) {
+    if (/[A-Z]/.test(t[i])) cmd = t[i++];
+    if (cmd === 'Z') continue;
+    const n = () => Number(t[i++]);
+    if (cmd === 'H') x = n();
+    else if (cmd === 'V') y = n();
+    else if (cmd === 'C') {
+      const [x1, y1, x2, y2, x3, y3] = [n(), n(), n(), n(), n(), n()];
+      for (let k = 1; k <= 16; k++) {
+        const s = k / 16;
+        const u = 1 - s;
+        xs.push(u * u * u * x + 3 * u * u * s * x1 + 3 * u * s * s * x2 + s * s * s * x3);
+        ys.push(u * u * u * y + 3 * u * u * s * y1 + 3 * u * s * s * y2 + s * s * s * y3);
+      }
+      [x, y] = [x3, y3];
+    } else [x, y] = [n(), n()];
+    xs.push(x);
+    ys.push(y);
+  }
+  return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+}
+
+// The same path moved by (dx, dy).
+export function shiftPath(d: string, dx: number, dy: number): string {
+  if (!dx && !dy) return d;
+  const r = (v: number) => String(Math.round(v * 100) / 100);
+  const out: string[] = [];
+  let cmd = 'M';
+  let k = 0; // which number of the command's argument list
+  for (const tok of tokens(d)) {
+    if (/[A-Z]/.test(tok)) {
+      cmd = tok;
+      k = 0;
+      out.push(tok);
+      continue;
+    }
+    const v = Number(tok);
+    const isX = cmd === 'H' || (cmd !== 'V' && k % 2 === 0);
+    out.push(r(v + (isX ? dx : dy)));
+    k++;
+  }
+  return out.join(' ');
+}
+
+// The shift that puts an icon's middle on the badge's middle (12,12).
+export function centering(d: string): { dx: number; dy: number } {
+  const b = iconBounds(d);
+  return { dx: 12 - (b.minX + b.maxX) / 2, dy: 12 - (b.minY + b.maxY) / 2 };
+}
+
 // One badge as an SVG drawing, each shape its own path (Pixi would read shapes in one path as holes).
+// The icon (and its cut) is moved so it sits dead centre, however it was drawn.
 export function badgeSvg(b: TraitBadge): string {
-  const draw = (d: string, fill: string) => paths(d).map((s) => `<path d="${s}" fill="${fill}"/>`).join('');
+  const { dx, dy } = centering(b.d);
+  const draw = (d: string, fill: string) => paths(shiftPath(d, dx, dy)).map((s) => `<path d="${s}" fill="${fill}"/>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">${draw(b.d, hex(b.ink ?? 0xffffff))}${b.cut ? draw(b.cut, hex(b.color)) : ''}</svg>`;
 }
 

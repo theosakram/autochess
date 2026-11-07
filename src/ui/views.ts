@@ -12,11 +12,11 @@ import { cardItem, EQUIPMENT_GROUPS, isItemCard, ITEMS, type ItemDef } from '../
 import { MIST_WARES, mistCoins } from '../game/mistShop';
 import { ALTAR_KEYS, altarOf, altarStatus, nextTier, offerBlock, type AltarKey } from '../game/altar';
 import { orbOptions } from '../game/orb';
-import { SKILLS } from '../game/skills';
+import { SKILLS, type SkillDef } from '../game/skills';
 import { copiesOf, findCopies } from '../game/merge';
 import { MAX_ITEMS_PER_UNIT } from '../game/config';
 import { boardCount, freeSlotCount, interest, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
-import { attackInterval, type StatKey, type StatMod, type Stats } from '../game/stats';
+import { attackInterval, type DamageType, type StatKey, type StatMod, type Stats } from '../game/stats';
 import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
 import type { BotLevel, GameState, Item, Player, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS } from '../game/units';
@@ -75,12 +75,25 @@ export function traitsPanelHtml(p: Player): string {
   return `<aside class="traits"><h3>Synergies</h3>${tiles + bearers + honoraryUnits || '<p class="traits-empty">Put heroes on the board to start one.</p>'}</aside>`;
 }
 
-// Fills a trait's or item's {placeholders} with every level's value; `current` (1-based) is highlighted.
-function descHtml(src: { desc: string; values(): Record<string, string[]> }, current: number): string {
+type DescSource = { desc: string; values(): Record<string, string[]>; damage?: SkillDef['damage'] };
+
+// Every level's value of one {placeholder}, `current` (1-based) highlighted; a value given once is the same at every level.
+const levelsHtml = (vals: string[], current: number) =>
+  vals.map((v, i) => `<span class="${i === current - 1 || (vals.length === 1 && current > 0) ? 'on' : ''}">${v}</span>`).join('<i> / </i>');
+
+// A skill's damage numbers are coloured by damage type: red physical, teal magic. 'attack' follows the hero's basic attack.
+function damageClass(src: DescSource, key: string, attackType: DamageType): string {
+  const kind = src.damage?.[key];
+  const type = kind === 'attack' ? attackType : kind;
+  return type === 'physical' || type === 'magic' ? `dmg-${type}` : '';
+}
+
+const wrapDamage = (cls: string, html: string) => (cls ? `<em class="${cls}">${html}</em>` : html);
+
+// Fills a trait's, item's or skill's {placeholders} with every level's value; `current` (1-based) is highlighted.
+function descHtml(src: DescSource, current: number, attackType: DamageType = 'physical'): string {
   const values = src.values();
-  return src.desc.replace(/\{(\w+)\}/g, (_, key: string) =>
-    values[key].map((v, i) => `<span class="${i === current - 1 ? 'on' : ''}">${v}</span>`).join('<i> / </i>'),
-  );
+  return src.desc.replace(/\{(\w+)\}/g, (_, key: string) => wrapDamage(damageClass(src, key, attackType), levelsHtml(values[key], current)));
 }
 
 const STAT_NAMES: Partial<Record<StatKey, string>> = { atk: 'attack', ap: 'magic attack', hp: 'HP', armor: 'armor', mr: 'magic resist' };
@@ -306,9 +319,12 @@ export function graveHtml(p: Player): string {
 // Who leads a trait on the player's board right now.
 function leaderLineHtml(traitId: string, p: Player): string {
   const leader = TRAITS[traitId].leader!;
-  const uid = fieldLeaders(p, playerTraits(p))[traitId];
-  const u = uid === undefined ? null : p.board.find((x) => x?.uid === uid);
-  return `<p class="trait-stacks">${leader.icon} ${leader.title}: <b>${u ? `${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}` : 'none yet'}</b></p>`;
+  const uids = fieldLeaders(p, playerTraits(p))[traitId] ?? [];
+  const names = uids
+    .map((uid) => p.board.find((x) => x?.uid === uid))
+    .filter((u) => !!u)
+    .map((u) => `${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}`);
+  return `<p class="trait-stacks">${leader.icon} ${leader.title}: <b>${names.length ? names.join(', ') : 'none yet'}</b></p>`;
 }
 
 // Modal shell: backdrop and × both fire `closeAction`.
@@ -404,10 +420,11 @@ function heroGalleryHtml(): string {
   const card = (u: UnitDef) =>
     `<button class="hero-card tier-${u.tier}" data-unit-info="${u.id}">
       ${portraitHtml(u.id, 'big')}
+      <span class="hero-card-cost" title="${u.tier} gold">💰${u.tier}</span>
       <span class="hero-card-text">
         <b>${u.name}</b>
-        <small>${u.tier}g · ${u.range <= 1 ? 'melee' : `range ${u.range}`}${u.skill ? ` · ${SKILLS[u.skill].name}` : ''}</small>
-        <span class="hero-card-traits">${u.traits.map((id) => `${traitBadgeHtml(id)} ${TRAITS[id].name}`).join(' ')}</span>
+        <span class="hero-card-traits">${u.traits.map((id) => traitBadgeHtml(id)).join('')}</span>
+        <small class="hero-card-range" title="${u.range <= 1 ? 'Melee' : `Range ${u.range}`}">${u.range <= 1 ? '⚔️' : `🏹 ${u.range}`}</small>
       </span>
     </button>`;
   const section = (title: string, list: UnitDef[]) =>
@@ -893,7 +910,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       </div>
       <div class="kit-part"><small>Items</small><div class="gear-slots">${detailSlots(p, uid, levels)}</div></div>
     </div>
-    ${skillOpen ? `<div class="skill-pop">${skillHtml(def.skill, u.star, s)}</div>` : ''}
+    ${skillOpen ? `<div class="skill-pop">${skillHtml(def.skill, u.star, s, def.attackType ?? 'physical')}</div>` : ''}
     <button class="unit-sell" data-action="sellUnit" data-uid="${u.uid}">Sell for ${def.tier * copiesOf(u)}g</button>
     <p class="meta">Tip: with this unit selected, click any board or bench cell to move it there.</p>
   </section>`;
@@ -930,38 +947,50 @@ export function orbChoiceHtml(p: Player, uid: number): string {
   );
 }
 
-// Gallery popup for any unit type: what it is, its numbers at every star, and its skill.
+// Gallery popup for any unit type: what it is, its numbers at every star, and its skill. Icons over labels:
+// every icon says what it is on hover.
 export function unitInfoHtml(defId: string, p: Player): string {
   const def = UNIT_BY_ID[defId];
   const stars = ([1, 2, 3] as const).map((star) => unitStats(def, star));
   const fmt = (n: number) => String(+n.toFixed(2));
-  const row = (label: string, value: (s: Stats) => string) => `<tr><th>${label}</th>${stars.map((s) => `<td>${value(s)}</td>`).join('')}</tr>`;
-  const chips = [...def.traits.map((id) => traitChipHtml(id)), def.honorary ? bearerChipHtml(def.honorary) : ''].join('');
-  const position = `${def.range <= 1 ? 'Frontline · melee' : `Backline · range ${def.range}`} · ${def.attackType ?? 'physical'} attacks`;
+  const row = (icon: string, title: string, value: (s: Stats) => string) =>
+    `<tr><th title="${title}">${icon}</th>${stars.map((s) => `<td>${value(s)}</td>`).join('')}</tr>`;
+  // Two stats that match at every star share a row.
+  const pair = (a: [string, string, keyof Stats], b: [string, string, keyof Stats]) =>
+    stars.every((s) => s[a[2]] === s[b[2]])
+      ? row(a[0] + b[0], `${a[1]} and ${b[1].toLowerCase()}`, (s) => fmt(s[a[2]] as number))
+      : row(a[0], a[1], (s) => fmt(s[a[2]] as number)) + row(b[0], b[1], (s) => fmt(s[b[2]] as number));
+  const badges = [
+    ...def.traits.map((id) => `<button class="info-trait" data-trait="${id}" title="${TRAITS[id].name}">${traitBadgeHtml(id)}</button>`),
+    def.honorary ? `<button class="info-trait" data-trait="${def.honorary.trait}" title="${TRAITS[def.honorary.trait].name} bearer: gets the bonus, doesn't count">${bearerBadgeHtml(def.honorary.trait)}</button>` : '',
+  ].join('');
+  const magic = def.attackType === 'magic';
+  const facts = [
+    `<span title="${def.range <= 1 ? 'Melee' : `Range ${def.range}`}">${def.range <= 1 ? '⚔️' : `🏹 ${def.range}`}</span>`,
+    `<span title="${magic ? 'Magic' : 'Physical'} basic attacks">${magic ? '✨' : '🗡️'}</span>`,
+  ];
   const reward = Object.values(p.rewardUnit ?? {}).includes(def.id);
-  const where =
-    def.shop === false ? (reward ? 'Your grave reward · not in the shop' : 'Not in the shop: a trait reward') : def.locked ? 'In your shop only once unlocked' : 'In the shop';
+  const where = def.shop === false ? (reward ? 'Your grave reward · not in the shop' : 'Not in the shop: a trait reward') : def.locked ? 'In your shop only once unlocked' : '';
   const skill = def.skill
-    ? `<h4>Skill: ${SKILLS[def.skill].name}</h4><p class="skill trait-desc">${descHtml(SKILLS[def.skill], 0)}</p>`
-    : `<h4>Skill <small>placeholder</small></h4>
+    ? `<h4>${skillIcon(def.skill)} ${SKILLS[def.skill].name}</h4><p class="skill trait-desc">${descHtml(SKILLS[def.skill], 0, def.attackType)}</p>`
+    : `<h4>${skillIcon(undefined)} <small>placeholder</small></h4>
       <p class="skill trait-desc">At full mana, the next attack deals ${Math.round(stars[0].castMult * 100)}% magic attack
       (${stars.map((s) => `<span>${Math.round(s.ap * s.castMult)}</span>`).join('<i> / </i>')}) as magic damage.</p>`;
   return modalHtml(
     'closeUnitInfo',
     'trait-popup unit-info',
-    `<h2 class="trait-title tier-${def.tier}">${portraitHtml(def.id, 'big')}<span class="unit-info-cost">${def.tier}g</span> ${def.name}</h2>
-    <p class="meta">${position} · ${where}</p>
-    <div class="unit-traits info-traits">${chips || '<span class="unit-tag">no traits</span>'}</div>
+    `<span class="unit-info-cost" title="${def.tier} gold">💰${def.tier}</span>
+    <h2 class="trait-title tier-${def.tier}">${portraitHtml(def.id, 'big')} ${def.name}</h2>
+    <div class="info-row"><span class="info-traits">${badges}</span><span class="info-facts">${facts.join('')}</span></div>
+    ${where ? `<p class="meta">${where}</p>` : ''}
     <table class="unit-stats">
       <thead><tr><th></th><th>★</th><th>★★</th><th>★★★</th></tr></thead>
       <tbody>
-        ${row('HP', (s) => fmt(s.hp))}
-        ${row('Attack', (s) => fmt(s.atk))}
-        ${row('Magic attack', (s) => fmt(s.ap))}
-        ${row('Armor', (s) => fmt(s.armor))}
-        ${row('Magic resist', (s) => fmt(s.mr))}
-        ${row('Attack speed', (s) => `${(TICKS_PER_SECOND / attackInterval(s)).toFixed(2)}/s`)}
-        ${row('Mana', (s) => fmt(s.maxMana))}
+        ${row('❤️', 'HP', (s) => fmt(s.hp))}
+        ${pair(['🗡️', 'Attack', 'atk'], ['✨', 'Magic attack', 'ap'])}
+        ${pair(['🛡️', 'Armor', 'armor'], ['💠', 'Magic resist', 'mr'])}
+        ${row('⚡', 'Attack speed', (s) => `${(TICKS_PER_SECOND / attackInterval(s)).toFixed(2)}/s`)}
+        ${row('💧', 'Mana', (s) => fmt(s.maxMana))}
       </tbody>
     </table>
     ${skill}`,
@@ -969,18 +998,18 @@ export function unitInfoHtml(defId: string, p: Player): string {
 }
 
 // The unit's skill, its current star's numbers highlighted; or the placeholder cast.
-function skillHtml(skillId: string | undefined, star: number, s: Stats): string {
+function skillHtml(skillId: string | undefined, star: number, s: Stats, attackType: DamageType): string {
   if (!skillId) {
     return `<h4>✨ Skill <small>placeholder</small></h4>
       <p class="skill">At full mana, the next attack deals ${Math.round(s.castMult * 100)}% magic attack (${Math.round(s.ap * s.castMult * (1 + s.skillAmp))}) as magic damage.</p>`;
   }
   const skill = SKILLS[skillId];
-  return `<h4>${skillIcon(skillId)} ${skill.name}</h4><p class="skill trait-desc">${skillDescHtml(skill, star, s)}</p>`;
+  return `<h4>${skillIcon(skillId)} ${skill.name}</h4><p class="skill trait-desc">${skillDescHtml(skill, star, s, attackType)}</p>`;
 }
 
 // A skill's text at every star (this one highlighted), and where a value is a share of attack, magic attack or
 // max HP, the number it comes to now: "80% (124) of attack".
-function skillDescHtml(src: { desc: string; values(): Record<string, string[]> }, star: number, s: Stats): string {
+function skillDescHtml(src: DescSource, star: number, s: Stats, attackType: DamageType): string {
   const values = src.values();
   const base: [RegExp, (s: Stats) => number][] = [
     [/^ of (?:its )?magic attack/, (x) => x.ap],
@@ -989,8 +1018,9 @@ function skillDescHtml(src: { desc: string; values(): Record<string, string[]> }
   ];
   return src.desc.replace(/\{(\w+)\}/g, (match: string, key: string, offset: number, whole: string) => {
     const after = whole.slice(offset + match.length);
-    const shown = values[key].map((v, i) => `<span class="${i === star - 1 ? 'on' : ''}">${v}</span>`).join('<i> / </i>');
-    const cur = values[key][star - 1];
+    const cls = damageClass(src, key, attackType);
+    const shown = wrapDamage(cls, levelsHtml(values[key], star));
+    const cur = values[key][star - 1] ?? values[key][0];
     // A threshold ('left below 8% of its max HP') is the enemy's HP, not a number this hero has.
     const threshold = /below $/.test(whole.slice(0, offset));
     const rule = cur?.endsWith('%') && !threshold ? base.find(([re]) => re.test(after)) : undefined;
@@ -998,7 +1028,7 @@ function skillDescHtml(src: { desc: string; values(): Record<string, string[]> }
     // Skill damage gets the skill and damage bonuses, as in combat (before the target's defenses).
     const damage = /^[^.]*?damage/.test(after.slice(0, 60)) ? (1 + s.skillAmp) * (1 + s.damageAmp) : 1;
     const n = Math.round((parseFloat(cur) / 100) * rule[1](s) * damage);
-    return `${shown} <b class="calc" title="Now, with this hero's stats">(${n})</b>`;
+    return `${shown} <b class="calc${cls ? ` ${cls}` : ''}" title="Now, with this hero's stats">(${n})</b>`;
   });
 }
 

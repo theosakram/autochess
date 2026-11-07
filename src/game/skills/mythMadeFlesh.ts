@@ -3,16 +3,17 @@ import { pct } from '../traits/format';
 import { around, enemiesOn } from './areas';
 import type { SkillApi, SkillDef, SkillFighter } from './types';
 
-// Mythweaver (4g Mage): drops a beast where the enemies are thickest. Per star, index 0 = 1★.
+// Vex (4g Storyweaver / Mage): drops a beast where the enemies are thickest. Per star, index 0 = 1★.
 export const MYTH_MADE_FLESH = {
   beast: 'mythbeast',
-  landing: [2, 2.4, 5], // of magic attack, magic, to enemies in the 3x3 it lands in
-  hp: 0.6, // of Mythweaver's max hp
-  atk: [0.5, 0.6, 1], // of Mythweaver's magic attack: the beast's attack
+  landing: [2.1, 2.1, 5.45], // of magic attack, magic, to enemies in the 3x3 it lands in
+  stun: [0.6, 0.8, 1], // seconds, to enemies in the landing 3x3
+  hp: 0.6, // of Vex's max hp
+  atk: [0.5, 0.6, 1], // of Vex's magic attack: the beast's attack
   // As the Storyweaver protagonist:
-  protagonistAtk: 2, // x the beast's attack
-  burn: [0.3, 0.35, 0.7], // of magic attack per second, magic, on the landing 3x3
-  burnSeconds: 4,
+  protagonistLanding: [2.45, 2.5, 5.45], // of magic attack, magic, extra on the landing
+  aura: [1, 1, 2], // of magic attack, magic, every second to enemies around the beast
+  auraSeconds: 4,
 };
 
 // The free cell with the most enemies in the 3x3 around it (ties: the one nearest the caster).
@@ -35,11 +36,19 @@ export const mythMadeFlesh: SkillDef = {
   id: 'mythmadeflesh',
   name: 'Myth Made Flesh',
   desc:
-    'Drops a Myth Beast like a meteor on the spot with the most enemies around it: enemies in the 3x3 take {landing} of magic attack as magic damage. ' +
+    'Drops a Myth Beast like a meteor on the spot with the most enemies around it: enemies in the 3x3 take {landing} of magic attack ' +
+    'as magic damage and are stunned for {stun}s. ' +
     `The beast (with ${pct(MYTH_MADE_FLESH.hp)} of its max HP) then fights on its own, attacking with {atk} of its magic attack. ` +
-    `As the protagonist, the landing sets the 3x3 ablaze ({burn} of magic attack per second for ${MYTH_MADE_FLESH.burnSeconds}s) ` +
-    `and the beast hits ${MYTH_MADE_FLESH.protagonistAtk}x as hard.`,
-  values: () => ({ landing: MYTH_MADE_FLESH.landing.map(pct), atk: MYTH_MADE_FLESH.atk.map(pct), burn: MYTH_MADE_FLESH.burn.map(pct) }),
+    'As the protagonist, the landing deals {extra} of magic attack more, and for ' +
+    `${MYTH_MADE_FLESH.auraSeconds}s the beast deals {aura} of magic attack as magic damage every second to enemies around it.`,
+  damage: { landing: 'magic', extra: 'magic', aura: 'magic' },
+  values: () => ({
+    landing: MYTH_MADE_FLESH.landing.map(pct),
+    stun: MYTH_MADE_FLESH.stun.map(String),
+    atk: MYTH_MADE_FLESH.atk.map(pct),
+    extra: MYTH_MADE_FLESH.protagonistLanding.map(pct),
+    aura: MYTH_MADE_FLESH.aura.map(pct),
+  }),
   cast(api, caster) {
     const M = MYTH_MADE_FLESH;
     const i = caster.star - 1;
@@ -47,10 +56,18 @@ export const mythMadeFlesh: SkillDef = {
     if (!spot) return;
     const protagonist = caster.chosen === 'storyweaver';
     const zone = [spot, ...around(spot)];
+    const landing = caster.stats.ap * (M.landing[i] + (protagonist ? M.protagonistLanding[i] : 0));
     api.showProjectile({ x: spot.x, y: caster.side === 0 ? 0 : GRID_H - 1 }, spot, 0.25, 'mythmadeflesh');
-    for (const e of enemiesOn(api, caster, zone)) api.hit(caster, e, caster.stats.ap * M.landing[i], 'magic', 'mythmadeflesh');
-    if (protagonist) api.burn(caster, zone, caster.stats.ap * M.burn[i], 'magic', M.burnSeconds, 'mythburn');
-    const atk = caster.stats.ap * M.atk[i] * (protagonist ? M.protagonistAtk : 1);
-    api.summon(caster, M.beast, { hpShare: M.hp, atk, at: spot });
+    for (const e of enemiesOn(api, caster, zone)) {
+      api.hit(caster, e, landing, 'magic', 'mythmadeflesh');
+      if (e.hp > 0) api.stun(e, M.stun[i], caster);
+    }
+    const beast = api.summon(caster, M.beast, { hpShare: M.hp, atk: caster.stats.ap * M.atk[i], at: spot });
+    if (!protagonist || !beast) return;
+    // The aura is Vex's damage, centred on wherever the beast stands; it stops if the beast falls.
+    api.repeat(caster, 1, M.auraSeconds, () => {
+      if (beast.hp <= 0) return;
+      for (const e of enemiesOn(api, caster, around(beast))) api.hit(caster, e, caster.stats.ap * M.aura[i], 'magic', 'mythaura');
+    });
   },
 };

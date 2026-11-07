@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { TRAITS } from '../game/traits';
 import { UNITS } from '../game/units';
 import { ITEMS } from '../game/items';
-import { badgeSvg, BEARER_BADGES, bearerBadgeHtml, paths, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
+import { badgeSvg, BEARER_BADGES, bearerBadgeHtml, centering, iconBounds, paths, shiftPath, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
 
 describe('trait badges', () => {
   test('every trait has a badge, and no two share a colour or an icon', () => {
@@ -33,5 +33,21 @@ describe('trait badges', () => {
     expect(html).toContain('background:#5d6ea6');
     expect(html).toContain('fill="#211f63"');
     expect(html).not.toContain(TRAITS.astral.icon);
+  });
+
+  test('every icon is drawn dead centre on its badge, cut and all', () => {
+    for (const b of [...Object.values(TRAIT_BADGES), ...Object.values(BEARER_BADGES)]) {
+      const svg = badgeSvg(b);
+      const ds = [...svg.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+      const icon = iconBounds(ds.slice(0, paths(b.d).length).join(' '));
+      expect((icon.minX + icon.maxX) / 2).toBeCloseTo(12, 1);
+      expect((icon.minY + icon.maxY) / 2).toBeCloseTo(12, 1);
+    }
+  });
+
+  test('shifting a path moves every point, curves too, and keeps its shape', () => {
+    expect(shiftPath('M1 2L3 4H5V6C7 8 9 10 11 12Z', 1, -1)).toBe('M 2 1 L 4 3 H 6 V 5 C 8 7 10 9 12 11 Z');
+    // The Mage hat sat 2 high (it spans 2 to 18): it's moved down by 2.
+    expect(centering(TRAIT_BADGES.mage.d)).toEqual({ dx: 0, dy: 2 });
   });
 });

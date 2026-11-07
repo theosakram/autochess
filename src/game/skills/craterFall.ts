@@ -17,6 +17,7 @@ export const craterFall: SkillDef = {
   desc:
     'Crashes down where the enemies are thickest. The tiles around where it lands smoulder: ' +
     `${CRATER_FALL.ticks} ticks, ${CRATER_FALL.every}s apart, of {tick} of attack, then they explode for {boom}. All physical.`,
+  damage: { tick: 'physical', boom: 'physical' },
   values: () => ({ tick: CRATER_FALL.tick.map(pct), boom: CRATER_FALL.boom.map(pct) }),
   cast(api, caster) {
     const i = caster.star - 1;

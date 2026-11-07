@@ -1,44 +1,46 @@
 import { pct } from '../traits/format';
+import { around, enemiesOn } from './areas';
 import type { SkillDef } from './types';
 
-// Arjuna (5g Deadeye): a summoner. Per star, index 0 = 1★.
+// Melina (5g Deadeye / Mooneater): a summoner. Per star, index 0 = 1★.
 export const SPIRIT_ARCHERS = {
   archer: 'spiritarcher',
-  count: [1, 2, 3], // archers kept summoned
-  hp: 0.3, // of Arjuna's max hp, each
-  mirror: [0.55, 0.55, 0.6], // of each of Arjuna's basic attacks, repeated by each archer
-  attackSpeed: [0.65, 0.65, 0.8],
-  damageAmp: [0.45, 0.45, 0.5],
-  seconds: 5,
+  attackSpeed: [0.2, 0.2, 1], // passive, from the start of the fight
+  count: [1, 2, 6], // spirits at once
+  landing: [1.6, 1.6, 2.05], // of attack, physical, to each enemy around a spirit as it lands
+  mirror: [0.3, 0.3, 1.25], // of Melina's attack: each spirit repeats each of its basic attacks on the same target
+  hp: 0.3, // of Melina's max hp, each
+  seconds: 6, // each spirit lasts this long
 };
 
 export const spiritArchers: SkillDef = {
   id: 'spiritarchers',
   name: 'Spirit Archers',
   desc:
-    'Summons spirit archers beside it, up to {count} (fallen ones come back on the next cast). ' +
-    `Each has ${pct(SPIRIT_ARCHERS.hp)} of its max HP and, whenever it attacks, shoots the same target for {mirror} of that attack, ` +
-    `critting when it crits. The archers vanish if it falls. Arjuna itself (not its archers) gains +{as} attack speed and +{amp} damage for ${SPIRIT_ARCHERS.seconds}s.`,
+    'Passive: +{as} attack speed from the start of the fight. ' +
+    'Active: summons spirit archers beside its target, up to {count} at once. Each lands with a blast: every enemy around it takes ' +
+    `{landing} of attack as physical damage. A spirit lasts ${SPIRIT_ARCHERS.seconds}s (with ${pct(SPIRIT_ARCHERS.hp)} of Melina's max HP) ` +
+    'and, whenever Melina hits, shoots the same target for {mirror} of its attack, critting when it crits. The spirits vanish if it falls.',
+  damage: { landing: 'physical', mirror: 'attack' },
   values: () => ({
-    count: SPIRIT_ARCHERS.count.map(String),
-    mirror: SPIRIT_ARCHERS.mirror.map(pct),
     as: SPIRIT_ARCHERS.attackSpeed.map(pct),
-    amp: SPIRIT_ARCHERS.damageAmp.map(pct),
+    count: SPIRIT_ARCHERS.count.map(String),
+    landing: SPIRIT_ARCHERS.landing.map(pct),
+    mirror: SPIRIT_ARCHERS.mirror.map(pct),
   }),
-  cast(api, caster) {
+  atStart(api, caster) {
+    api.buff(caster, [{ stat: 'attackSpeed', add: SPIRIT_ARCHERS.attackSpeed[caster.star - 1] }], Infinity, 'spiritarchers', caster);
+  },
+  cast(api, caster, target) {
+    const S = SPIRIT_ARCHERS;
     const i = caster.star - 1;
-    for (let n = api.minionsOf(caster).length; n < SPIRIT_ARCHERS.count[i]; n++) {
-      if (!api.summon(caster, SPIRIT_ARCHERS.archer, { hpShare: SPIRIT_ARCHERS.hp, mirror: SPIRIT_ARCHERS.mirror[i] })) break;
+    const at = target.hp > 0 ? target : api.nearestEnemy(caster);
+    for (let n = api.minionsOf(caster).length; n < S.count[i]; n++) {
+      const spirit = api.summon(caster, S.archer, { hpShare: S.hp, mirror: S.mirror[i], ...(at && { at: { x: at.x, y: at.y } }) });
+      if (!spirit) break;
+      const raw = caster.stats.atk * S.landing[i];
+      for (const e of enemiesOn(api, caster, around(spirit))) if (e.hp > 0) api.hit(caster, e, raw, 'physical', 'spiritlanding');
+      api.repeat(caster, S.seconds, 1, () => api.dismiss(spirit));
     }
-    api.buff(
-      caster,
-      [
-        { stat: 'attackSpeed', add: SPIRIT_ARCHERS.attackSpeed[i] },
-        { stat: 'damageAmp', add: SPIRIT_ARCHERS.damageAmp[i] },
-      ],
-      SPIRIT_ARCHERS.seconds,
-      'spiritarchers',
-      caster,
-    );
   },
 };

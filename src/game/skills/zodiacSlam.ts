@@ -1,11 +1,12 @@
+import { dist } from '../grid';
 import { pct } from '../traits/format';
-import { enemiesOn, row3 } from './areas';
+import { enemiesOn, facingStrip } from './areas';
 import type { SkillDef } from './types';
 
-// Zodiac Blade (3g Dauntless). Per star, index 0 = 1★.
+// Hilman (3g Astral / Dauntless). Per star, index 0 = 1★.
 export const ZODIAC_SLAM = {
-  atk: [1.8, 2.2, 4.5], // of attack, physical, to each enemy in the 3x1 row
-  shield: [0.6, 0.7, 1.2], // of the damage the slam dealt
+  atk: [2.85, 2.85, 3.5], // of attack, physical, to each enemy in the 3 tiles in front of it
+  shield: [0.1, 0.1, 0.12], // of its max hp
   seconds: 4,
 };
 
@@ -13,16 +14,18 @@ export const zodiacSlam: SkillDef = {
   id: 'zodiacslam',
   name: 'Zodiac Slam',
   desc:
-    'Slams the 3x1 row around its target for {atk} of attack as physical damage, ' +
-    `then gains a shield of {shield} of the damage it dealt for ${ZODIAC_SLAM.seconds}s.`,
+    'Slashes the 3 tiles in front of it (toward its target) for {atk} of attack as physical damage, ' +
+    `then gains a shield of {shield} of its max HP for ${ZODIAC_SLAM.seconds}s.`,
+  damage: { atk: 'physical' },
   values: () => ({ atk: ZODIAC_SLAM.atk.map(pct), shield: ZODIAC_SLAM.shield.map(pct) }),
   cast(api, caster, target) {
-    const center = target.hp > 0 ? target : api.nearestEnemy(caster);
-    if (!center) return;
     const i = caster.star - 1;
-    const before = caster.dealt;
-    for (const e of enemiesOn(api, caster, row3(center))) api.hit(caster, e, caster.stats.atk * ZODIAC_SLAM.atk[i], 'physical', 'zodiacslam');
-    const dealt = caster.dealt - before;
-    if (dealt > 0) api.shield(caster, dealt * ZODIAC_SLAM.shield[i], ZODIAC_SLAM.seconds, 'zodiacslam');
+    const facing = target.hp > 0 ? target : api.nearestEnemy(caster);
+    if (facing) {
+      // The first row of the strip toward its target: the 3 tiles right in front of it.
+      const front = facingStrip(caster, facing).filter((p) => dist(caster, p) === 1);
+      for (const e of enemiesOn(api, caster, front)) api.hit(caster, e, caster.stats.atk * ZODIAC_SLAM.atk[i], 'physical', 'zodiacslam');
+    }
+    api.shield(caster, caster.maxHp * ZODIAC_SLAM.shield[i], ZODIAC_SLAM.seconds, 'zodiacslam');
   },
 };

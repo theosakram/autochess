@@ -38,6 +38,7 @@ export function empoweredAttack(cfg: EmpoweredAttack): SkillDef {
       'Empowers its next attack to deal {bonus} more damage' +
       (lifesteal ? ', healing it for {lifesteal} of the damage dealt' : '') +
       (after.length ? `, then ${after.join(', and ')}.` : '.'),
+    damage: { bonus: 'attack' },
     values: () => ({
       bonus: cfg.bonus.map(pct),
       ...(tear && { defense: tear.defense.map(String) }),

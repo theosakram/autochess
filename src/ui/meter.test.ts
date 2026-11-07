@@ -41,7 +41,7 @@ describe('damage meter with summons', () => {
       damage: 0,
       result: {
         fighters: [
-          { id: 0, side: 0, defId: 'arjuna', star: 1, x: 0, y: 5, hp: 1, maxHp: 1, mana: 0, maxMana: 1, onTile: false, chosen: null, leads: [], items: [], orb: null, mistOrbs: [] },
+          { id: 0, side: 0, defId: 'melina', star: 1, x: 0, y: 5, hp: 1, maxHp: 1, mana: 0, maxMana: 1, onTile: false, chosen: null, leads: [], items: [], orb: null, mistOrbs: [] },
           { id: 1, side: 1, defId: 'titan', star: 1, x: 0, y: 0, hp: 1, maxHp: 1, mana: 0, maxMana: 1, onTile: false, chosen: null, leads: [], items: [], orb: null, mistOrbs: [] },
         ],
         traits: [{}, {}],

@@ -3,7 +3,10 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const DAUNTLESS = {
-  shield: [0.6, 0.95, 1.5], // of max hp, Dauntless units only, lasts the whole fight
+  // Start-of-combat shield, of max hp, lasts the whole fight.
+  allies: [0.05, 0.1, 0.2], // every ally
+  dauntlessBonus: [0.2, 0.4, 0.85], // extra on top for Dauntless units
+  shield: (level: number, member: boolean) => DAUNTLESS.allies[level - 1] + (member ? DAUNTLESS.dauntlessBonus[level - 1] : 0),
 };
 
 export const dauntless: TraitDef = {
@@ -12,7 +15,10 @@ export const dauntless: TraitDef = {
   icon: '🔰',
   kind: 'role',
   breakpoints: [2, 4, 6],
-  desc: 'Dauntless units start combat with a shield of {shield} of their max HP.',
-  values: () => ({ shield: DAUNTLESS.shield.map(pct) }),
-  mods: ({ level, member }) => (member ? [{ stat: 'startShield', add: DAUNTLESS.shield[level - 1] }] : []),
+  desc: 'All allies start combat with a shield of {allies} of their max HP, Dauntless units {dauntless}.',
+  values: () => ({
+    allies: DAUNTLESS.allies.map(pct),
+    dauntless: DAUNTLESS.allies.map((_, i) => pct(DAUNTLESS.shield(i + 1, true))),
+  }),
+  mods: ({ level, member }) => [{ stat: 'startShield', add: DAUNTLESS.shield(level, member) }],
 };

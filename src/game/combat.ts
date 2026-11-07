@@ -108,7 +108,7 @@ interface SimFighter extends Fighter {
   mirror: number; // mirror summons: share of the owner's basic attack it repeats on the same target (0: acts on its own)
   debuffs: { effect: string; armor: number; mr: number; until: number }[]; // timed, from skills
   triggers: { trait: string; trigger: Trigger; fired: boolean }[];
-  pulses: { item: string; every: number; atkPct: number; type: DamageType }[]; // every in ticks
+  pulses: { item: string; every: number; atkPct: number; type: DamageType; area?: '3x3' }[]; // every in ticks
   openers: { source: string; width: number; depth: number; stunTicks: number; columnAttackSpeed: number }[];
   stunnedUntil: number;
   ward: WardPower | null; // Kagura's umbrella, until it opens (see checkWard)
@@ -150,6 +150,8 @@ interface SimFighter extends Fighter {
   taunt: { by: number; until: number } | null; // must go after this unit for now
   buffs: { effect: string; mods: { stat: StatKey; add: number }[]; until: number }[]; // timed, from skills
   busyUntil: number; // a skill is using it (e.g. a rampage): no attacking or walking before this tick
+  rooted: boolean; // never walks (see SkillApi.stance)
+  noBasic: boolean; // never basic-attacks, only casts when its mana is full (see SkillApi.stance)
   guardUntil: number; // takes less damage before this tick
   guardReduction: number;
   // Shield layers, oldest first: damage eats the newest first (see SkillApi.shield).
@@ -254,9 +256,10 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       stacking: [...new Map(items.flatMap(({ id }) => (ITEMS[id].stacking ? [[ITEMS[id].stacking!.effect, ITEMS[id].stacking!] as const] : []))).values()].map(
         (def) => ({ def, n: 0, until: 0 }),
       ),
-      pulses: items.flatMap(({ id, tier }) => {
+      // One per item id (the highest tier): a second copy doesn't fire again.
+      pulses: [...new Map(items.map(({ id, tier }) => [id, tier] as const).sort((a, b) => a[1] - b[1])).entries()].flatMap(([id, tier]) => {
         const pulse = ITEMS[id].pulse?.(tier);
-        return pulse ? [{ item: id, every: Math.round(pulse.every * TICKS_PER_SECOND), atkPct: pulse.atkPct, type: pulse.damageType }] : [];
+        return pulse ? [{ item: id, every: Math.round(pulse.every * TICKS_PER_SECOND), atkPct: pulse.atkPct, type: pulse.damageType, area: pulse.area }] : [];
       }),
       openers: [
         ...items.flatMap(({ id, tier }) => {
@@ -299,6 +302,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       taunt: null,
       buffs: [],
       busyUntil: 0,
+      rooted: false,
+      noBasic: false,
       guardUntil: 0,
       guardReduction: 0,
       shields: stats.startShield > 0 ? [{ effect: 'startShield', amount: Math.round(stats.hp * stats.startShield), until: MAX_COMBAT_TICKS, onEnd: null }] : [],
@@ -870,6 +875,25 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     alliesOf: (f) => fighters.filter((e) => e.side === f.side && e.hp > 0),
     random: (n) => nextInt(rng, n),
     giveMana: (who, amount) => gainMana(fighters[who.id], amount),
+    attack: (who, at, mult) => {
+      const f = fighters[who.id];
+      const target = fighters[at.id];
+      if (f.hp <= 0 || target.hp <= 0) return;
+      fullBasicAttack(f, target, t, mult);
+    },
+    stance: (who, { rooted, noBasic }) => {
+      const f = fighters[who.id];
+      if (rooted !== undefined) f.rooted = rooted;
+      if (noBasic !== undefined) f.noBasic = noBasic;
+    },
+    ccImmune: (who, seconds) => {
+      const f = fighters[who.id];
+      f.ccImmuneUntil = Math.max(f.ccImmuneUntil, t + Math.round(seconds * TICKS_PER_SECOND));
+    },
+    canAct: (who) => {
+      const f = fighters[who.id];
+      return f.hp > 0 && t >= f.stunnedUntil && !frozen(f);
+    },
     counterAttack: (who, at) => {
       const f = fighters[who.id];
       const target = fighters[at.id];
@@ -907,6 +931,13 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       return healed;
     },
     minionsOf: (f) => fighters.filter((m) => m.owner === f.id && m.hp > 0),
+    dismiss: (who) => {
+      const m = fighters[who.id];
+      if (m.hp <= 0 || m.owner === null) return;
+      m.hp = 0;
+      occupied[gridIndex(m)] = -1;
+      events.push({ t, type: 'death', id: m.id });
+    },
     summon: (who, defId, { hpShare, mirror, atk, at }) => {
       const owner = fighters[who.id];
       const around = at ?? owner;
@@ -992,6 +1023,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         taunt: null,
         buffs: [],
         busyUntil: independent ? 0 : Infinity, // a mirror never acts on its own: it only repeats its owner's hits
+        rooted: false,
+        noBasic: false,
         guardUntil: 0,
         guardReduction: 0,
         shields: [],
@@ -1136,16 +1169,25 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   // A basic attack plus Fighter's chance to hit again.
-  function fullBasicAttack(f: SimFighter, target: SimFighter, t: number): void {
-    basicAttack(f, target, t, false);
+  // `mult` scales its damage (a skill's attack, e.g. 140% of attack); items and on-hit effects work as usual.
+  function fullBasicAttack(f: SimFighter, target: SimFighter, t: number, mult = 1): void {
+    const skill = UNIT_BY_ID[f.defId].skill;
+    // A volley skill makes one attack several shots (see SkillDef.volley); the hit-again repeats the whole volley.
+    const volley = skill ? SKILLS[skill].volley?.(f) : undefined;
+    const once = (again: boolean) => {
+      if (!volley) return basicAttack(f, target, t, again, mult);
+      for (let n = 0; n < volley.shots && target.hp > 0 && f.hp > 0; n++) basicAttack(f, target, t, again, mult * volley.power, n === 0);
+    };
+    once(false);
     // Only roll when there's a chance, so fights without it replay exactly as before.
-    if (target.hp > 0 && f.hp > 0 && f.stats.hitAgain > 0 && nextFloat(rng) < f.stats.hitAgain) basicAttack(f, target, t, true);
+    if (target.hp > 0 && f.hp > 0 && f.stats.hitAgain > 0 && nextFloat(rng) < f.stats.hitAgain) once(true);
+    if (skill && f.hp > 0) SKILLS[skill].afterAttack?.(api, f, target);
   }
 
   // True while a counter-attack is resolving, so counters never set off more counters.
   let countering = false;
 
-  function basicAttack(f: SimFighter, target: SimFighter, t: number, again: boolean): void {
+  function basicAttack(f: SimFighter, target: SimFighter, t: number, again: boolean, mult = 1, mana = true): void {
     // Shred lands before the damage, so the first hit already benefits.
     target.shred = Math.max(target.shred, f.stats.armorShred);
     // Only roll when there's a chance, so crit-free fights replay exactly as before crits existed.
@@ -1153,8 +1195,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Physical attackers hit with attack, magic attackers with magic attack.
     const type = UNIT_BY_ID[f.defId].attackType ?? 'physical';
     const power = type === 'magic' ? f.stats.ap : f.stats.atk;
-    const dealt = damage(target, power * (1 + f.stats.basicAmp) * (crit ? f.stats.critDamage : 1), type, f);
-    gainMana(f, MANA_PER_ATTACK);
+    const dealt = damage(target, power * mult * (1 + f.stats.basicAmp) * (crit ? f.stats.critDamage : 1), type, f);
+    if (mana) gainMana(f, MANA_PER_ATTACK);
     stackUp(f, 'basic');
     hitEvent(f, target, t, 'attack', dealt, crit, again);
     leech(f, dealt, true, t);
@@ -1169,7 +1211,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // owner's damage bonuses (those are the owner's alone).
     for (const m of fighters) {
       if (m.owner !== f.id || !m.mirror || m.hp <= 0 || target.hp <= 0) continue;
-      const raw = power * (1 + f.stats.basicAmp) * m.mirror * (crit ? f.stats.critDamage : 1);
+      const raw = power * mult * (1 + f.stats.basicAmp) * m.mirror * (crit ? f.stats.critDamage : 1);
       hitEvent(m, target, t, 'attack', damage(target, raw, type, m), crit, again);
     }
     const skill = UNIT_BY_ID[f.defId].skill;
@@ -1212,15 +1254,31 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     }
   }
 
-  // Item pulses (e.g. Keris' Mortal Strike): from a living holder, hitting every living enemy.
-  // They fire even while the holder is stunned.
+  // The centre of the 3x3 holding the most living enemies of `f` (ties: the one nearest `f`), or null if none.
+  function densest3x3(f: { x: number; y: number; side: number }): Point | null {
+    const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+    let best: { p: Point; n: number; d: number } | null = null;
+    for (let x = 0; x < GRID_W; x++) {
+      for (let y = 0; y < GRID_H; y++) {
+        const n = foes.filter((e) => Math.abs(e.x - x) <= 1 && Math.abs(e.y - y) <= 1).length;
+        const d = Math.max(Math.abs(x - f.x), Math.abs(y - f.y));
+        if (n && (!best || n > best.n || (n === best.n && d < best.d))) best = { p: { x, y }, n, d };
+      }
+    }
+    return best?.p ?? null;
+  }
+
+  // Item pulses (e.g. Keris' Justice): from a living holder, hitting every living enemy (or those in the
+  // densest 3x3). They fire even while the holder is stunned.
   function fireItemPulses(t: number): void {
     if (t === 0) return;
     for (const f of fighters) {
       for (const pulse of f.pulses) {
         if (f.hp <= 0 || t % pulse.every !== 0) continue;
+        const zone = pulse.area === '3x3' ? densest3x3(f) : null;
         for (const target of fighters) {
           if (target.side === f.side || target.hp <= 0) continue;
+          if (zone && (Math.abs(target.x - zone.x) > 1 || Math.abs(target.y - zone.y) > 1)) continue;
           const dealt = damage(target, f.stats.atk * pulse.atkPct, pulse.type, f);
           events.push({ t, type: 'effect', effect: pulse.item, by: f.id, target: target.id, damage: dealt, hp: target.hp });
           afterDamage(target, t);
@@ -1434,9 +1492,12 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       else if (!f.target || f.target.hp <= 0 || frozen(f.target) || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
       const target = f.target;
 
-      if (dist(f, target) <= f.stats.range) {
+      // No basic attacks: it only casts, at any range, once its mana is full.
+      if (f.noBasic) {
+        if (t >= f.nextAttack && f.mana >= f.maxMana) strike(f, target, t);
+      } else if (dist(f, target) <= f.stats.range) {
         if (t >= f.nextAttack) strike(f, target, t);
-      } else if (t >= f.nextMove) {
+      } else if (!f.rooted && t >= f.nextMove) {
         advance(f, target, t);
       }
     }

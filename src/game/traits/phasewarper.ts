@@ -3,9 +3,9 @@ import type { TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
 export const PHASEWARPER = {
-  below: 0.5, // hp fraction that triggers the warp, once per fight
-  heal: [0.5, 0.75], // of max hp
-  damageAmp: [0.3, 0.6], // for the rest of the fight
+  below: 0.4, // hp fraction that triggers the warp, once per fight
+  heal: [0.3, 0.5], // of max hp
+  damageAmp: [0.1, 0.15], // for the rest of the fight
 };
 
 export const phasewarper: TraitDef = {
