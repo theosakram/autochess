@@ -542,7 +542,7 @@ main { min-width: 0; min-height: 0; }
 
 aside.traits {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
   align-content: start;
   gap: 4px;
   padding: 8px;
@@ -553,30 +553,24 @@ aside.traits h3, .armory h3 { grid-column: 1 / -1; margin: 2px 2px 4px; font-siz
 .armory-stash { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--cell); }
 .traits-empty { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin: 4px 2px; }
 
-/* Name and progress in view: what's active and what's close, without opening anything. */
+/* Icon and count only (name in the tooltip). Active in full; inactive dimmed. */
 .trait-tile {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  grid-template-areas: 'icon name name' 'icon steps count';
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0 6px;
-  flex: none;
-  padding: 4px 6px;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 2px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: var(--cell);
-  text-align: left;
 }
 .trait-tile:hover { filter: brightness(1.2); }
-.trait-tile.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--cell)); }
-.trait-tile .trait-icon { grid-area: icon; font-size: 18px; }
-.trait-name { grid-area: name; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.trait-tile:not(.active) .trait-name { color: var(--muted); }
-.trait-count { grid-area: count; font-size: 13px; font-weight: 700; color: var(--muted); }
-.trait-tile.active .trait-count { color: var(--accent); }
-.trait-steps { display: flex; grid-area: steps; gap: 4px; font-size: 10px; color: var(--muted); }
-.trait-steps i { font-style: normal; }
-.trait-steps i.on { color: var(--accent); font-weight: 700; }
+.trait-tile:not(.active) { opacity: 0.4; filter: grayscale(0.8); }
+.trait-tile:not(.active):hover { opacity: 0.75; filter: none; }
+.trait-tile .trait-icon { font-size: 22px; }
+.trait-tile.bearer { border-style: dashed; border-color: #5a5f6d; }
+.trait-count { font-size: 12px; font-weight: 700; color: var(--text); line-height: 1; }
 .trait-icon { font-size: 26px; line-height: 1; }
 /* A trait's round badge: sized by the text around it, coloured inline. */
 .trait-badge { display: inline-grid; flex: none; place-items: center; width: 1.5em; height: 1.5em; border-radius: 50%; line-height: 1; vertical-align: -0.4em; }
@@ -585,7 +579,10 @@ aside.traits h3, .armory h3 { grid-column: 1 / -1; margin: 2px 2px 4px; font-siz
 
 .trait-popup {
   position: relative;
-  width: min(420px, calc(100vw - 32px));
+  width: min(460px, calc(100vw - 32px));
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
   text-align: left;
 }
 .trait-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
@@ -647,21 +644,50 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .trait-desc .dmg-magic span { color: #6f9fc4; }
 .trait-desc .dmg-magic span.on, .calc.dmg-magic { color: #3cb8ff; }
 .trait-desc i { font-style: normal; opacity: 0.5; }
-.trait-units { display: flex; flex-direction: column; gap: 4px; }
+.trait-popup .trait-desc, .trait-popup .trait-stacks, .trait-popup .stack-rewards, .trait-popup h4, .trait-popup .trait-items { text-align: left; }
+.trait-desc i.next { margin-left: 2px; font-size: 11px; opacity: 0.6; }
+/* Units of a trait: a grid of small tiles. Name + cost on top, other traits (badges) below. */
+.trait-units { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 5px; }
 .trait-units li {
+  position: relative;
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 3px 6px;
-  border-radius: 4px;
+  gap: 2px 4px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  border: 1px solid transparent;
   border-left: 3px solid var(--tier-color);
-  background: color-mix(in srgb, var(--tier-color) 8%, transparent);
+  background: color-mix(in srgb, var(--tier-color) 10%, var(--cell));
   font-size: 12px;
 }
-.trait-units li.owned { background: color-mix(in srgb, var(--tier-color) 30%, var(--cell)); font-weight: 700; }
-.trait-units .unit-cost { color: var(--tier-color); font-weight: 700; }
+.trait-units li .unit-tag { margin-left: auto; align-self: center; }
+.trait-units li .unit-traits { grid-column: 1 / -1; justify-content: flex-start; min-height: 18px; }
+.trait-units .unit-cost { color: var(--tier-color); font-weight: 700; font-size: 11px; }
+.trait-units .unit-link { display: flex; align-items: center; min-width: 0; padding: 0; font-weight: 700; }
 .trait-units .unit-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trait-units li.owned { background: color-mix(in srgb, var(--tier-color) 26%, var(--cell)); }
+/* In a game: on board = lit with a check, bench = half, not owned = greyed out. */
+.trait-units.dim-missing li.at-board { border-color: #3fb950; border-left-color: var(--tier-color); box-shadow: 0 0 0 1px #3fb95055; }
+.trait-units.dim-missing li.at-board::after {
+  content: '✓';
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #3fb950;
+  color: #0d1a0e;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+.trait-units.dim-missing li.at-bench { opacity: 0.75; border-style: dashed; border-left-style: solid; border-color: #3fb95088; border-left-color: var(--tier-color); }
+.trait-units.dim-missing li.at-none { opacity: 0.38; filter: grayscale(0.85); background: var(--cell); }
+.trait-units.dim-missing li.at-none:hover { opacity: 0.8; filter: none; }
+.dialog .trait-chip.mini { padding: 0 3px; line-height: 1; }
 .unit-traits { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .dialog .trait-chip {
   padding: 1px 6px;
@@ -868,6 +894,7 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .overlay {
   position: fixed;
   inset: 0;
+  z-index: 100;
   display: grid;
   place-items: center;
   background: #000000a0;
@@ -1005,6 +1032,24 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
   .commander-start { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1.4fr); }
 }
 
+/* Johnson's Den: one row of Johnnies, each just its faction and role. */
+.johnnie-den { width: min(96vw, 900px); box-sizing: border-box; }
+.johnnie-den .meta { margin: -6px 0 12px; }
+.johnnie-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 8px; }
+.johnnie-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #3a3f4d;
+  border-radius: 8px;
+  background: var(--cell);
+  color: var(--text);
+  text-align: left;
+}
+.johnnie-option:hover { border-color: var(--accent); filter: brightness(1.15); }
+.johnnie-trait { display: flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; }
+.johnnie-have { margin-left: auto; padding: 0 5px; border-radius: 999px; background: #3fb95033; color: #3fb950; font-size: 11px; font-weight: 700; }
 .commander-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 12px; }
 .commander-option {
   display: flex;

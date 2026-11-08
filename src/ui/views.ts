@@ -32,50 +32,46 @@ export const traitNames = (ids: string[], sep = ', ') => ids.map((id) => TRAITS[
 const isChosen = (chosen: Record<string, string>, defId: string) => Object.values(chosen).includes(defId);
 
 // Traits with at least one unit on the board, active first: icon plus count/next breakpoint.
+// The board's synergy list: a grid of icon + count tiles (name in the tooltip). Active ones in full,
+// inactive ones dimmed. Bearers (the Pyre Offering's, a Plane Wanderer) count as active while their
+// trait is, so they sit with the active ones rather than at the bottom.
 export function traitsPanelHtml(p: Player): string {
-  const counts = playerTraitCounts(p);
-  const tiles = Object.entries(counts)
-    .map(([id, n]) => ({ t: TRAITS[id], n, lvl: traitLevel(id, n) }))
-    .sort((a, b) => b.lvl - a.lvl || b.n - a.n)
-    .map(({ t, n, lvl }) => {
-      const goal = t.breakpoints[lvl] ?? t.breakpoints[t.breakpoints.length - 1];
-      const steps = t.breakpoints.map((b, i) => `<i class="${i < lvl ? 'on' : ''}">${b}</i>`).join('');
-      return `<button class="trait-tile${lvl ? ' active' : ''}" data-trait="${t.id}" title="${t.name}">
-        <span class="trait-icon">${traitBadgeHtml(t.id)}</span>
-        <span class="trait-name">${t.name}</span>
-        <span class="trait-count">${n}/${goal}</span>
-        <span class="trait-steps">${steps}</span>
+  const tile = (cls: string, attr: string, title: string, icon: string, count: string) =>
+    `<button class="trait-tile${cls}" ${attr} title="${title}">
+        <span class="trait-icon">${icon}</span>
+        <span class="trait-count">${count}</span>
       </button>`;
-    })
-    .join('');
-  // Bearers (e.g. of the Pyre Offering) get their own 1/1 tile, lit while their trait is active.
+  type Entry = { html: string; active: boolean; lvl: number; n: number; bearer: boolean };
+  const entries: Entry[] = Object.entries(playerTraitCounts(p)).map(([id, n]) => {
+    const t = TRAITS[id];
+    const lvl = traitLevel(id, n);
+    const goal = t.breakpoints[lvl] ?? t.breakpoints[t.breakpoints.length - 1];
+    const html = tile(lvl ? ' active' : '', `data-trait="${t.id}"`, `${t.name}: ${n}/${goal} (${t.breakpoints.join(' / ')})`, traitBadgeHtml(t.id), `${n}/${goal}`);
+    return { html, active: lvl > 0, lvl, n, bearer: false };
+  });
   const levels = playerTraits(p);
   const fielded = new Set(p.board.flatMap((u) => (u ? [u.uid] : [])));
-  const bearers = p.items
-    .filter((it) => it.holder !== null && fielded.has(it.holder) && ITEMS[it.id].grantsMembership)
-    .map((it) => {
-      const grant = ITEMS[it.id].grantsMembership!;
-      const name = `${ITEMS[it.id].name} bearer`;
-      return `<button class="trait-tile bearer${effectiveTier(it, levels) ? ' active' : ''}" data-bearer="${it.uid}" title="${name}">
-        <span class="trait-icon">${bearerBadgeHtml(grant.trait)}</span>
-        <span class="trait-name">${name}</span>
-        <span class="trait-count">1/1</span>
-      </button>`;
-    })
+  for (const it of p.items) {
+    const grant = ITEMS[it.id].grantsMembership;
+    if (it.holder === null || !fielded.has(it.holder) || !grant) continue;
+    const active = !!effectiveTier(it, levels);
+    const html = tile(` bearer${active ? ' active' : ''}`, `data-bearer="${it.uid}"`, `${ITEMS[it.id].name} bearer`, bearerBadgeHtml(grant.trait), '1/1');
+    entries.push({ html, active, lvl: 0, n: 0, bearer: true });
+  }
+  // Units that carry a trait's bonuses themselves (e.g. the Plane Wanderer); the tile opens their card.
+  for (const u of p.board) {
+    const h = u && UNIT_BY_ID[u.defId].honorary;
+    if (!u || !h) continue;
+    const active = !!levels[h.trait];
+    const html = tile(` bearer${active ? ' active' : ''}`, `data-select-unit="${u.uid}"`, `${UNIT_BY_ID[u.defId].name}: ${TRAITS[h.trait].name} bonus, doesn't count`, bearerBadgeHtml(h.trait), '1/1');
+    entries.push({ html, active, lvl: 0, n: 0, bearer: true });
+  }
+  // Active first (traits by level, then their bearers), then the rest by count.
+  const tiles = entries
+    .sort((a, b) => +b.active - +a.active || +a.bearer - +b.bearer || b.lvl - a.lvl || b.n - a.n)
+    .map((e) => e.html)
     .join('');
-  // Units that carry a trait's bonuses themselves (e.g. the Plane Wanderer) get one too; it opens their card.
-  const honoraryUnits = p.board
-    .flatMap((u) => (u && UNIT_BY_ID[u.defId].honorary ? [u] : []))
-    .map((u) => {
-      const h = UNIT_BY_ID[u.defId].honorary!;
-      return `<button class="trait-tile bearer${levels[h.trait] ? ' active' : ''}" data-select-unit="${u.uid}" title="${UNIT_BY_ID[u.defId].name}: ${TRAITS[h.trait].name} bonus, doesn't count">
-        <span class="trait-icon">${bearerBadgeHtml(h.trait)}</span>
-        <span class="trait-name">${UNIT_BY_ID[u.defId].name}</span>
-        <span class="trait-count">1/1</span>
-      </button>`;
-    })
-    .join('');
-  return `<aside class="traits"><h3>Synergies</h3>${tiles + bearers + honoraryUnits || '<p class="traits-empty">Put heroes on the board to start one.</p>'}</aside>`;
+  return `<aside class="traits"><h3>Synergies</h3>${tiles || '<p class="traits-empty">Put heroes on the board to start one.</p>'}</aside>`;
 }
 
 type DescSource = { desc: string; values(): Record<string, string[]>; damage?: SkillDef['damage'] };
@@ -117,7 +113,7 @@ const itemText = (def: ItemDef, tier: number) => {
 };
 
 // The items a trait hands out, with your tier of each highlighted.
-function traitItemsHtml(itemIds: string[], p: Player): string {
+function traitItemsHtml(itemIds: string[], p: Player, compact = false): string {
   const grants = auraGrants(p, playerTraits(p));
   const rows = itemIds
     .map((id) => {
@@ -126,7 +122,7 @@ function traitItemsHtml(itemIds: string[], p: Player): string {
       const grant = owned && grants.get(owned.uid);
       return `<li class="${owned ? 'owned' : ''}">
         <b>${def.icon} ${def.name}</b> <small>${def.kind} · ${owned ? `tier ${owned.tier}` : 'not yet'}</small>
-        <p class="trait-desc">${descHtml(def, owned?.tier ?? 0)}</p>
+        <p class="trait-desc">${compact ? descNowHtml(def, owned?.tier ?? 0) : descHtml(def, owned?.tier ?? 0)}</p>
         ${grant ? `<p class="aura-line">Now: ${auraText(grant)}</p>` : ''}
       </li>`;
     })
@@ -134,45 +130,67 @@ function traitItemsHtml(itemIds: string[], p: Player): string {
   return `<h4>Items</h4><ul class="trait-items">${rows}</ul>`;
 }
 
-// Popup for one trait: breakpoints, one description, and every unit that has it (yours highlighted).
-// Title plus everything about a trait, measured against `board`. Shared by the single-trait
-// popup and the gallery so the two never drift apart.
-function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string>, heading: 'h2' | 'h3'): string {
-  const { board } = p;
+// Like descHtml, but only one level's numbers: the active one (or the first, muted, while inactive),
+// with the next level's value after an arrow. The in-game popup uses it; galleries show every level.
+function descNowHtml(src: DescSource, lvl: number): string {
+  const values = src.values();
+  return src.desc.replace(/\{(\w+)\}/g, (_, key: string) => {
+    const vals = values[key];
+    const i = Math.min(Math.max(lvl, 1), vals.length) - 1;
+    // A '-' level means "not yet": show the first level that has it, muted.
+    if (vals[i] === '-') return `<span>${vals.find((v, j) => j > i && v !== '-') ?? '-'}</span>`;
+    const next = lvl > 0 && lvl < vals.length && vals[lvl] !== vals[i] ? `<i class="next">→${vals[lvl]}</i>` : '';
+    return wrapDamage(damageClass(src, key, 'physical'), `<span class="${lvl > 0 ? 'on' : ''}">${vals[i]}</span>${next}`);
+  });
+}
+
+type TraitCardOpts = { heading: 'h2' | 'h3'; compact?: boolean; dim?: boolean };
+
+// Title plus everything about a trait, measured against the player's units. Shared by the single-trait
+// popup (compact: current numbers only) and the galleries (every level) so they never drift apart.
+// With `dim`, units the player doesn't have are greyed out; bench ones sit in between.
+function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string>, { heading, compact = false, dim = false }: TraitCardOpts): string {
   const t = TRAITS[traitId];
   const n = playerTraitCounts(p)[traitId] ?? 0;
   const lvl = traitLevel(traitId, n);
-  const owned = new Set(board.flatMap((u) => (u ? [u.defId] : [])));
+  const onBoard = new Set(p.board.flatMap((u) => (u ? [u.defId] : [])));
+  const onBench = new Set(p.bench.flatMap((u) => (u ? [u.defId] : [])));
+  const next = t.breakpoints[lvl];
   const bps = t.breakpoints.map((b, i) => `<span class="${i < lvl ? 'on' : ''}${i === lvl - 1 ? ' current' : ''}">${b}</span>`).join('');
-  const row = (u: UnitDef) => {
+  const tile = (u: UnitDef) => {
     const mine = Object.values(p.rewardUnit ?? {}).includes(u.id);
+    const where = onBoard.has(u.id) ? 'board' : onBench.has(u.id) ? 'bench' : 'none';
     const chips = [
-      ...u.traits.filter((id) => id !== traitId).map((id) => traitChipHtml(id)),
+      ...u.traits.filter((id) => id !== traitId).map((id) => traitChipHtml(id, true)),
       // A bearer unit (e.g. a Plane Wanderer) links to the trait it carries, from its other cards.
-      u.honorary && u.honorary.trait !== traitId ? bearerChipHtml(u.honorary) : '',
+      u.honorary && u.honorary.trait !== traitId ? bearerChipHtml(u.honorary, true) : '',
     ].join('');
-    return `<li class="tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}">
+    const tag = where === 'bench' ? 'bench' : u.shop === false ? (mine ? 'yours' : 'not in shop') : '';
+    return `<li class="tier-${u.tier}${dim ? ` at-${where}` : ''}${where === 'board' ? ' owned' : ''}" title="${u.name} · ${u.tier}g${where === 'board' ? ' · on your board' : where === 'bench' ? ' · on your bench' : ''}">
+        <button class="unit-link" data-unit-info="${u.id}">${portraitHtml(u.id, 'tiny')}<span class="unit-name">${u.name}</span></button>
         <span class="unit-cost">${u.tier}g</span>
-        <span class="unit-name">${portraitHtml(u.id, 'tiny')}<button class="unit-link" data-unit-info="${u.id}">${u.name}</button>${u.shop === false ? ` <small class="unit-tag">${mine ? 'yours' : 'not in shop'}</small>` : ''}</span>
-        <span class="unit-traits">${chips}</span>
+        <span class="unit-traits">${chips}${tag ? `<small class="unit-tag">${tag}</small>` : ''}</span>
       </li>`;
   };
   const byCost = (a: UnitDef, b: UnitDef) => a.tier - b.tier || a.name.localeCompare(b.name);
-  const units = UNITS.filter((u) => u.traits.includes(traitId)).sort(byCost).map(row).join('');
-  const bearers = UNITS.filter((u) => u.honorary?.trait === traitId).sort(byCost).map(row).join('');
-  return `<${heading} class="trait-title"><span class="trait-icon">${traitBadgeHtml(t.id)}</span> ${t.name} <small>${t.kind} · ${n} on board</small></${heading}>
+  const members = UNITS.filter((u) => u.traits.includes(traitId)).sort(byCost);
+  const fielded = members.filter((u) => onBoard.has(u.id)).length;
+  const units = members.map(tile).join('');
+  const bearers = UNITS.filter((u) => u.honorary?.trait === traitId).sort(byCost).map(tile).join('');
+  const count = next ? `${n} / ${next}` : `${n} · max`;
+  return `<${heading} class="trait-title"><span class="trait-icon">${traitBadgeHtml(t.id)}</span> ${t.name} <small>${t.kind} · ${count}</small></${heading}>
     <div class="trait-bps">${bps}</div>
-    <p class="trait-desc">${descHtml(t, lvl)}</p>
+    <p class="trait-desc">${compact ? descNowHtml(t, lvl) : descHtml(t, lvl)}</p>
     ${chosen[traitId] ? `<p class="trait-stacks">👑 This game: <b>${UNIT_BY_ID[chosen[traitId]].name}</b></p>` : ''}
     ${t.leader ? leaderLineHtml(traitId, p) : ''}
     ${p.orb?.trait === traitId ? `<p class="trait-stacks">🔮 Magic Orb: <b>${UNIT_BY_ID[p.orb.defId].name}</b> counts +1</p>` : ''}
     ${p.twilight?.trait === traitId && blessedUnit(p) ? `<p class="trait-stacks">🌗 Twilight Blessing: <b>${UNIT_BY_ID[blessedUnit(p)!.defId].name}</b> counts +1</p>` : ''}
     ${t.stacks ? stacksHtml(traitId, p) : ''}
     ${unlockHtml(traitId, p)}
-    ${t.items ? traitItemsHtml(t.items.pool, p) : ''}
-    <h4>Units</h4>
-    <ul class="trait-units">${units}</ul>
-    ${bearers ? `<h4>Bearers <small>get the bonus, don't count</small></h4><ul class="trait-units">${bearers}</ul>` : ''}`;
+    ${t.items ? traitItemsHtml(t.items.pool, p, compact) : ''}
+    <h4>Units${dim ? ` <small>${fielded} / ${members.length} on board</small>` : ''}</h4>
+    <ul class="trait-units${dim ? ' dim-missing' : ''}">${units}</ul>
+    ${bearers ? `<h4>Bearers <small>get the bonus, don't count</small></h4><ul class="trait-units${dim ? ' dim-missing' : ''}">${bearers}</ul>` : ''}`;
 }
 
 // Locked units of this trait the player has unlocked, and free units waiting for bench room.
@@ -341,17 +359,19 @@ const modalHtml = (closeAction: string, className: string, body: string, scrollK
     ${body}
   </div></div>`;
 
-export function traitDetailHtml(traitId: string, p: Player, chosen: Record<string, string>): string {
-  return modalHtml('closeTrait', 'trait-popup', traitCardHtml(traitId, p, chosen, 'h2'));
+// `live`: in a game, so show current numbers only and grey out the units the player doesn't have.
+export function traitDetailHtml(traitId: string, p: Player, chosen: Record<string, string>, live = true): string {
+  return modalHtml('closeTrait', 'trait-popup', traitCardHtml(traitId, p, chosen, { heading: 'h2', compact: live, dim: live }));
 }
 
 // Like a trait chip, for a unit that carries a trait's bonus without being a member.
-const bearerChipHtml = (h: { trait: string; icon: string }) =>
-  `<button class="trait-chip bearer-chip" data-trait="${h.trait}" title="Gets the ${TRAITS[h.trait].name} bonus, doesn't count">${bearerBadgeHtml(h.trait)} ${TRAITS[h.trait].name} bearer</button>`;
+const bearerChipHtml = (h: { trait: string; icon: string }, mini = false) =>
+  `<button class="trait-chip bearer-chip${mini ? ' mini' : ''}" data-trait="${h.trait}" title="Gets the ${TRAITS[h.trait].name} bonus, doesn't count">${bearerBadgeHtml(h.trait)}${mini ? '' : ` ${TRAITS[h.trait].name} bearer`}</button>`;
 
 // A small button naming a trait; clicking it opens that trait's popup.
-const traitChipHtml = (id: string) =>
-  `<button class="trait-chip" data-trait="${id}" title="${TRAITS[id].name}">${traitBadgeHtml(id)} ${TRAITS[id].name}</button>`;
+// `mini`: badge only (the name is in the tooltip).
+const traitChipHtml = (id: string, mini = false) =>
+  `<button class="trait-chip${mini ? ' mini' : ''}" data-trait="${id}" title="${TRAITS[id].name}">${traitBadgeHtml(id)}${mini ? '' : ` ${TRAITS[id].name}`}</button>`;
 
 export type GalleryTab = 'cards' | 'grid';
 
@@ -361,7 +381,7 @@ export function galleryHtml(p: Player, chosen: Record<string, string>, tab: Gall
   const tabs = (['cards', 'grid'] as const)
     .map((t) => `<button class="gallery-tab${t === tab ? ' on' : ''}" data-action="galleryTab" data-tab="${t}">${t === 'cards' ? 'Synergies' : 'Crossovers'}</button>`)
     .join('');
-  const body = tab === 'grid' ? crossoverGridHtml(p) : gallerySection(p, chosen, 'faction', 'Factions') + gallerySection(p, chosen, 'role', 'Roles');
+  const body = tab === 'grid' ? crossoverGridHtml(p) : gallerySection(p, chosen, 'faction', 'Factions', true) + gallerySection(p, chosen, 'role', 'Roles', true);
   // Each tab keeps its own scroll position.
   return modalHtml('closeGallery', 'gallery', `<h2>📖 Synergies</h2><nav class="gallery-tabs">${tabs}</nav>${body}`, `gallery-${tab}`);
 }
@@ -492,10 +512,10 @@ function itemGalleryHtml(): string {
   );
 }
 
-function gallerySection(p: Player, chosen: Record<string, string>, kind: 'faction' | 'role', title: string): string {
+function gallerySection(p: Player, chosen: Record<string, string>, kind: 'faction' | 'role', title: string, dim = false): string {
   const cards = Object.values(TRAITS)
     .filter((t) => t.kind === kind)
-    .map((t) => `<article class="gallery-card">${traitCardHtml(t.id, p, chosen, 'h3')}</article>`)
+    .map((t) => `<article class="gallery-card">${traitCardHtml(t.id, p, chosen, { heading: 'h3', dim })}</article>`)
     .join('');
   return `<h3 class="gallery-section">${title}</h3><div class="gallery-grid">${cards}</div>`;
 }
@@ -1232,21 +1252,26 @@ export function cardOfferHtml(p: Player, selected: string | null = null): string
 }
 
 // Johnson's Den: pick one of the Johnnies on offer (each a different faction and role).
+// The Johnnies all share a name and face, so each card is just its two traits, plus how many of the
+// player's own heroes (board and bench) already share each one.
 export function johnnieOfferHtml(p: Player): string {
+  const mine = new Set([...p.board, ...p.bench].flatMap((u) => (u ? [u.defId] : [])));
+  const have = (t: string) => [...mine].filter((id) => UNIT_BY_ID[id].traits.includes(t)).length;
   const cards = (p.johnnie?.offer ?? [])
     .map((id) => {
-      const def = UNIT_BY_ID[id];
-      const traits = def.traits.map((t) => `${traitBadgeHtml(t)} ${TRAITS[t].name}`).join(' · ');
-      return `<button class="commander-option" data-action="pickJohnnie" data-johnnie="${id}">
-        <span class="commander-portrait">${portraitHtml(id)}</span>
-        <b>${def.name}</b><small>${traits}</small>
-      </button>`;
+      const lines = UNIT_BY_ID[id].traits
+        .map((t) => {
+          const n = have(t);
+          return `<span class="johnnie-trait">${traitBadgeHtml(t)} ${TRAITS[t].name}${n ? ` <small class="johnnie-have" title="Your heroes with ${TRAITS[t].name}">+${n}</small>` : ''}</span>`;
+        })
+        .join('');
+      return `<button class="johnnie-option" data-action="pickJohnnie" data-johnnie="${id}">${lines}</button>`;
     })
     .join('');
-  return `<div class="overlay"><div class="dialog modal commander-pick">
-    <h2 class="trait-title">🎩 Johnnie's Den: pick your Johnnie</h2>
-    <p class="meta">It's yours, free. From now on this Johnnie (the same faction and role) turns up in your shop like a 3-gold hero, at 0 gold.</p>
-    <div class="commander-options">${cards}</div>
+  return `<div class="overlay"><div class="dialog modal johnnie-den">
+    <h2 class="trait-title">🎩 Johnnie's Den</h2>
+    <p class="meta">Pick one. Free now, then 0g in your shop.</p>
+    <div class="johnnie-options">${cards}</div>
   </div></div>`;
 }
 

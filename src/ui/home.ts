@@ -23,7 +23,7 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
     for (const el of root.querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolls.set(el.dataset.keepScroll!, el.scrollTop);
     root.innerHTML =
       (view === 'home' ? homeHtml(difficulty) : homeGalleryHtml(viewer, tab)) +
-      (openTrait ? traitDetailHtml(openTrait, viewer, {}) : '') +
+      (openTrait ? traitDetailHtml(openTrait, viewer, {}, false) : '') +
       (openUnit ? unitInfoHtml(openUnit, viewer) : '');
     for (const el of root.querySelectorAll<HTMLElement>('[data-keep-scroll]')) el.scrollTop = scrolls.get(el.dataset.keepScroll!) ?? 0;
   }

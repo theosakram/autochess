@@ -56,7 +56,7 @@ describe('Kenzo', () => {
     return state;
   }
 
-  test('a win pays 1 extra gold, a loss 2', () => {
+  test('a win pays 2 extra gold, a loss 3', () => {
     const state = kenzoGame();
     state.round = 3;
     const [strong, weak] = state.players;
@@ -91,9 +91,9 @@ describe('Kenzo', () => {
     expect(powersOf(p).roundGold).toEqual(KENZO.gold);
   });
 
-  test('the sash is +60% attack and magic attack, and never drops', () => {
+  test('the sash is +40% attack and magic attack, and never drops', () => {
     expect(EQUIPMENT).not.toContain('blacksash');
-    expect(ITEMS.blacksash.mods(1)).toEqual([{ stat: 'atk', pct: 0.6 }, { stat: 'ap', pct: 0.6 }]);
+    expect(ITEMS.blacksash.mods(1)).toEqual([{ stat: 'atk', pct: 0.4 }, { stat: 'ap', pct: 0.4 }]);
   });
 
   test('only kills by the holder or its summons count, once per target', () => {

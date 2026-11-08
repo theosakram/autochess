@@ -3,7 +3,7 @@ import type { ItemDef } from './types';
 
 // Kenzo's own item. Tune with `bun run balance`.
 export const BLACK_SASH = {
-  hybridAtk: 0.6, // + share of attack and magic attack
+  hybridAtk: 0.4, // + share of attack and magic attack
   killsPerChest: 4, // the holder's own last hits (killing blows), across fights
   maxChests: 4,
 };

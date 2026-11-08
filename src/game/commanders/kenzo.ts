@@ -3,7 +3,7 @@ import type { CommanderDef } from './types';
 
 // Tune with `bun run balance`.
 export const KENZO = {
-  gold: { win: 1, loss: 2 },
+  gold: { win: 2, loss: 3 },
 };
 
 export const kenzo: CommanderDef = {
