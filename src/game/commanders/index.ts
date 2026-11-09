@@ -1,6 +1,6 @@
 import { ITEMS } from '../items';
 import { BOARD_COLS, BOARD_ROWS, CARD_OFFER_SIZE } from '../config';
-import { shuffle } from '../rng';
+import { nextInt, shuffle } from '../rng';
 import type { GameState, Loc, Player } from '../types';
 import { UNIT_BY_ID } from '../units';
 import { addXp } from '../player';
@@ -190,6 +190,11 @@ const addChests = (p: Player, n: number) => ((p.chests ??= { kills: 0, earned: 0
 // may leave them at 1 HP instead.
 export function hurtPlayer(p: Player, damage: number): void {
   if (damage <= 0) return;
+  // Paladin: the commander shield soaks it first.
+  const soak = Math.min(p.shield ?? 0, damage);
+  if (soak) p.shield! -= soak;
+  damage -= soak;
+  if (damage <= 0) return;
   p.hp -= damage;
   const pw = powersOf(p);
   if (pw.hurtGold) {
@@ -213,6 +218,17 @@ export function offerCards(state: GameState, p: Player): string[] {
   if (!p.commander) return [];
   const others = shuffle(state, Object.keys(COMMANDERS).filter((id) => id !== p.commander));
   return [p.commander, ...others].slice(0, CARD_OFFER_SIZE);
+}
+
+// Swaps one offered card for another not on offer. Each slot gets one reroll.
+export function rerollCard(state: GameState, p: Player, slot: number): string | null {
+  if (!p.cardOffer?.[slot]) return 'No card there';
+  if (p.cardRerolled?.[slot]) return 'That card was already rerolled';
+  const pool = Object.keys(COMMANDERS).filter((id) => !p.cardOffer!.includes(id));
+  if (pool.length === 0) return 'No other cards left';
+  p.cardOffer[slot] = pool[nextInt(state, pool.length)];
+  (p.cardRerolled ??= [])[slot] = true;
+  return null;
 }
 
 // Board rows (0 = front) the beast may stand on.

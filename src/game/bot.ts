@@ -29,6 +29,8 @@ function easyBot(state: GameState, p: Player): void {
     const ids = Object.keys(COMMANDERS);
     applyAction(state, p.id, { type: 'pickCommander', commander: ids[nextInt(state, ids.length)] });
   }
+  if (p.powerOffer) applyAction(state, p.id, { type: 'pickPower', card: p.powerOffer.cards[0] });
+  if (p.factionOrbOffer) applyAction(state, p.id, { type: 'pickFactionOrb', trait: p.factionOrbOffer[0] });
   if (p.cardOffer?.length) applyAction(state, p.id, { type: 'pickCard', card: p.cardOffer[nextInt(state, p.cardOffer.length)] });
   while (p.itemOffer?.length) applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[nextInt(state, p.itemOffer.length)] });
   placeMarks(state, p);

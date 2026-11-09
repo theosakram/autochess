@@ -115,6 +115,7 @@ export const EFFECT_COLORS: Record<string, number> = {
   umbrella: 0xff7eb6,
   revitalize: 0x5fe08a,
   engulf: 0xb04cff,
+  kamikaze: 0xff6a1a,
   lifebane: 0x3fa7ff,
   icebound: 0x9fe6ff,
   arcticcold: 0x7fd4ff,

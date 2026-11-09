@@ -35,6 +35,8 @@ import {
   type RailPanel,
   commanderPickHtml,
   cardOfferHtml,
+  powerOfferHtml,
+  factionOrbOfferHtml,
   itemDetailHtml,
   itemOfferHtml,
   commanderPanelHtml,
@@ -55,6 +57,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let combat: { fight: Fight; opponentId: string; playback: Playback | null } | null = null;
   // Combat damage is applied before playback, so show pre-fight hp until it ends.
   let hpBefore: Map<string, number> | null = null;
+  let shieldBefore = 0; // own commander shield before the fight, shown until it plays out
   // Damage of the fight on screen, or of the last one during prep.
   let meter: Meter | null = null;
   let meterTab: MeterTab = 'dealt';
@@ -76,7 +79,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let altarOpen: AltarKey | null = null;
   let blessOpen = false; // Lunox's blessing picker
   let essenceOpen = false; // Luo Yi's altar picker
-  let cardPreview: string | null = null; // the card looked at on the card pick
+  let cardsHidden = false; // the card pick, minimized
+  let denHidden = false; // Johnnie's Den, minimized
   let commanderPreview: string | null = null; // the commander looked at on the start-of-game pick
   let bloodOpen = false; // Alice's Blood Pact picker
   // The unfolded part of the commander panel (its power's text or its card's), if any.
@@ -126,10 +130,38 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   function dispatch(action: Action): void {
     // Only the shop lock can be toggled while a fight plays.
     if (combat && action.type !== 'toggleLock') return;
+    const free = me().freeRerolls ?? 0;
     const res = applyAction(state, playerId, action);
     if (!res.ok) toast(res.error);
+    else if (action.type === 'reroll' && (me().freeRerolls ?? 0) > Math.max(0, free - 1)) toast('💎 Premium Client: free refresh banked', 'info');
     render();
   }
+
+  // A picked card flies from the dialog into its slot in the commander panel's card tray.
+  // `a` is where the card was, measured before the pick re-rendered the dialog away (a detached card measures 0,0).
+  function flyToTray(card: HTMLElement, a: DOMRect, slot: number): void {
+    const to = traySlot(slot);
+    if (!to) return;
+    const b = to.getBoundingClientRect();
+    const ghost = card.cloneNode(true) as HTMLElement;
+    ghost.classList.add('card-fly');
+    Object.assign(ghost.style, { left: `${a.left}px`, top: `${a.top}px`, width: `${a.width}px`, height: `${a.height}px` });
+    document.body.append(ghost);
+    to.style.visibility = 'hidden';
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+    const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+    const s = b.width / a.width;
+    ghost
+      .animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0.6 }], {
+        duration: 550,
+        easing: 'cubic-bezier(.5,0,.3,1)',
+      })
+      .finished.then(() => {
+        ghost.remove();
+        traySlot(slot)?.style.removeProperty('visibility');
+      });
+  }
+  const traySlot = (i: number) => root.querySelector<HTMLElement>(`[data-card-slot="${i}"]`);
 
   function toast(msg: string, kind: 'error' | 'info' = 'error'): void {
     const el = root.querySelector<HTMLElement>('.toast')!;
@@ -229,7 +261,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool);
     slot('grave').innerHTML = `<div class="graves">${essenceAltarHtml(p)}${graveHtml(p)}${sideShopsHtml(p)}</div>`;
     // You, bottom left, right above your gold.
-    slot('commander').innerHTML = `<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen)}</div>`;
+    slot('commander').innerHTML = `<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen, state.powerTiers, hpBefore ? shieldBefore : (p.shield ?? 0))}</div>`;
     slot('side').innerHTML = `<div class="side">
       ${playersHtml(
         state.players.filter((o) => o.id !== playerId),
@@ -243,7 +275,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const scrolled = new Map<string, [number, number]>();
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolled.set(el.dataset.keepScroll!, [el.scrollTop, el.scrollLeft]);
     slot('overlays').innerHTML = [
-      galleryOpen ? galleryHtml(p, state.chosen, galleryTab) : '',
+      galleryOpen ? galleryHtml(p, state.chosen, galleryTab, state.powerTiers) : '',
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
@@ -256,10 +288,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
       bloodOpen && p.blood?.uses ? bloodPickHtml(p) : '',
       !p.commander ? commanderPickHtml(commanderPreview) : '',
-      p.johnnie?.offer.length && !combat ? johnnieOfferHtml(p) : '',
-      p.commander && p.cardOffer?.length && !combat ? cardOfferHtml(p, cardPreview) : '',
+      p.johnnie?.offer.length && !combat && !denHidden ? johnnieOfferHtml(p) : '',
+      p.commander && p.cardOffer?.length && !combat && !cardsHidden ? cardOfferHtml(p) : '',
+      p.commander && p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? powerOfferHtml(p) : '',
+      p.commander && p.factionOrbOffer?.length && !p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? factionOrbOfferHtml(p) : '',
       // One pick at a time: the basic item after the commander card.
-      p.commander && !p.cardOffer?.length && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
+      p.commander && ((!p.cardOffer?.length && !p.powerOffer && !p.factionOrbOffer?.length) || cardsHidden) && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
       over ? gameOverHtml(p, state.players.length) : '',
     ].join('');
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) {
@@ -273,6 +307,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   function endTurn(): void {
     if (combat || !isAlive(me()) || isGameOver(state) || !me().commander) return;
     hpBefore = new Map(state.players.map((p) => [p.id, p.hp]));
+    shieldBefore = me().shield ?? 0;
     const fights = resolveCombat(state);
     const fight = fights.find((f) => f.home === playerId || (f.away === playerId && !f.ghost));
     if (!fight) return nextRound();
@@ -296,6 +331,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (meter) meter.live = false;
     combat = null;
     hpBefore = null;
+    cardsHidden = false; // a new round's pick opens up again
+    denHidden = false;
     const orbsBefore = me().orbs.length;
     const bonuses = isAlive(me()) && !isGameOver(state) ? startRound(state) : [];
     render();
@@ -422,8 +459,11 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         const slot = mistPick!;
         mistPick = null;
         dispatch({ type: 'mistBuy', slot, choice: btn.dataset.choice! });
-      } else if (a === 'previewCard') {
-        cardPreview = btn.dataset.card!;
+      } else if (a === 'hideDen' || a === 'showDen') {
+        denHidden = a === 'hideDen';
+        render();
+      } else if (a === 'hideCards' || a === 'showCards') {
+        cardsHidden = a === 'hideCards';
         render();
       } else if (a === 'previewCommander') {
         commanderPreview = btn.dataset.commander!;
@@ -518,7 +558,24 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'enhance') dispatch({ type: 'enhance', trait: btn.dataset.enhance! });
       else if (a === 'claimEnhance') dispatch({ type: 'claimEnhance', level: Number(btn.dataset.level) });
       else if (a === 'pickJohnnie') dispatch({ type: 'pickJohnnie', johnnie: btn.dataset.johnnie! });
-      else if (a === 'pickCard') dispatch({ type: 'pickCard', card: btn.dataset.card! });
+      else if (a === 'pickCard') {
+        const from = btn.closest<HTMLElement>('.pick-card');
+        const rect = from?.getBoundingClientRect();
+        dispatch({ type: 'pickCard', card: btn.dataset.card! });
+        if (from && rect && me().commanderCard) flyToTray(from, rect, 0);
+      }
+      else if (a === 'rerollCard') dispatch({ type: 'rerollCard', slot: Number(btn.dataset.slot) });
+      else if (a === 'pickFactionOrb') dispatch({ type: 'pickFactionOrb', trait: btn.dataset.trait! });
+      else if (a === 'rerollPower') dispatch({ type: 'rerollPower', slot: Number(btn.dataset.slot) });
+      else if (a === 'pickPower') {
+        const from = btn.closest<HTMLElement>('.pick-card');
+        const rect = from?.getBoundingClientRect();
+        const before = me().powerCards?.length ?? 0;
+        const gold = me().gold;
+        dispatch({ type: 'pickPower', card: btn.dataset.card! });
+        if (from && rect && (me().powerCards?.length ?? 0) > before) flyToTray(from, rect, before + 1);
+        if (me().gold > gold) toast(`💰 +${me().gold - gold} gold`, 'info');
+      }
       else if (a === 'pickItem') dispatch({ type: 'pickItem', item: btn.dataset.itemId! });
       else if (a === 'mark') dispatch({ type: 'mark', kind: btn.dataset.kind as MarkKind, unit: Number(btn.dataset.unit) });
       else if (a === 'buy') dispatch({ type: 'buy', slot: Number(btn.dataset.slot) });

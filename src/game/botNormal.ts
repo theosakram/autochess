@@ -247,6 +247,8 @@ export function normalBot(state: GameState, p: Player): void {
     applyAction(state, p.id, { type: 'pickCommander', commander: ids[nextInt(state, ids.length)] });
   }
   pickCard(state, p);
+  if (p.powerOffer) applyAction(state, p.id, { type: 'pickPower', card: p.powerOffer.cards[0] });
+  if (p.factionOrbOffer) applyAction(state, p.id, { type: 'pickFactionOrb', trait: p.factionOrbOffer[0] });
   pickItems(state, p);
   playTrove(state, p);
   playJohnnie(state, p);

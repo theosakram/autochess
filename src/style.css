@@ -87,7 +87,7 @@ kbd {
 .legend-round-label small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
 .legend-round-label b { color: #ffc93c; }
 .legend-icons { display: flex; align-items: center; gap: 4px; }
-.legend-round { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #6b7184; }
+.legend-round { position: relative; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #6b7184; }
 .legend-round svg { width: 18px; height: 18px; }
 .legend-round.past { color: #4a4f5e; opacity: 0.7; }
 .legend-round.current { color: #ffc93c; background: #ffc93c22; box-shadow: 0 0 0 1px #ffc93c88; }
@@ -1022,34 +1022,81 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .commander-detail .commander-text { font-size: 13px; }
 .dialog.commander-start .commander-choose { margin-top: auto; align-self: stretch; padding: 10px; font-size: 15px; }
 .commander-detail .commander-text:last-of-type { margin-bottom: 16px; }
-/* The card pick: same layout, fewer choices, so a smaller dialog with wider tiles. */
-.commander-cards { width: min(96vw, 1000px); height: min(86vh, 620px); }
-.commander-cards .commander-roster { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-.card-tile small { color: var(--muted); font-size: 11px; }
+/* The card pick: the offered cards side by side, each a tall card with its own reroll. */
+.card-pick { width: min(94vw, 760px); max-height: 92vh; overflow-y: auto; box-sizing: border-box; padding: 18px 22px 22px; text-align: left; }
+.card-pick-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.card-pick-head .trait-title { margin: 0 0 2px; }
+.card-pick-head .meta { margin: 0; }
+.dialog .card-pick-min { margin-left: auto; padding: 2px 12px; border-color: #3a3f4d; color: var(--muted); font-weight: 700; }
+.dialog .card-pick-min:hover { border-color: var(--accent); color: var(--text); }
+.card-pick-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.pick-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 360px;
+  padding: 22px 18px 16px;
+  border: 1px solid #3a3f4d;
+  border-radius: 14px;
+  background: linear-gradient(#262a35, #1b1e26);
+  text-align: center;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.pick-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.pick-card.own { border-color: #b8963e; background: linear-gradient(#2e2a20, #22201b); }
+.pick-card-icon { font-size: 64px; line-height: 1.1; }
+.pick-card-badge { font-size: 44px; } /* a trait badge as the card's icon */
+.pick-card h3 { margin: 6px 0 0; font-size: 20px; }
+.pick-card small { color: var(--muted); font-size: 12px; }
+.pick-card .commander-text { margin: 12px 0 16px; font-size: 13px; text-align: left; }
+.dialog .pick-card-take { margin-top: auto; align-self: stretch; padding: 10px; background: var(--accent); color: #14161c; font-weight: 700; font-size: 15px; }
+.dialog .pick-card-reroll {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 18px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.dialog .pick-card-reroll:hover:not(:disabled) { transform: rotate(90deg); transition: transform 0.2s; }
+.dialog .pick-card-reroll:disabled { opacity: 0.3; cursor: default; border-color: #3a3f4d; color: var(--muted); }
 .card-tag { margin-top: 2px; padding: 1px 8px; border-radius: 999px; background: #00000040; color: var(--muted); font-size: 11px; }
 .card-tag.own { background: var(--accent); color: #14161c; font-weight: 700; }
+.card-tag[class*='tier-'] { background: var(--tier); color: #14161c; font-weight: 700; }
+.pick-card[class*='tier-'] { border-color: var(--tier); background: linear-gradient(color-mix(in srgb, var(--tier) 18%, #1b1e26), #1b1e26); }
+.pick-card[class*='tier-'] .pick-card-icon { filter: drop-shadow(0 0 10px var(--tier)); }
+.card-slot.filled[class*='tier-'] { border-color: var(--tier); background: linear-gradient(color-mix(in srgb, var(--tier) 22%, #1b1e26), #1b1e26); }
+.card-slot.filled[class*='tier-'] span { color: inherit; opacity: 1; }
+.card-slot.waiting[class*='tier-'] { border-color: var(--tier); color: var(--tier); }
 @media (max-width: 760px) {
   .commander-start { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1.4fr); }
 }
 
 /* Johnson's Den: one row of Johnnies, each just its faction and role. */
 .johnnie-den { width: min(96vw, 900px); box-sizing: border-box; }
-.johnnie-den .meta { margin: -6px 0 12px; }
-.johnnie-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 8px; }
+.johnnie-den .card-pick-head { text-align: left; margin-bottom: 12px; }
+.johnnie-den .card-pick-head .meta { margin: 0; }
+.johnnie-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+/* Each Johnnie: its two trait icons side by side (names in the tooltip), with how many of yours share each. */
 .johnnie-option {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  justify-content: center;
+  gap: 22px;
+  padding: 28px 18px 24px;
   border: 1px solid #3a3f4d;
   border-radius: 8px;
   background: var(--cell);
   color: var(--text);
-  text-align: left;
 }
 .johnnie-option:hover { border-color: var(--accent); filter: brightness(1.15); }
-.johnnie-trait { display: flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; }
-.johnnie-have { margin-left: auto; padding: 0 5px; border-radius: 999px; background: #3fb95033; color: #3fb950; font-size: 11px; font-weight: 700; }
+.johnnie-trait { position: relative; display: inline-flex; font-size: 24px; } /* the badge is 1.5em: 36px */
+.johnnie-have { position: absolute; top: -7px; right: -9px; min-width: 14px; padding: 0 4px; border-radius: 999px; background: #3fb950; color: #0d1a10; font-size: 11px; font-weight: 800; line-height: 1.4; text-align: center; box-shadow: 0 0 0 2px var(--cell); }
 .commander-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 12px; }
 .commander-option {
   display: flex;
@@ -1081,8 +1128,11 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .commander-head div { display: flex; flex-direction: column; min-width: 0; }
 .commander-head small { color: var(--muted); font-size: 11px; }
 .commander-hp { margin-left: auto; font-weight: 700; font-size: 16px; white-space: nowrap; }
-.commander-hpbar { height: 6px; margin-top: 8px; border-radius: 3px; background: #00000066; overflow: hidden; }
+.commander-hpbar { display: flex; height: 6px; margin-top: 8px; border-radius: 3px; background: #00000066; overflow: hidden; }
 .commander-hpbar span { display: block; height: 100%; background: #d65151; }
+/* Paladin's commander shield: white, right after the hp (as the board's unit shields). */
+.commander-hpbar span.shield { background: #f2f6ff; }
+.commander-shield { color: #f2f6ff; font-size: 14px; }
 /* The power and card descriptions fold behind these tabs. */
 .commander-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .commander-tab {
@@ -1102,6 +1152,68 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 button.commander-tab:hover { border-color: var(--accent); }
 .commander-tab.on { border-color: var(--accent); background: #b8963e33; }
 .commander-tab.waiting { color: var(--muted); font-style: italic; }
+/* The card tray: commander card + two power cards, as small upright cards. */
+.card-tray { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.card-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  aspect-ratio: 3 / 4;
+  padding: 4px;
+  border: 1px dashed #3a3f4d;
+  border-radius: 8px;
+  background: #00000030;
+  color: var(--muted);
+  font: inherit;
+  min-width: 0;
+}
+.card-slot span { font-size: 22px; line-height: 1; opacity: 0.5; }
+.card-slot small { font-size: 10px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-slot.filled { border: 1px solid #b8963e; background: linear-gradient(#2e2a20, #22201b); color: var(--text); cursor: pointer; }
+.card-slot.filled span { opacity: 1; font-size: 26px; }
+.card-slot.filled:hover, .card-slot.filled.on { border-color: var(--accent); filter: brightness(1.2); }
+.card-slot.waiting { border: 1px solid var(--accent); color: var(--accent); cursor: pointer; animation: card-wait 1.4s ease-in-out infinite; }
+.card-slot.waiting span { opacity: 1; }
+@keyframes card-wait { 50% { background: #b8963e44; } }
+/* Johnnie's Den minimized: the way back in, in the commander panel. */
+.den-open {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  animation: card-wait 1.4s ease-in-out infinite;
+}
+/* Power card tiers: the star on the stage legend and the tint on the tray slot. */
+.tier-blue { --tier: #4a9eff; }
+.tier-purple { --tier: #b06bff; }
+.tier-gold { --tier: #ffc93c; }
+.power-star { position: absolute; top: -6px; right: -6px; color: var(--tier); font-size: 13px; line-height: 1; text-shadow: 0 0 4px var(--tier), 0 0 1px #000; }
+.card-slot[class*='tier-'] { border-color: color-mix(in srgb, var(--tier) 60%, transparent); }
+.card-slot[class*='tier-'] span { color: var(--tier); opacity: 0.85; }
+
+/* Premium Client: a banked free refresh. */
+.dock-icon.reroll.free small { color: #3fb950; font-weight: 700; }
+
+/* The gallery's Cards tab. */
+.tier-text { color: var(--tier); }
+.card-tiers { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.card-tiers li { padding: 6px 8px; border-radius: 4px; background: #00000025; font-size: 13px; line-height: 1.4; }
+.card-tiers li.held { background: color-mix(in srgb, var(--tier) 20%, transparent); }
+.gallery-card.card-entry.mine { box-shadow: 0 0 0 1px var(--accent); }
+.card-mine { padding: 0 6px; border-radius: 999px; background: var(--accent); color: #14161c; font-size: 11px; font-weight: 700; }
+
+/* The picked card flying into its tray slot. */
+.card-fly { position: fixed; z-index: 200; margin: 0; pointer-events: none; }
 .commander-tab .caret { float: right; color: var(--muted); }
 .commander-fold { margin-top: 4px; padding: 2px 8px 6px; border-left: 2px solid var(--accent); }
 

@@ -20,6 +20,8 @@ import {
   SHOP_SIZE,
   START_HP,
   START_LEVEL,
+  POWER_CARD_ROUNDS,
+  POWER_TIERS,
 } from './config';
 import { copiesOf, mergeUnits } from './merge';
 import { openChest, stageItems, takeOfferedItem } from './inventory';
@@ -31,13 +33,14 @@ import { applyAction, claimShopSlot, canClaim } from './actions';
 import { checkRally, payHeirs } from './cyclops';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
+import { offerPowerCards, pickFactionOrb, pickPowerCard, roundHealOf } from './powerCards';
 import { hurtPlayer, offerCards, payCard, powersOf } from './commanders';
 import type { Side } from './grid';
 import { BASIC_ITEMS, isItemCard, ITEMS } from './items';
 import { MONSTER_ID, monsterSide } from './monsters';
 import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
-import type { BotLevel, GameState, Player } from './types';
+import type { BotLevel, GameState, Player, PowerTier } from './types';
 import { UNITS } from './units';
 
 export interface PlayerSeed {
@@ -88,10 +91,18 @@ export function createGame(seed: number, seeds: PlayerSeed[]): GameState {
     })),
   };
   state.chosen = rollChosen(state);
+  state.powerTiers = rollPowerTiers(seed);
   for (const p of state.players) giveStarterUnits(state, p);
   seeds.forEach((s, i) => s.commander && applyAction(state, state.players[i].id, { type: 'pickCommander', commander: s.commander }));
   startRound(state);
   return state;
+}
+
+// The match's power card tiers, one independent even roll per POWER_CARD_ROUNDS round. Off its own rng
+// stream so the rest of the game rolls exactly as before.
+export function rollPowerTiers(seed: number): PowerTier[] {
+  const rng = { rng: (seed ^ 0x5eed7135) | 0 };
+  return POWER_CARD_ROUNDS.map(() => POWER_TIERS[nextInt(rng, POWER_TIERS.length)]);
 }
 
 // Free units on the bench, taken from the shared pool like a purchase. The player fields them.
@@ -122,6 +133,10 @@ export function startRound(state: GameState): RoundBonus[] {
     if (state.round > 1) addXp(p, PASSIVE_XP);
     // The end of the round just played pays out (on round 1: stage I's basic reward, the starting gold).
     p.gold += roundIncome(p, Math.max(1, state.round - 1)).total;
+    // Healing Fountain: the commander heals, up to full.
+    p.hp = Math.min(START_HP, p.hp + roundHealOf(p));
+    // That paid one round of each Payday owed.
+    if (p.payday) p.payday = p.payday.map((d) => ({ ...d, rounds: d.rounds - 1 })).filter((d) => d.rounds > 0);
     // A locked shop keeps what's left in it for this round, then unlocks.
     if (p.shopLocked) p.shopLocked = false;
     else {
@@ -131,6 +146,8 @@ export function startRound(state: GameState): RoundBonus[] {
   }
   // The commander card round: everyone gets an offer to pick from.
   if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
+  // Power card rounds: an offer at the tier this match rolled.
+  for (const p of alive) offerPowerCards(state, p);
   // The basic item round: a few random basic items, pick one.
   if (state.round === BASIC_ITEM_ROUND) for (const p of alive) {
     p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
@@ -187,11 +204,13 @@ export function resolveCombat(state: GameState): Fight[] {
   for (const p of state.players.filter(isAlive)) {
     if (p.cardOffer?.length) {
       p.commanderCard = p.cardOffer[0];
-      p.cardOffer = undefined;
+      p.cardOffer = p.cardRerolled = undefined;
       payCard(state, p, p.commanderCard);
       openChest(state, p);
       cardRolls(state, p);
     }
+    if (p.powerOffer) pickPowerCard(state, p, p.powerOffer.cards[0]);
+    if (p.factionOrbOffer) pickFactionOrb(state, p, p.factionOrbOffer[0]);
     // Likewise unpicked items: the first on offer, chest after chest.
     while (p.itemOffer?.length) takeOfferedItem(state, p, p.itemOffer[0]);
     syncPlayer(state, p);

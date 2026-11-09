@@ -98,6 +98,13 @@ export interface Player {
   commander: string | null; // commander id, picked at the start of the game (see commanders/)
   commanderCard?: string | null; // the commander card picked (a commander id)
   cardOffer?: string[]; // commander cards on offer, waiting for a pick
+  cardRerolled?: boolean[]; // per offer slot: its one reroll is spent
+  powerCards?: { id: string; tier: PowerTier }[]; // power cards picked (see powerCards.ts)
+  payday?: { gold: number; rounds: number }[]; // Payday: gold still owed, paid with each round's income
+  shield?: number; // commander shield (Paladin): soaks hp damage first
+  factionOrbOffer?: string[]; // Faction Synergy: faction orbs to choose one from (faction trait ids)
+  freeRerolls?: number; // banked free shop refreshes (Premium Client), used before gold
+  powerOffer?: { tier: PowerTier; cards: string[]; rerolled: boolean[] }; // waiting for a pick
   itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
   offerFrom?: 'basic' | 'loot' | 'chest'; // where the current itemOffer comes from
   loot?: number; // monster loot picks not opened yet (each opens as the one before is picked)
@@ -141,7 +148,10 @@ export interface GameState {
   pool: Record<string, number>;
   players: Player[];
   chosen: Record<string, string>; // trait id -> unit def id it picked for the whole game, same for everyone
+  powerTiers?: PowerTier[]; // the power card tier on each POWER_CARD_ROUNDS round, rolled once per match
 }
+
+export type PowerTier = 'blue' | 'purple' | 'gold';
 
 export type Area = 'bench' | 'board';
 

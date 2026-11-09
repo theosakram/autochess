@@ -7,7 +7,8 @@ import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
 import { EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
 import { nextInt, shuffle } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
-import { playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
+import { powerMods, TEAMWORK_COUNT } from './powerCards';
+import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
 import type { GameState, Item, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -160,13 +161,18 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
   const blessed = protectedUids(p);
   const protect = powersOf(p).protect;
   const core = coreHolder(p)?.uid;
+  const counts = playerTraitCounts(p);
+  const orbs = p.orb ? [p.orb, ...fieldedMistOrbs(p)] : fieldedMistOrbs(p);
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
     const own = UNIT_BY_ID[u.defId].honorary;
     const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
     const leads = Object.keys(leaders).filter((id) => leaders[id].includes(u.uid));
-    const mods: StatMod[] = [...extra];
+    // The hero's synergies: its own, any orb's on its type, and any its items give it.
+    const mine = new Set([...UNIT_BY_ID[u.defId].traits, ...orbs.filter((o) => o.defId === u.defId).map((o) => o.trait), ...honorary]);
+    const big = [...mine].filter((t) => (counts[t] ?? 0) >= TEAMWORK_COUNT).length;
+    const mods: StatMod[] = [...extra, ...powerMods(p, cell, heldBy(p, u.uid).length, big)];
     // Kagura's card: the dancing hero fights harder.
     const boost = u.uid === markedUid(p, 'boost') ? powersOf(p).boost : undefined;
     if (boost) {

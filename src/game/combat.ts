@@ -1,6 +1,7 @@
 import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type IceArrowPower, type WardPower } from './commanders';
+import { attackManaOf, BERSERK_SECONDS, berserkOf, kamikazeOf, backManaOf, castRefundOf, sharpshooterOf } from './powerCards';
 import { essenceTriggers } from './essence';
-import { stageOf, BOARD_COLS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
+import { stageOf, BOARD_COLS, BOARD_ROWS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side, type Point } from './grid';
 import { activeItems, fieldStats, heldBy, leadsOf } from './inventory';
 import { EQUIPMENT, ITEMS, type HealingSpring, type LowHpFury, type StackingPassive } from './items';
@@ -120,11 +121,15 @@ interface SimFighter extends Fighter {
   refund: number; // Angela's protection: share of max mana regained after each cast
   loveBeam: { every: number; heal: number; damage: number } | null; // Angela's card: every `every` ticks
   castMana: number; // flat mana regained after each cast (Purple Buff)
+  attackMana: number; // Magic Surge: bonus mana on every basic attack
   chill: { effect: string; radius: number; attackSpeed: number; linger: number } | null; // Dominance Ice aura
   hurtMana: number; // Dominance Ice: extra share of mana from taking hits
   deter: { effect: string; perStack: number; max: number; seconds: number } | null; // Antique Cuirass
   deterStacks: { n: number; until: number }; // Deter stacks on this unit (as an attacker)
   regen: number; // Guardian Helmet: share of max hp healed every second
+  sharpshooter: number; // Sharpshooter: share more damage per tile between it and its target
+  kamikaze: number; // Kamikaze: share of max hp blasted at the enemies around it when it dies
+  berserk: { pct: number; atk: number; ap: number } | null; // Berserk: share of its starting atk/ap gained each second
   revive: number; // Ruby's Cloak: share of max hp it gets back up with, until used (0: none)
   rageMark: { effect: string; heal: number } | null; // Ruby's Cloak: its basic attacks mark their target
   marked: number | null; // the enemy its Rage Mark is on
@@ -219,6 +224,12 @@ function withCopies(rng: { rng: number }, p: Player): Player {
 
 function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chosen: Record<string, string>, out: SimFighter[], stage = 1): void {
   const beam = powersOf(p).loveBeam;
+  const surge = attackManaOf(p);
+  const rage = berserkOf(p);
+  const blast = kamikazeOf(p);
+  const sharp = sharpshooterOf(p);
+  const sovereign = backManaOf(p);
+  const blessing = castRefundOf(p);
   const beaming = beam ? protectedUids(p) : new Set<number>();
   const tiles = traitTiles(levels);
   const allStats = fieldStats(p, levels, chosen, scale);
@@ -237,8 +248,11 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       ...boardToGrid(side, cell),
       hp: stats.hp,
       maxHp: stats.hp,
-      // Spellblade Talisman: a head start on mana.
-      mana: Math.min(stats.maxMana, stats.maxMana * Math.max(0, ...items.map(({ id }) => ITEMS[id].startMana ?? 0))),
+      // Spellblade Talisman: a head start on mana. Mana Sovereign: more for the back row.
+      mana: Math.min(
+        stats.maxMana,
+        stats.maxMana * (Math.max(0, ...items.map(({ id }) => ITEMS[id].startMana ?? 0)) + (cell >= BOARD_COLS * (BOARD_ROWS - 1) ? sovereign : 0)),
+      ),
       maxMana: stats.maxMana,
       onTile: tiles.has(cell),
       chosen: chosenBy(levels, chosen, u.defId),
@@ -286,17 +300,21 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       })),
       stunnedUntil: 0,
       ward: u.uid === markedUid(p, 'ward') ? (powersOf(p).ward ?? null) : null,
-      refund: protectedUids(p).has(u.uid) ? (powersOf(p).protect?.refund ?? 0) : 0,
+      refund: (protectedUids(p).has(u.uid) ? (powersOf(p).protect?.refund ?? 0) : 0) + blessing,
       loveBeam:
         beam && beaming.has(u.uid)
           ? { every: Math.round(beam.every * TICKS_PER_SECOND), heal: beam.heal, damage: beam.damage[Math.min(stage, beam.damage.length) - 1] }
           : null,
       castMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].castMana ?? 0)),
+      attackMana: heldBy(p, u.uid).length ? surge : 0,
       chill: items.map(({ id }) => ITEMS[id].chill).find((s) => s) ?? null,
       hurtMana: Math.max(0, ...items.map(({ id }) => ITEMS[id].hurtMana ?? 0)),
       deter: items.map(({ id }) => ITEMS[id].deter).find((s) => s) ?? null,
       deterStacks: { n: 0, until: 0 },
       regen: Math.max(0, ...items.map(({ id }) => ITEMS[id].regen ?? 0)),
+      berserk: rage ? { pct: rage, atk: stats.atk, ap: stats.ap } : null,
+      kamikaze: blast,
+      sharpshooter: sharp,
       revive: Math.max(0, ...items.map(({ id }) => ITEMS[id].revive ?? 0)),
       rageMark: items.map(({ id }) => ITEMS[id].rageMark).find((s) => s) ?? null,
       marked: null,
@@ -395,7 +413,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Magic penetration ignores a share of what magic resist is left.
     const defense = type === 'magic' && dealer && raw0 > 0 ? raw0 * (1 - Math.min(1, dealer.stats.magicPen)) : raw0;
     const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
-    const dealt = Math.round(raw * (1 + amp) * (1 + target.stats.damageTaken) * defenseMult(defense) * guard);
+    // Sharpshooter: tiles between dealer and target (none when next to each other).
+    const range = dealer?.sharpshooter ? 1 + dealer.sharpshooter * Math.max(0, dist(dealer, target) - 1) : 1;
+    const dealt = Math.round(raw * (1 + amp) * (1 + target.stats.damageTaken) * defenseMult(defense) * guard * range);
     // Shield layers soak it first, newest first.
     let absorbed = 0;
     const broken: (() => void)[] = [];
@@ -462,6 +482,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         f.marked = null;
         if (f.hp > 0 && f.rageMark) api.heal(f, f.maxHp * f.rageMark.heal);
       }
+      kamikazeBlast(target, t);
       for (const m of fighters) {
         // Mirror summons vanish with their owner; fighter summons fight on.
         if (m.owner !== target.id || m.hp <= 0 || !m.mirror) continue;
@@ -611,6 +632,18 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const e of hit) afterDamage(e, t);
   }
 
+  // Kamikaze: a hero that dies blasts the enemies on the tiles around it with a share of its max hp, magic.
+  // A kill can set off the next blast.
+  function kamikazeBlast(f: SimFighter, t: number): void {
+    if (!f.kamikaze) return;
+    const hit = fighters.filter((e) => e.side !== f.side && e.hp > 0 && dist(e, f) <= 1);
+    for (const e of hit) {
+      const dealt = damage(e, f.maxHp * f.kamikaze, 'magic', f);
+      events.push({ t, type: 'effect', effect: 'kamikaze', by: f.id, target: e.id, damage: dealt, hp: e.hp });
+    }
+    for (const e of hit) afterDamage(e, t);
+  }
+
   // Miya's Ice Arrow Blessing: every `every`th basic attack, arrows at the nearest enemies (the target among
   // them), each a share of that enemy's max hp, physical.
   function iceVolley(f: SimFighter, target: SimFighter): void {
@@ -708,6 +741,18 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   function fireRegen(t: number): void {
     if (t === 0 || t % TICKS_PER_SECOND !== 0) return;
     for (const f of regenerators) if (f.hp > 0) api.heal(f, f.maxHp * f.regen);
+  }
+
+  // Berserk: living heroes gain a share of their starting attack and magic attack once a second, for the
+  // first BERSERK_SECONDS seconds.
+  const berserkers = fighters.filter((f) => f.berserk);
+  function fireBerserk(t: number): void {
+    if (t === 0 || t % TICKS_PER_SECOND !== 0 || t > BERSERK_SECONDS * TICKS_PER_SECOND) return;
+    for (const f of berserkers) {
+      if (f.hp <= 0) continue;
+      const b = f.berserk!;
+      f.stats = applyMods(f.stats, [{ stat: 'atk', add: b.atk * b.pct }, { stat: 'ap', add: b.ap * b.pct }]);
+    }
   }
 
   // Ruby's Cloak: once a fight, a death is undone: back up with a share of max hp. Every Scythe on its side
@@ -1004,11 +1049,15 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         refund: 0,
         loveBeam: null,
         castMana: 0,
+        attackMana: 0,
         chill: null,
         hurtMana: 0,
         deter: null,
         deterStacks: { n: 0, until: 0 },
         regen: 0,
+        berserk: null,
+        kamikaze: 0,
+        sharpshooter: 0,
         revive: 0,
         rageMark: null,
         marked: null,
@@ -1216,7 +1265,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const type = UNIT_BY_ID[f.defId].attackType ?? 'physical';
     const power = type === 'magic' ? f.stats.ap : f.stats.atk;
     const dealt = damage(target, power * mult * (1 + f.stats.basicAmp) * (crit ? f.stats.critDamage : 1), type, f);
-    if (mana) gainMana(f, MANA_PER_ATTACK);
+    if (mana) gainMana(f, MANA_PER_ATTACK + f.attackMana);
     stackUp(f, 'basic');
     hitEvent(f, target, t, 'attack', dealt, crit, again);
     leech(f, dealt, true, t);
@@ -1535,6 +1584,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireFrozen(t);
     fireChills(t);
     fireRegen(t);
+    fireBerserk(t);
     fireHunts(t);
     updateProvoked(t);
     expireBuffs(t);

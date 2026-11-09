@@ -4,7 +4,7 @@ import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
 import { traitBadgeHtml } from './traitBadges';
-import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, homeGalleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
 import { SKILLS } from '../game/skills';
 
 describe('orb choice popup', () => {
@@ -322,4 +322,21 @@ describe('skill damage colours', () => {
     expect(pop).toContain('class="dmg-physical"');
     expect(pop).toContain('class="calc dmg-physical"');
   });
+});
+
+test('the gallery Cards tab lists power cards by tier and every commander card, marking yours', () => {
+  const state = createGame(1, [{ id: 'p', name: 'P', isBot: false, commander: 'lukas' }]);
+  const p = state.players[0];
+  p.powerCards = [{ id: 'magicSurge', tier: 'purple' }];
+  const html = galleryHtml(p, state.chosen, 'deck', state.powerTiers);
+  for (const n of ['Magic Surge I', 'Magic Surge II', 'Magic Surge III', 'Vanguard Beast']) expect(html).toContain(n);
+  expect(html).toContain('tier-purple held');
+  expect(html).toContain('your commander');
+});
+
+test('the home gallery has the Cards tab too', () => {
+  const p = createGame(0, [{ id: 'v', name: '', isBot: false }]).players[0];
+  const html = homeGalleryHtml(p, 'cards');
+  expect(html).toContain('Magic Surge III');
+  expect(html).toContain('Commander cards');
 });

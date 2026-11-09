@@ -4,11 +4,12 @@ import { pickJohnnie } from './johnnie';
 import { claimEnhance, setEnhance } from './freya';
 import { bless } from './twilight';
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, type MarkKind } from './commanders';
+import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, rerollCard, type MarkKind } from './commanders';
 import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { cardRolls, openTrove, rollTrove } from './luckyDice';
 import { useMirror } from './mirror';
+import { pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
 import { offer, type AltarKey } from './altar';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
@@ -37,6 +38,10 @@ export type Action =
   | { type: 'unequipMistOrb'; orb: number }
   | { type: 'pickCommander'; commander: string } // once, at the start of the game
   | { type: 'pickCard'; card: string } // one of the cards on offer (a commander id)
+  | { type: 'rerollCard'; slot: number } // swap one offered card, once per slot
+  | { type: 'pickPower'; card: string } // one of the power cards on offer
+  | { type: 'rerollPower'; slot: number } // swap one offered power card, once per slot
+  | { type: 'pickFactionOrb'; trait: string } // Faction Synergy: one of the faction orbs on offer
   | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
   | { type: 'pickItem'; item: string } // one of the basic items on offer
   | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (a roll a round, unused ones bank up)
@@ -107,9 +112,11 @@ export function applyAction(state: GameState, playerId: string, action: Action):
 function perform(state: GameState, p: Player, action: Action): Result {
   switch (action.type) {
     case 'reroll': {
-      if (p.gold < REROLL_COST) return fail('Not enough gold');
-      p.gold -= REROLL_COST;
+      if (p.freeRerolls) p.freeRerolls--;
+      else if (p.gold < REROLL_COST) return fail('Not enough gold');
+      else p.gold -= REROLL_COST;
       refreshShop(state, p);
+      rollFreeRefresh(state, p);
       return OK;
     }
 
@@ -213,11 +220,31 @@ function perform(state: GameState, p: Player, action: Action): Result {
     case 'pickCard': {
       if (!p.cardOffer?.includes(action.card)) return fail('That card is not on offer');
       p.commanderCard = action.card;
-      p.cardOffer = undefined;
+      p.cardOffer = p.cardRerolled = undefined;
       payCard(state, p, action.card);
       openChest(state, p);
       cardRolls(state, p);
       return OK;
+    }
+
+    case 'pickPower': {
+      const why = pickPowerCard(state, p, action.card);
+      return why ? fail(why) : OK;
+    }
+
+    case 'pickFactionOrb': {
+      const why = pickFactionOrb(state, p, action.trait);
+      return why ? fail(why) : OK;
+    }
+
+    case 'rerollPower': {
+      const why = rerollPowerCard(state, p, action.slot);
+      return why ? fail(why) : OK;
+    }
+
+    case 'rerollCard': {
+      const why = rerollCard(state, p, action.slot);
+      return why ? fail(why) : OK;
     }
 
     case 'pickItem': {

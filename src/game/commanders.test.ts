@@ -174,6 +174,25 @@ describe('commanders', () => {
     expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 0 }, to: { area: 'board', index: beastCell(p) } }).ok).toBe(false);
   });
 
+  test('the card offer shows two, and each slot rerolls once', () => {
+    const state = game();
+    const p = state.players[0];
+    while (state.round < COMMANDER_CARD_ROUND) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    expect(p.cardOffer).toHaveLength(2);
+    const before = [...p.cardOffer!];
+    expect(applyAction(state, p.id, { type: 'rerollCard', slot: 1 }).ok).toBe(true);
+    expect(before).not.toContain(p.cardOffer![1]);
+    expect(p.cardOffer![0]).toBe(before[0]);
+    expect(applyAction(state, p.id, { type: 'rerollCard', slot: 1 }).ok).toBe(false);
+    expect(applyAction(state, p.id, { type: 'rerollCard', slot: 0 }).ok).toBe(true);
+    expect(new Set(p.cardOffer).size).toBe(2);
+    expect(applyAction(state, p.id, { type: 'pickCard', card: p.cardOffer![0] }).ok).toBe(true);
+    expect(p.cardRerolled).toBeUndefined();
+  });
+
   test('round 2 offers the own card first; Vanguard Beast on Lukas upgrades the beast and frees the front row', () => {
     const state = game();
     const p = state.players[0];

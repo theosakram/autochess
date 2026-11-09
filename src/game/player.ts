@@ -1,4 +1,5 @@
 import { baseReward, GOLD_PER_XP, INTEREST_PER_10, LOSE_STREAK_BONUS, MAX_INTEREST, MAX_LEVEL, WIN_STREAK_BONUS, XP_TO_LEVEL } from './config';
+import { xpCutOf } from './powerCards';
 import type { Player } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -16,7 +17,9 @@ export function boardCount(p: Player): number {
 export const freeSlotCount = (p: Player) => p.board.filter((u) => u && UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece).length;
 
 export function xpToNext(p: Player): number | null {
-  return p.level >= MAX_LEVEL ? null : XP_TO_LEVEL[p.level - 1];
+  if (p.level >= MAX_LEVEL) return null;
+  const cut = xpCutOf(p); // Fast Growth
+  return cut ? Math.max(1, Math.round(XP_TO_LEVEL[p.level - 1] * (1 - cut))) : XP_TO_LEVEL[p.level - 1];
 }
 
 // Gold to buy the rest of the current level, or null at max level.
@@ -36,10 +39,13 @@ export function streakBonus(streak: number): number {
 }
 
 // What the end of round `round` pays: basic reward (by its stage), interest on gold banked, streak bonus.
-export function roundIncome(p: Player, round: number): { base: number; interest: number; streak: number; total: number } {
-  const parts = { base: baseReward(round), interest: interest(p.gold), streak: streakBonus(p.streak ?? 0) };
-  return { ...parts, total: parts.base + parts.interest + parts.streak };
+export function roundIncome(p: Player, round: number): { base: number; interest: number; streak: number; payday: number; total: number } {
+  const parts = { base: baseReward(round), interest: interest(p.gold), streak: streakBonus(p.streak ?? 0), payday: paydayGold(p) };
+  return { ...parts, total: parts.base + parts.interest + parts.streak + parts.payday };
 }
+
+// Payday: what the next end of round pays from the cards still owing.
+export const paydayGold = (p: Player) => (p.payday ?? []).reduce((n, d) => n + d.gold, 0);
 
 // A fight against a player: the streak moves, and a win pays WIN_GOLD on the spot. A draw counts as a loss.
 export function recordFight(p: Player, won: boolean, winGold: number): void {

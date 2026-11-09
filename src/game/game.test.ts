@@ -4,7 +4,7 @@ import { applyAction, type Action } from './actions';
 import { BASE_REWARD, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
 import { boardCount, interest, levelUpCost, roundIncome } from './player';
 import { runBot } from './bot';
-import { createGame, resolveCombat, startRound } from './game';
+import { createGame, resolveCombat, rollPowerTiers, startRound } from './game';
 import { copiesOf } from './merge';
 import { DRAGON_ALTAR, SCAVENGER } from './traits';
 import { nextInt } from './rng';
@@ -409,5 +409,19 @@ describe('formation', () => {
     const row = (c: number) => Math.floor(c / BOARD_COLS);
     expect(cells.slice(0, 8).filter((c) => row(c) === 0)).toHaveLength(7);
     expect(row(cells[8])).toBe(BOARD_ROWS - 1);
+  });
+});
+
+describe('power card tiers', () => {
+  test('two per match, same seed same tiers, each tier about a third on either roll', () => {
+    const n = 3000;
+    const count = [{}, {}] as Record<string, number>[];
+    for (let seed = 0; seed < n; seed++) {
+      const t = rollPowerTiers(seed * 7919);
+      expect(t).toHaveLength(2);
+      expect(rollPowerTiers(seed * 7919)).toEqual(t);
+      t.forEach((tier, i) => (count[i][tier] = (count[i][tier] ?? 0) + 1));
+    }
+    for (const c of count) for (const tier of ['blue', 'purple', 'gold']) expect(Math.abs(c[tier] / n - 1 / 3)).toBeLessThan(0.04);
   });
 });

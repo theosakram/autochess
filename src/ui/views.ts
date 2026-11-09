@@ -8,7 +8,8 @@ import { rewardText } from '../game/traits/format';
 import { claimable } from '../game/freya';
 import { shopPrice } from '../game/shop';
 import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
-import { BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
+import { POWER_CARDS, powerCardName, TIER_NUMERAL } from '../game/powerCards';
+import { COMMANDER_CARD_ROUND, POWER_CARD_ROUNDS, POWER_TIERS, BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, EQUIPMENT_GROUPS, isItemCard, ITEMS, type ItemDef } from '../game/items';
 import { MIRROR } from '../game/mirror';
@@ -18,10 +19,10 @@ import { orbOptions } from '../game/orb';
 import { SKILLS, type SkillDef } from '../game/skills';
 import { copiesOf, findCopies, mergeSize } from '../game/merge';
 import { MAX_ITEMS_PER_UNIT } from '../game/config';
-import { boardCount, freeSlotCount, interest, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
+import { boardCount, freeSlotCount, interest, paydayGold, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
 import { attackInterval, type DamageType, type StatKey, type StatMod, type Stats } from '../game/stats';
 import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
-import type { BotLevel, GameState, Item, Player, UnitDef } from '../game/types';
+import type { BotLevel, GameState, Item, Player, PowerTier, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS, unitPrice } from '../game/units';
 import { portraitHtml } from './portraits';
 import { bearerBadgeHtml, traitBadgeHtml } from './traitBadges';
@@ -373,25 +374,69 @@ const bearerChipHtml = (h: { trait: string; icon: string }, mini = false) =>
 const traitChipHtml = (id: string, mini = false) =>
   `<button class="trait-chip${mini ? ' mini' : ''}" data-trait="${id}" title="${TRAITS[id].name}">${traitBadgeHtml(id)}${mini ? '' : ` ${TRAITS[id].name}`}</button>`;
 
-export type GalleryTab = 'cards' | 'grid';
+export type GalleryTab = 'cards' | 'grid' | 'deck';
 
 // Every trait in the game: as cards (factions then roles), or as a role x faction grid
 // showing which units sit at each crossing.
-export function galleryHtml(p: Player, chosen: Record<string, string>, tab: GalleryTab = 'cards'): string {
-  const tabs = (['cards', 'grid'] as const)
-    .map((t) => `<button class="gallery-tab${t === tab ? ' on' : ''}" data-action="galleryTab" data-tab="${t}">${t === 'cards' ? 'Synergies' : 'Crossovers'}</button>`)
+export function galleryHtml(p: Player, chosen: Record<string, string>, tab: GalleryTab = 'cards', tiers?: PowerTier[]): string {
+  const label = { cards: 'Synergies', grid: 'Crossovers', deck: 'Cards' };
+  const tabs = (['cards', 'grid', 'deck'] as const)
+    .map((t) => `<button class="gallery-tab${t === tab ? ' on' : ''}" data-action="galleryTab" data-tab="${t}">${label[t]}</button>`)
     .join('');
-  const body = tab === 'grid' ? crossoverGridHtml(p) : gallerySection(p, chosen, 'faction', 'Factions', true) + gallerySection(p, chosen, 'role', 'Roles', true);
+  const body =
+    tab === 'grid' ? crossoverGridHtml(p)
+    : tab === 'deck' ? cardGalleryHtml(p, tiers)
+    : gallerySection(p, chosen, 'faction', 'Factions', true) + gallerySection(p, chosen, 'role', 'Roles', true);
   // Each tab keeps its own scroll position.
   return modalHtml('closeGallery', 'gallery', `<h2>📖 Synergies</h2><nav class="gallery-tabs">${tabs}</nav>${body}`, `gallery-${tab}`);
 }
 
+// The Cards tab: every power card (each tier) and every commander card (both faces). The player's own are
+// marked: the power cards they hold, their commander's card, the commander card they took.
+function cardGalleryHtml(p: Player, tiers?: PowerTier[]): string {
+  const tierName = (t: PowerTier) => `${t[0].toUpperCase()}${t.slice(1)}`;
+  const plan = tiers?.length
+    ? `<p class="meta">This match: ${POWER_CARD_ROUNDS.map((r, i) => `${roundLabel(r)} <span class="tier-${tiers[i]} tier-text">★ ${tierName(tiers[i])}</span>`).join(' · ')}</p>`
+    : '';
+  const power = Object.values(POWER_CARDS)
+    .map((c) => {
+      const held = (p.powerCards ?? []).filter((h) => h.id === c.id).map((h) => h.tier);
+      const lines = POWER_TIERS.map(
+        (t) => `<li class="tier-${t}${held.includes(t) ? ' held' : ''}"><b class="tier-text">${c.name} ${TIER_NUMERAL[t]}</b> ${c.desc(t)}</li>`,
+      ).join('');
+      return `<article class="gallery-card card-entry${held.length ? ' mine' : ''}">
+        <h3 class="trait-title"><span class="commander-portrait">${c.icon}</span><span>${c.name}${held.length ? ' <small class="card-mine">Yours</small>' : ''}</span></h3>
+        <ul class="card-tiers">${lines}</ul>
+      </article>`;
+    })
+    .join('');
+  const commander = Object.values(COMMANDERS)
+    .map((c) => {
+      const taken = p.commanderCard === c.id;
+      const own = p.commander === c.id;
+      return `<article class="gallery-card card-entry${taken ? ' mine' : ''}">
+        <h3 class="trait-title"><span class="commander-portrait">${c.card.icon}</span><span>${c.card.name}${taken ? ' <small class="card-mine">Yours</small>' : ''}<br><small>${c.icon} ${c.name}'s card${own ? ' · your commander' : ''}</small></span></h3>
+        <p class="commander-text"><b>On ${c.name}:</b> ${c.card.selfDesc}</p>
+        <p class="commander-text"><b>On another commander:</b> ${c.card.otherDesc ?? c.desc}</p>
+      </article>`;
+    })
+    .join('');
+  return `<h3 class="gallery-section">Power cards</h3>
+    <p class="meta">Picked on ${POWER_CARD_ROUNDS.map(roundLabel).join(' and ')}, at the tier the match rolled for that round: Blue I, Purple II, Gold III.</p>
+    ${plan}
+    <div class="gallery-grid">${power}</div>
+    <h3 class="gallery-section">Commander cards</h3>
+    <p class="meta">Picked on ${roundLabel(COMMANDER_CARD_ROUND)}. Your own commander's card upgrades its power; another's lends you that power.</p>
+    <div class="gallery-grid">${commander}</div>`;
+}
+
 // --- Home screen gallery (no game running: nothing is owned) ---
 
-export type HomeTab = 'heroes' | 'commanders' | 'items' | 'synergies' | 'crossovers';
+export type HomeTab = 'heroes' | 'commanders' | 'cards' | 'items' | 'synergies' | 'crossovers';
 export const HOME_TABS: { id: HomeTab; label: string }[] = [
   { id: 'heroes', label: 'Heroes' },
   { id: 'commanders', label: 'Commanders' },
+  { id: 'cards', label: 'Cards' },
   { id: 'items', label: 'Items' },
   { id: 'synergies', label: 'Synergies' },
   { id: 'crossovers', label: 'Crossovers' },
@@ -427,6 +472,7 @@ export function homeGalleryHtml(p: Player, tab: HomeTab): string {
   const body =
     tab === 'heroes' ? heroGalleryHtml()
     : tab === 'commanders' ? commanderGalleryHtml()
+    : tab === 'cards' ? cardGalleryHtml(p)
     : tab === 'items' ? itemGalleryHtml()
     : tab === 'crossovers' ? crossoverGridHtml(p)
     : gallerySection(p, {}, 'faction', 'Factions') + gallerySection(p, {}, 'role', 'Roles');
@@ -568,13 +614,14 @@ function incomePopHtml(p: Player, round: number): string {
   const stage = `Basic reward<small>stage ${roman(stageOf(round))}${stageOf(round) < BASE_REWARD.length ? `; stage ${roman(stageOf(round) + 1)}: ${baseReward(roundAt(stageOf(round) + 1, 1))}` : ''}</small>`;
   const baseRow = `<div class="income-row"><span>${stage}</span><b>+${base}</b></div>`;
   const block = (title: string, cls: string, gold: number, next: number, winGold: number) => {
-    const total = winGold + base + interest(gold) + streakBonus(next);
+    const total = winGold + base + interest(gold) + streakBonus(next) + paydayGold(p);
     return `<section class="income-case ${cls}">
       <h4>${title}<b>+${total}</b></h4>
       ${winGold ? row('Win gold', winGold, 'right away, before interest') : ''}
       ${baseRow}
       ${row('Interest', interest(gold), interestNote(gold))}
       ${row(next > 0 ? 'Win streak' : next < 0 ? 'Lose streak' : 'Streak', streakBonus(next), streakNote(next))}
+      ${p.payday?.length ? row('Payday', paydayGold(p), `${Math.max(...p.payday.map((d) => d.rounds))} round${Math.max(...p.payday.map((d) => d.rounds)) > 1 ? 's' : ''} left`) : ''}
     </section>`;
   };
   const cases = isMonsterRound(round)
@@ -612,14 +659,14 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
   const streakText = streak > 0 ? `${streak} win${streak === 1 ? '' : 's'} in a row` : streak < 0 ? `${-streak} loss${streak === -1 ? '' : 'es'} in a row` : 'no streak';
   const incomeTitle =
     `End of round: +${income.base} basic reward, +${income.interest} interest (2 per 10 gold banked, up to ${MAX_INTEREST}), ` +
-    `+${income.streak} streak bonus (${streakText}). Winning a fight against a player also pays +${WIN_GOLD} right away.`;
+    `+${income.streak} streak bonus (${streakText})${income.payday ? `, +${income.payday} Payday` : ''}. Winning a fight against a player also pays +${WIN_GOLD} right away.`;
   return `<section class="dock${locked ? ' fighting' : ''}" data-sell>
     <div class="dock-side">
       <div class="dock-gold" title="${incomeTitle}"><b>💰 ${p.gold}</b><small>+${income.total} next</small><button class="income-help${incomeOpen ? ' on' : ''}" data-action="toggleIncome" title="What next round pays">?</button></div>
       ${incomeOpen ? incomePopHtml(p, round) : ''}
       <div class="dock-icons">
         ${levelBtn}
-        <button class="dock-icon reroll" data-action="reroll" title="Reroll: ${REROLL_COST}g (D)" ${locked ? 'disabled' : ''}>${dockIcon('reroll')}<small>${REROLL_COST}g</small><kbd>D</kbd></button>
+        <button class="dock-icon reroll${p.freeRerolls ? ' free' : ''}" data-action="reroll" title="${p.freeRerolls ? `Reroll: free (${p.freeRerolls} banked)` : `Reroll: ${REROLL_COST}g`} (D)" ${locked ? 'disabled' : ''}>${dockIcon('reroll')}<small>${p.freeRerolls ? `Free×${p.freeRerolls}` : `${REROLL_COST}g`}</small><kbd>D</kbd></button>
         <button class="dock-icon lock${p.shopLocked ? ' on' : ''}" data-action="toggleLock" title="${lockTitle}">${dockIcon(p.shopLocked ? 'locked' : 'unlocked')}<small>${p.shopLocked ? 'Locked' : 'Lock'}</small></button>
       </div>
     </div>
@@ -838,7 +885,17 @@ function streakHtml(streak: number): string {
   return `<div class="hud-streak ${win ? 'win' : 'lose'}" title="${title}"><small>${win ? 'Win' : 'Lose'} streak</small><b>${win ? '🔥' : '💧'} ${n}</b></div>`;
 }
 
-function stageLegendHtml(round: number, streak: number): string {
+// A power card round's star, colored by the tier this match rolled for it.
+function powerStar(round: number, tiers: PowerTier[] | undefined): string {
+  const t = tiers?.[POWER_CARD_ROUNDS.indexOf(round)];
+  return t ? `<span class="power-star tier-${t}">★</span>` : '';
+}
+const powerTitle = (round: number, tiers: PowerTier[] | undefined) => {
+  const t = tiers?.[POWER_CARD_ROUNDS.indexOf(round)];
+  return t ? ` · ${t[0].toUpperCase()}${t.slice(1)} power card` : '';
+};
+
+function stageLegendHtml(round: number, streak: number, tiers?: PowerTier[]): string {
   const { stage } = stageRound(round);
   const count = stage === 1 ? STAGE_ONE_ROUNDS : STAGE_ROUNDS;
   const icons = Array.from({ length: count }, (_, i) => {
@@ -846,7 +903,7 @@ function stageLegendHtml(round: number, streak: number): string {
     const kind = isMonsterRound(r) ? 'monster' : 'fight';
     const what = r === CREEP_ROUND ? 'Creeps: they drop a basic item pick' : kind === 'monster' ? 'Monsters: equipment, win or lose' : 'Fight another player';
     const state = r < round ? 'past' : r === round ? 'current' : 'ahead';
-    return `<span class="legend-round ${state}" title="${roundLabel(r)} · ${what}"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ROUND_ICONS[kind]}</svg></span>`;
+    return `<span class="legend-round ${state}" title="${roundLabel(r)} · ${what}${powerTitle(r, tiers)}"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ROUND_ICONS[kind]}</svg>${powerStar(r, tiers)}</span>`;
   }).join('<span class="legend-link"></span>');
   const creeps = round === CREEP_ROUND;
   const monster = isMonsterRound(round);
@@ -870,7 +927,7 @@ export function hudHtml(state: GameState, p: Player, opponentName: string | null
     ${stat('Heroes', `<b>${boardCount(p)}/${p.level}${freeSlotCount(p) ? ` +${freeSlotCount(p)}` : ''}</b>${free > 0 && benched ? `<small class="warn">${free} free slot${free === 1 ? '' : 's'}</small>` : ''}`, 'Heroes on the board / how many you may field')}
     ${p.orbs.length ? stat('Orbs', `🔮 <b>${p.orbs.length}</b>`, 'Magic Orb ready: put it on a hero in the Equipment panel') : ''}
     </div>
-    ${stageLegendHtml(state.round, p.streak ?? 0)}
+    ${stageLegendHtml(state.round, p.streak ?? 0, state.powerTiers)}
     <div class="hud-side hud-right">
       ${opponentName ? `<div class="hud-stat vs" title="Fighting"><small>Fighting</small><span><b>${opponentName}</b></span></div>` : ''}
       <button class="hud-book" data-action="openGallery" title="All factions and roles">📖 Synergies</button>
@@ -1217,38 +1274,109 @@ export function commanderPickHtml(selected: string | null = null): string {
   </div></div>`;
 }
 
-// The commander card pick (round 2). Each card shows what it does for this player.
-export function cardOfferHtml(p: Player, selected: string | null = null): string {
-  const offer = p.cardOffer ?? [];
-  const id = selected && offer.includes(selected) ? selected : offer[0];
-  const tiles = offer
-    .map((o) => {
-      const c = COMMANDERS[o];
-      const own = cardFace(p, o).self;
-      return `<button class="commander-tile card-tile${o === id ? ' on' : ''}" data-action="previewCard" data-card="${o}">
-        <span class="commander-portrait">${c.card.icon}</span><b>${c.card.name}</b>
-        <small>${c.icon} ${c.name}'s card</small>
-        <span class="card-tag${own ? ' own' : ''}">${own ? '⬆ Upgrade' : '🤝 Borrow power'}</span>
-      </button>`;
-    })
+// A card pick (the commander card, the power cards): the offered cards side by side, in full. Each has one
+// reroll; the dialog can be minimized and reopened from the card tray in the commander panel.
+interface PickCard {
+  icon: string;
+  name: string;
+  sub: string;
+  tag: string;
+  cls: string; // 'own' for the commander's own card, 'tier-…' for a power card
+  desc: string;
+  take: string; // data attributes of its Take button
+  reroll: string | null; // data attributes of its reroll button; null: no reroll left
+  rerollWhy: string; // why the reroll is off; '' with no reroll: no button at all
+}
+function pickDialogHtml(title: string, meta: string, cards: PickCard[]): string {
+  const html = cards
+    .map(
+      (c) => `<article class="pick-card ${c.cls}">
+        ${c.rerollWhy || c.reroll ? `<button class="pick-card-reroll" ${c.reroll ?? 'disabled'} title="${c.reroll ? 'Reroll this card (once)' : c.rerollWhy}" aria-label="Reroll this card">↻</button>` : ''}
+        <span class="pick-card-icon">${c.icon}</span>
+        <h3>${c.name}</h3>
+        <small>${c.sub}</small>
+        ${c.tag}
+        <p class="commander-text">${c.desc}</p>
+        <button class="primary pick-card-take" ${c.take}>Take</button>
+      </article>`,
+    )
     .join('');
-  const c = COMMANDERS[id];
-  const face = cardFace(p, id);
-  return `<div class="overlay"><div class="dialog modal commander-start commander-cards">
-    <header class="commander-start-head">
-      <h2 class="trait-title">Choose a commander card</h2>
-      <p class="meta">Your own commander's card upgrades its power; another commander's card lends you that commander's power. Unpicked when the fight starts: the first one.</p>
-    </header>
-    <div class="commander-roster" data-keep-scroll="card-roster">${tiles}</div>
-    <section class="commander-detail" data-keep-scroll="card-detail">
-      <div class="commander-detail-head">
-        <span class="commander-portrait">${c.card.icon}</span>
-        <div><h3>${c.card.name}</h3><small>${c.icon} ${c.name}'s card · ${face.self ? 'yours: the upgrade' : `gives you ${c.name}'s power`}</small></div>
+  return `<div class="overlay"><div class="dialog modal card-pick">
+    <header class="card-pick-head">
+      <div>
+        <h2 class="trait-title">${title}</h2>
+        <p class="meta">${meta}</p>
       </div>
-      <p class="commander-text">${face.desc}</p>
-      <button class="primary commander-choose" data-action="pickCard" data-card="${id}">Take ${c.card.name}</button>
-    </section>
+      <button class="card-pick-min" data-action="hideCards" title="Minimize: pick later from the card tray" aria-label="Minimize">—</button>
+    </header>
+    <div class="card-pick-row">${html}</div>
   </div></div>`;
+}
+
+// The commander card pick (round 2).
+export function cardOfferHtml(p: Player): string {
+  const cards = (p.cardOffer ?? []).map((id, slot): PickCard => {
+    const c = COMMANDERS[id];
+    const face = cardFace(p, id);
+    const used = p.cardRerolled?.[slot];
+    return {
+      icon: c.card.icon,
+      name: c.card.name,
+      sub: `${c.icon} ${c.name}'s card`,
+      tag: `<span class="card-tag${face.self ? ' own' : ''}">${face.self ? '⬆ Upgrade' : '🤝 Borrow power'}</span>`,
+      cls: face.self ? 'own' : '',
+      desc: face.desc,
+      take: `data-action="pickCard" data-card="${id}"`,
+      reroll: used ? null : `data-action="rerollCard" data-slot="${slot}"`,
+      rerollWhy: 'Already rerolled',
+    };
+  });
+  return pickDialogHtml(
+    'Choose a commander card',
+    "Your own commander's card upgrades its power; another's lends you that power. Unpicked when the fight starts: the first one.",
+    cards,
+  );
+}
+
+// A power card pick, at the tier the match rolled for this round.
+export function powerOfferHtml(p: Player): string {
+  const offer = p.powerOffer!;
+  const others = Object.keys(POWER_CARDS).length > offer.cards.length;
+  const cards = offer.cards.map((id, slot): PickCard => {
+    const c = POWER_CARDS[id];
+    return {
+      icon: c.icon,
+      name: powerCardName(id, offer.tier),
+      sub: 'Power card',
+      tag: `<span class="card-tag tier-${offer.tier}">★ ${offer.tier[0].toUpperCase()}${offer.tier.slice(1)}</span>`,
+      cls: `tier-${offer.tier}`,
+      desc: c.desc(offer.tier),
+      take: `data-action="pickPower" data-card="${id}"`,
+      reroll: offer.rerolled[slot] || !others ? null : `data-action="rerollPower" data-slot="${slot}"`,
+      rerollWhy: others ? 'Already rerolled' : 'No other power cards yet',
+    };
+  });
+  return pickDialogHtml('Choose a power card', 'Yours for the rest of the game. Unpicked when the fight starts: the first one.', cards);
+}
+
+// Faction Synergy: choose a faction orb. Each option shows how many of the player's heroes are in it.
+export function factionOrbOfferHtml(p: Player): string {
+  const mine = new Set([...p.board, ...p.bench].flatMap((u) => (u ? [u.defId] : [])));
+  const cards = (p.factionOrbOffer ?? []).map((id): PickCard => {
+    const n = [...mine].filter((d) => UNIT_BY_ID[d].traits.includes(id)).length;
+    return {
+      icon: `<span class="pick-card-badge">${traitBadgeHtml(id)}</span>`,
+      name: TRAITS[id].name,
+      sub: 'Faction orb',
+      tag: `<span class="card-tag${n ? ' own' : ''}">${n ? `${n} of your heroes` : 'None of yours yet'}</span>`,
+      cls: '',
+      desc: `Put it on a hero like an item: +1 to ${TRAITS[id].name} while that hero is fielded.`,
+      take: `data-action="pickFactionOrb" data-trait="${id}"`,
+      reroll: null,
+      rerollWhy: '',
+    };
+  });
+  return pickDialogHtml('Choose a faction orb', 'Faction Synergy. Unpicked when the fight starts: the first one.', cards);
 }
 
 // Johnson's Den: pick one of the Johnnies on offer (each a different faction and role).
@@ -1262,15 +1390,20 @@ export function johnnieOfferHtml(p: Player): string {
       const lines = UNIT_BY_ID[id].traits
         .map((t) => {
           const n = have(t);
-          return `<span class="johnnie-trait">${traitBadgeHtml(t)} ${TRAITS[t].name}${n ? ` <small class="johnnie-have" title="Your heroes with ${TRAITS[t].name}">+${n}</small>` : ''}</span>`;
+          return `<span class="johnnie-trait" title="${TRAITS[t].name}${n ? ` · ${n} of your heroes have it` : ''}">${traitBadgeHtml(t)}${n ? `<small class="johnnie-have">+${n}</small>` : ''}</span>`;
         })
         .join('');
       return `<button class="johnnie-option" data-action="pickJohnnie" data-johnnie="${id}">${lines}</button>`;
     })
     .join('');
   return `<div class="overlay"><div class="dialog modal johnnie-den">
-    <h2 class="trait-title">🎩 Johnnie's Den</h2>
-    <p class="meta">Pick one. Free now, then 0g in your shop.</p>
+    <header class="card-pick-head">
+      <div>
+        <h2 class="trait-title">🎩 Johnnie's Den</h2>
+        <p class="meta">Pick one. Free now, then 0g in your shop.</p>
+      </div>
+      <button class="card-pick-min" data-action="hideDen" title="Minimize: pick later from your commander panel" aria-label="Minimize">—</button>
+    </header>
     <div class="johnnie-options">${cards}</div>
   </div></div>`;
 }
@@ -1297,34 +1430,58 @@ export function itemOfferHtml(p: Player): string {
 
 // You, beside the board: your commander, your HP, its power and its card.
 // Which part of the commander panel is unfolded: the innate power's text, or the card's. Null: both folded.
-export type CommanderSection = 'innate' | 'card';
+export type CommanderSection = 'innate' | 'card' | 'power1' | 'power2';
 
 // Its status lines and buttons always show; the two descriptions fold away behind tabs (one open at a time).
-export function commanderPanelHtml(p: Player, hp: number, round = 0, open: CommanderSection | null = null): string {
+export function commanderPanelHtml(p: Player, hp: number, round = 0, open: CommanderSection | null = null, tiers?: PowerTier[], shield = p.shield ?? 0): string {
   if (!p.commander) return '';
   const c = COMMANDERS[p.commander];
   const card = p.commanderCard ? COMMANDERS[p.commanderCard] : null;
-  const share = Math.max(0, Math.min(1, hp / START_HP));
+  // HP in red, the shield in white after it; past full, the bar rescales to fit both.
+  const full = Math.max(START_HP, hp + shield);
+  const share = Math.max(0, hp / full);
   const tab = (section: CommanderSection, label: string) =>
     `<button class="commander-tab${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" aria-expanded="${open === section}">${label} <span class="caret">${open === section ? '▴' : '▾'}</span></button>`;
-  const tabs = [
-    tab('innate', `${c.icon} Power`),
-    card ? tab('card', `${card.card.icon} ${card.card.name}`) : p.cardOffer ? '<span class="commander-tab waiting">🂠 Card: pick one</span>' : '',
-  ].join('');
+  const tabs = tab('innate', `${c.icon} Power`);
+  // The card tray: the commander card (I-2), then two power card slots (not in the game yet).
+  const cardSlot = card
+    ? `<button class="card-slot filled${open === 'card' ? ' on' : ''}" data-action="commanderSection" data-section="card" data-card-slot="0" title="${card.card.name}">
+        <span>${card.card.icon}</span><small>${card.card.name}</small></button>`
+    : p.cardOffer
+      ? `<button class="card-slot waiting" data-action="showCards" data-card-slot="0" title="Pick your commander card"><span>🂠</span><small>Pick</small></button>`
+      : `<div class="card-slot" data-card-slot="0" title="Commander card, on stage I-2"><span>🂠</span><small>I-2</small></div>`;
+  const powerSlot = (i: number) => {
+    const r = POWER_CARD_ROUNDS[i - 1];
+    const have = p.powerCards?.[i - 1];
+    if (have) {
+      const section = `power${i}` as CommanderSection;
+      return `<button class="card-slot filled tier-${have.tier}${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" data-card-slot="${i}" title="${powerCardName(have.id, have.tier)}">
+        <span>${POWER_CARDS[have.id].icon}</span><small>${powerCardName(have.id, have.tier)}</small></button>`;
+    }
+    if (p.powerOffer && (p.powerCards?.length ?? 0) === i - 1) {
+      return `<button class="card-slot waiting tier-${p.powerOffer.tier}" data-action="showCards" data-card-slot="${i}" title="Pick your power card"><span>★</span><small>Pick</small></button>`;
+    }
+    const t = tiers?.[i - 1];
+    return `<div class="card-slot${t ? ` tier-${t}` : ''}" data-card-slot="${i}" title="Power card on ${roundLabel(r)}${powerTitle(r, tiers)}"><span>★</span><small>${roundLabel(r)}</small></div>`;
+  };
+  const tray = `<div class="card-tray">${cardSlot}${powerSlot(1)}${powerSlot(2)}</div>`;
   const body =
     open === 'innate'
       ? `<p class="commander-text">${c.desc}</p>`
       : open === 'card' && card
         ? `<p class="commander-text">${cardFace(p, p.commanderCard!).desc}</p>`
-        : '';
+        : open === 'power1' || open === 'power2'
+          ? ((c) => (c ? `<p class="commander-text"><b>${powerCardName(c.id, c.tier)}:</b> ${POWER_CARDS[c.id].desc(c.tier)}</p>` : ''))(p.powerCards?.[open === 'power1' ? 0 : 1])
+          : '';
   return `<section class="commander-panel">
     <div class="commander-head">
       <span class="commander-portrait">${c.icon}</span>
       <div><b>${c.name}</b><small>${c.title}</small></div>
-      <span class="commander-hp" title="Your HP">❤️ ${hp}</span>
+      <span class="commander-hp" title="Your HP${shield ? ` and commander shield (soaks damage first)` : ''}">❤️ ${hp}${shield ? ` <span class="commander-shield">🛡 ${shield}</span>` : ''}</span>
     </div>
-    <div class="commander-hpbar"><span style="width:${share * 100}%"></span></div>
+    <div class="commander-hpbar"><span style="width:${share * 100}%"></span>${shield ? `<span class="shield" style="width:${(shield / full) * 100}%"></span>` : ''}</div>
     <div class="commander-tabs">${tabs}</div>
+    ${tray}
     ${body ? `<div class="commander-fold">${body}</div>` : ''}
     ${markKinds(p).map((k) => markLineHtml(p, k)).join('')}
     ${powersOf(p).protect ? autoHaloLineHtml(p) : ''}
@@ -1332,6 +1489,8 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
     ${tricksterLineHtml(p)}
     ${twilightLineHtml(p)}
     ${p.echo ? `<p class="commander-card-line">🏔️ Earthen Echo: ${portraitHtml(p.echo.defId, 'tiny')} ${UNIT_BY_ID[p.echo.defId].name} <b>${p.echo.given}/${powersOf(p).echo?.total ?? p.echo.given}</b></p>` : ''}
+    ${p.factionOrbOffer?.length ? `<button class="den-open" data-action="showCards">🔵 Faction orb: pick one</button>` : ''}
+    ${p.johnnie?.offer.length ? `<button class="den-open" data-action="showDen">🎩 Johnnie's Den: pick one</button>` : ''}
     ${p.johnnie?.defId ? `<p class="commander-card-line">🎩 Your Johnnie: ${portraitHtml(p.johnnie.defId, 'tiny')} ${UNIT_BY_ID[p.johnnie.defId].traits.map((t) => `${traitBadgeHtml(t)} ${TRAITS[t].name}`).join(' · ')}</p>` : ''}
     ${cyclopsLineHtml(p)}
     ${freyaHtml(p)}

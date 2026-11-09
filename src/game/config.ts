@@ -60,7 +60,7 @@ export const isOrbRound = (round: number) => {
 
 // The round every player picks a commander card (I-2), out of this many.
 export const COMMANDER_CARD_ROUND = 2;
-export const CARD_OFFER_SIZE = 4;
+export const CARD_OFFER_SIZE = 2;
 
 // The round every player picks a basic item (I-2: the creeps' drop), out of this many random ones.
 export const BASIC_ITEM_ROUND = 2;
@@ -74,6 +74,11 @@ export const CHEST_OFFER = 3;
 // pick of 1 out of 3 equipment: one physical, one magic or hybrid, one armor (see inventory.lootOffer).
 export const CREEP_ROUND = 1;
 export const EQUIPMENT_ROUND_SUB = 3;
+
+// Power cards: one pick on each of these monster rounds (II-3, III-3). Each round's tier (same for every
+// player) is rolled once at the start of the match, independently, each tier equally likely.
+export const POWER_CARD_ROUNDS = [roundAt(2, EQUIPMENT_ROUND_SUB), roundAt(3, EQUIPMENT_ROUND_SUB)];
+export const POWER_TIERS = ['blue', 'purple', 'gold'] as const;
 export const isEquipmentRound = (round: number) => {
   const { stage, sub } = stageRound(round);
   return stage >= 2 && sub === EQUIPMENT_ROUND_SUB;
