@@ -7,6 +7,8 @@ import { onTwoStar, syncMirrorBar } from './mirrorBar';
 import { mergeUnits } from './merge';
 import { openMistShop, syncMistOrbs } from './mistShop';
 import { nextInt } from './rng';
+import { giveTwoStar } from './actions';
+import { allyCall, checkChestTriggers, deliverSignatures, deliverTurrets, starGiftOf, syncRift } from './powerCards';
 import { playerTraits, TRAITS } from './traits';
 import type { GameState, Player } from './types';
 import type { StackReward } from './traits/types';
@@ -20,6 +22,10 @@ export function syncPlayer(state: GameState, p: Player): void {
   payTwilight(p);
   syncMarks(p);
   syncItems(state, p);
+  checkChestTriggers(state, p); // Counter Action, Apex Weaponry, Trust Fund, Neon Zenith
+  syncRift(state, p); // Emergency Rift
+  deliverSignatures(state, p); // hero cards
+  deliverTurrets(state, p); // Turret of Guardians
   // A counter appears (at 0) the first time its trait is active, and stays for the rest of the game.
   const levels = playerTraits(p);
   for (const id of Object.keys(levels)) {
@@ -45,6 +51,8 @@ export function handlePromotions(state: GameState, p: Player): void {
     const levels = playerTraits(p);
     for (const { defId, star } of promotions) {
       if (star === 2) onTwoStar(p);
+      if (star === 3 && starGiftOf(p)) giveTwoStar(state, p, defId);
+      allyCall(state, p, defId); // Ally's Call
       const def = UNIT_BY_ID[defId];
       for (const [id, level] of Object.entries(levels)) {
         if (!def.traits.includes(id)) continue;

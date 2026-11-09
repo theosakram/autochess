@@ -643,6 +643,8 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .trait-desc .dmg-physical span.on, .calc.dmg-physical { color: #ff5c5c; }
 .trait-desc .dmg-magic span { color: #6f9fc4; }
 .trait-desc .dmg-magic span.on, .calc.dmg-magic { color: #3cb8ff; }
+.trait-desc .dmg-adaptive span { color: #a68bc9; }
+.trait-desc .dmg-adaptive span.on, .calc.dmg-adaptive { color: #c58cff; }
 .trait-desc i { font-style: normal; opacity: 0.5; }
 .trait-popup .trait-desc, .trait-popup .trait-stacks, .trait-popup .stack-rewards, .trait-popup h4, .trait-popup .trait-items { text-align: left; }
 .trait-desc i.next { margin-left: 2px; font-size: 11px; opacity: 0.6; }
@@ -1130,7 +1132,7 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .commander-hp { margin-left: auto; font-weight: 700; font-size: 16px; white-space: nowrap; }
 .commander-hpbar { display: flex; height: 6px; margin-top: 8px; border-radius: 3px; background: #00000066; overflow: hidden; }
 .commander-hpbar span { display: block; height: 100%; background: #d65151; }
-/* Paladin's commander shield: white, right after the hp (as the board's unit shields). */
+/* Rock Solid commander shield: white, right after the hp (as the board's unit shields). */
 .commander-hpbar span.shield { background: #f2f6ff; }
 .commander-shield { color: #f2f6ff; font-size: 14px; }
 /* The power and card descriptions fold behind these tabs. */
@@ -1211,6 +1213,15 @@ button.commander-tab:hover { border-color: var(--accent); }
 .card-tiers li.held { background: color-mix(in srgb, var(--tier) 20%, transparent); }
 .gallery-card.card-entry.mine { box-shadow: 0 0 0 1px var(--accent); }
 .card-mine { padding: 0 6px; border-radius: 999px; background: var(--accent); color: #14161c; font-size: 11px; font-weight: 700; }
+/* Power card gallery: pills pick the tier shown, cards edged in its colour. */
+.card-tier-pills { display: flex; gap: 6px; margin: 6px 0 10px; }
+.dialog .card-tier-pill { padding: 4px 14px; border-radius: 999px; border: 1px solid var(--tier); background: none; color: var(--tier); font-weight: 600; cursor: pointer; }
+.dialog .card-tier-pill small { opacity: 0.75; font-weight: 400; }
+.dialog .card-tier-pill.on { background: var(--tier); color: #14161c; }
+.card-tier-section { margin: 0 0 18px; }
+.gallery-card.card-entry[class*='tier-'] { border-left: 3px solid var(--tier); }
+.gallery-card.card-entry[class*='tier-'] .trait-desc { margin: 0; font-size: 13px; line-height: 1.4; }
+.card-only { font-size: 11px; font-weight: 600; }
 
 /* The picked card flying into its tray slot. */
 .card-fly { position: fixed; z-index: 200; margin: 0; pointer-events: none; }

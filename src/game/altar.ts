@@ -1,6 +1,6 @@
 import { powersOf, type AltarPower } from './commanders';
 import { roundLabel } from './config';
-import { copiesOf, slotsOf } from './merge';
+import { pooledOf, slotsOf } from './merge';
 import { addXp } from './player';
 import { nextInt } from './rng';
 import { TRAITS } from './traits';
@@ -79,7 +79,7 @@ export function offer(state: GameState, p: Player, key: AltarKey, uid: number): 
   const tier = nextTier(def.tier)!;
 
   found.slots[found.index] = null;
-  if (unit.defId in state.pool) state.pool[unit.defId] += copiesOf(unit);
+  if (unit.defId in state.pool) state.pool[unit.defId] += pooledOf(unit);
   const wanted = altar.gifts === 'traits' ? [pickTrait(state, def, 'faction'), pickTrait(state, def, 'role')] : [null];
   const gifts = wanted.map((trait) => draw(state, tier, trait)).filter((id) => id !== null);
   (p.gifts ??= []).push(...gifts);

@@ -78,7 +78,7 @@ export const PORTRAITS: Record<string, string> = {
 
 // Johnson's Johnnies (one def per faction + role pair) all share one face.
 export const JOHNNIE_PORTRAIT = '🤠';
-export const portraitOf = (defId: string) => PORTRAITS[defId] ?? (UNIT_BY_ID[defId]?.johnnie ? JOHNNIE_PORTRAIT : '❔');
+export const portraitOf = (defId: string) => PORTRAITS[defId] ?? (UNIT_BY_ID[defId]?.johnnie ? JOHNNIE_PORTRAIT : UNIT_BY_ID[defId]?.turret ? '🗼' : '❔');
 
 // An inline plate for the HTML side, in the hero's cost colour, the same as on the board. The colour
 // comes in as --plate; style.css draws the rest.

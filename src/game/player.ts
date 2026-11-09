@@ -1,5 +1,5 @@
 import { baseReward, GOLD_PER_XP, INTEREST_PER_10, LOSE_STREAK_BONUS, MAX_INTEREST, MAX_LEVEL, WIN_STREAK_BONUS, XP_TO_LEVEL } from './config';
-import { xpCutOf } from './powerCards';
+import { heroCapBonusOf, interestCapOf, levelRefreshesOf, xpCutOf } from './powerCards';
 import type { Player } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -16,9 +16,15 @@ export function boardCount(p: Player): number {
 // Commander pieces (the Divine Beast) aren't units, so they're not counted here either.
 export const freeSlotCount = (p: Player) => p.board.filter((u) => u && UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece).length;
 
+// How many heroes the player may field: their level, plus Party's Opening.
+export const heroCapOf = (p: Player) => p.level + heroCapBonusOf(p);
+
+// The highest level the player can reach (Territory Agreement caps it).
+export const levelCapOf = (p: Player) => Math.min(MAX_LEVEL, p.levelCap ?? MAX_LEVEL);
+
 export function xpToNext(p: Player): number | null {
-  if (p.level >= MAX_LEVEL) return null;
-  const cut = xpCutOf(p); // Fast Growth
+  if (p.level >= levelCapOf(p)) return null;
+  const cut = xpCutOf(p); // Full Throttle
   return cut ? Math.max(1, Math.round(XP_TO_LEVEL[p.level - 1] * (1 - cut))) : XP_TO_LEVEL[p.level - 1];
 }
 
@@ -28,8 +34,9 @@ export function levelUpCost(p: Player): number | null {
   return need === null ? null : (need - p.xp) * GOLD_PER_XP;
 }
 
-export function interest(gold: number): number {
-  return Math.min(MAX_INTEREST, Math.floor(gold / 10) * INTEREST_PER_10);
+// Interest on gold banked, up to `cap` (MAX_INTEREST; Vault Upgrade raises it, see interestCapOf).
+export function interest(gold: number, cap = MAX_INTEREST): number {
+  return Math.min(cap, Math.floor(gold / 10) * INTEREST_PER_10);
 }
 
 // The streak bonus for a streak (+n wins / -n losses in a row).
@@ -40,7 +47,7 @@ export function streakBonus(streak: number): number {
 
 // What the end of round `round` pays: basic reward (by its stage), interest on gold banked, streak bonus.
 export function roundIncome(p: Player, round: number): { base: number; interest: number; streak: number; payday: number; total: number } {
-  const parts = { base: baseReward(round), interest: interest(p.gold), streak: streakBonus(p.streak ?? 0), payday: paydayGold(p) };
+  const parts = { base: baseReward(round), interest: interest(p.gold, interestCapOf(p)), streak: streakBonus(p.streak ?? 0), payday: paydayGold(p) };
   return { ...parts, total: parts.base + parts.interest + parts.streak + parts.payday };
 }
 
@@ -60,6 +67,9 @@ export function addXp(p: Player, amount: number): void {
   while (need !== null && p.xp >= need) {
     p.xp -= need;
     p.level++;
+    // Golden Era: free shop refreshes with each level.
+    const free = levelRefreshesOf(p);
+    if (free) p.freeRerolls = (p.freeRerolls ?? 0) + free;
     need = xpToNext(p);
   }
   if (need === null) p.xp = 0;

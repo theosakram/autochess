@@ -1,6 +1,6 @@
 import { EQUIPMENT } from './items';
 import { describe, expect, test } from 'bun:test';
-import { applyAction } from './actions';
+import { applyAction, trimBoard } from './actions';
 import { defenseMult, simulateCombat } from './combat';
 import { GRAVE_WHISPER } from './skills';
 import { createGame, resolveCombat, startRound } from './game';
@@ -235,7 +235,11 @@ describe('Plane Wanderer', () => {
     p.bench[1] = { uid: ++uid, defId: 'tig', star: 1 };
     expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 0 }, to: { area: 'board', index: 5 } }).ok).toBe(true);
     expect(boardCount(p)).toBe(3);
-    expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 1 }, to: { area: 'board', index: 6 } }).ok).toBe(false);
+    // Past the limit now: trimming takes a slot unit off, never the Wanderer.
+    expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 1 }, to: { area: 'board', index: 6 } }).ok).toBe(true);
+    trimBoard(state, p);
+    expect(boardCount(p)).toBe(3);
+    expect(p.board.some((u) => u?.defId === 'gatotkaca')).toBe(true);
   });
 
   test('gets the Necromancer bonus from souls without counting as a Necromancer', () => {

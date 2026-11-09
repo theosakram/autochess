@@ -6,7 +6,9 @@ import { BASE_CRIT_DAMAGE, BASE_DAMAGE, CAST_MULT, START_HP } from './config';
 import { createGame, isGameOver, resolveCombat, startRound } from './game';
 import { dist, GRID_H, GRID_W, gridIndex, safestCell } from './grid';
 import { activeTraits, DAUNTLESS, DEADEYE, DEFENDER, DRAGON_ALTAR, FIGHTER, gainStacks, MAGE, MOONEATER, PHASEWARPER, SKYBRINGER, STORYWEAVER, traitCounts, traitLevel, TRAITS, traitTiles, unitMods, unitStats, unitTriggers, WEAPON_MASTER } from './traits';
-import { attackInterval } from './stats';
+import { adaptivePower, adaptiveType, attackInterval } from './stats';
+import { fieldStats } from './inventory';
+import { HOLY_CRYSTAL } from './items';
 import { UNIT_BY_ID } from './units';
 import type { GameState, Player, Star } from './types';
 
@@ -99,6 +101,44 @@ describe('resolveCombat', () => {
     expect(fight.damage).toBe(BASE_DAMAGE + 3 + 2);
     expect(b.hp).toBe(START_HP - fight.damage);
     expect(a.hp).toBe(START_HP);
+  });
+
+  test("adaptive damage lands as physical or magic, by the dealer's higher of attack and magic attack", () => {
+    expect(adaptiveType({ atk: 100, ap: 100 })).toBe('physical'); // a tie: physical
+    expect(adaptiveType({ atk: 100, ap: 101 })).toBe('magic');
+    expect(adaptivePower({ atk: 120, ap: 300 })).toBe(300);
+    // Boss Alpha's adaptive skill into Knights (110 armor, 40 magic resist): per point of its higher stat, it
+    // hurts more once a Holy Crystal makes magic attack the higher (it lands as magic, past the lower mr).
+    const perPoint = (crystal: boolean) => {
+      const state = newGame();
+      const [a, b] = state.players;
+      a.items = [];
+      b.items = [];
+      field(a, [['bossalpha', 1, 3]]);
+      field(b, [['knight', 3, 2], ['knight', 3, 3], ['knight', 3, 4]]);
+      if (crystal) a.items = [{ uid: 900, id: 'holycrystal', tier: 1, holder: a.board[3]!.uid }];
+      const r = simulateCombat({ rng: 1 }, a, b, { traits: [false, false] });
+      const s = fieldStats(a, {}).get(a.board[3]!.uid)!;
+      const hit = r.events.find((e) => e.type === 'effect' && e.effect === 'spectralimpact');
+      return { per: hit?.type === 'effect' ? hit.damage / adaptivePower(s) : 0, magic: s.ap > s.atk };
+    };
+    const plain = perPoint(false);
+    const crystal = perPoint(true);
+    expect([plain.magic, crystal.magic]).toEqual([false, true]);
+    expect(plain.per).toBeGreaterThan(0);
+    // (The crystal's own skill damage bonus on top.)
+    expect(crystal.per / plain.per).toBeCloseTo((defenseMult(40) / defenseMult(110)) * (1 + HOLY_CRYSTAL.skillDamage), 2);
+  });
+
+  test("Vanguard Leader: the loser takes 2 more, shown in the fight's damage", () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    field(a, [['titan', 3, 0], ['footman', 2, 1]]);
+    field(b, [['footman', 1, 0]]);
+    b.powerCards = [{ id: 'vanguardLeader', tier: 'purple' }];
+    const [fight] = resolveCombat(state);
+    expect(fight.damage).toBe(BASE_DAMAGE + 3 + 2 + 2);
+    expect(b.hp).toBe(START_HP - fight.damage);
   });
 
   test('odd player count adds a ghost fight that only hurts the real player', () => {
@@ -737,8 +777,8 @@ describe('phasewarper lineup', () => {
 });
 
 describe('dauntless are frontliners', () => {
-  test('every Dauntless unit fights up front: melee, or range 2 at most (Alice), with frontline defenses', () => {
-    for (const u of Object.values(UNIT_BY_ID).filter((u) => u.traits.includes('dauntless'))) {
+  test('every Dauntless unit fights up front: melee, or range 2 at most (Alice), with frontline defenses (Turrets aside: range 12 by design)', () => {
+    for (const u of Object.values(UNIT_BY_ID).filter((u) => u.traits.includes('dauntless') && !u.turret)) {
       expect([u.id, u.range <= (u.id === 'alice' ? 2 : 1)]).toEqual([u.id, true]);
       expect([u.id, u.armor, u.mr]).toEqual([u.id, 36, 36]);
     }
@@ -752,7 +792,7 @@ describe('economy', () => {
   });
 
   test('interest: 10+ banked gives 2, 20+ gives 4 (cap)', () => {
-    expect([0, 9, 10, 19, 20, 55].map(interest)).toEqual([0, 0, 2, 2, 4, 4]);
+    expect([0, 9, 10, 19, 20, 55].map((g) => interest(g))).toEqual([0, 0, 2, 2, 4, 4]);
   });
 
   test('streaks: +n wins / -n losses in a row; a draw counts as a loss; bonus from the tables', () => {

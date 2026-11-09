@@ -1,7 +1,13 @@
 import { BASE_CRIT_DAMAGE, CAST_MULT, STAR_MULT } from './config';
 import type { Star, UnitDef } from './types';
 
-export type DamageType = 'physical' | 'magic' | 'pure'; // pure ignores armor and mr
+// pure ignores armor and mr; adaptive is physical or magic, whichever of the dealer's attack and magic attack is
+// higher (physical on a tie), worked out on each hit.
+export type DamageType = 'physical' | 'magic' | 'pure' | 'adaptive';
+
+// Adaptive damage: the stat it scales off (the higher of attack and magic attack) and the type it lands as.
+export const adaptivePower = (s: Pick<Stats, 'atk' | 'ap'>) => Math.max(s.atk, s.ap);
+export const adaptiveType = (s: Pick<Stats, 'atk' | 'ap'>): 'physical' | 'magic' => (s.ap > s.atk ? 'magic' : 'physical');
 
 // What a unit fights with. Traits (and later items) change these only through
 // StatMods; the combat engine reads stats and never looks at trait ids.

@@ -9,15 +9,17 @@ import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { cardRolls, openTrove, rollTrove } from './luckyDice';
 import { useMirror } from './mirror';
-import { pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
+import { DEATH_ORACLE, refreshXp, pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
+import { useDuplicator } from './duplicator';
 import { offer, type AltarKey } from './altar';
 import { syncPlayer } from './sync';
 import { cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
-import { absorb, bloodMerge, bloodRoom, copiesOf, findCopies, mergeSize, mergeUnits, nearMerge, promote, slotsOf } from './merge';
-import { addXp, boardCount, isAlive, levelUpCost } from './player';
+import { absorb, bloodMerge, bloodRoom, copiesOf, pooledOf, findCopies, mergeSize, mergeUnits, nearMerge, promote, slotsOf } from './merge';
+import { addXp, boardCount, heroCapOf, isAlive, levelUpCost } from './player';
 import { refreshShop, shopPrice } from './shop';
 import { TRAITS } from './traits';
+import { nextInt } from './rng';
 import type { GameState, Loc, Player, Unit } from './types';
 import { UNIT_BY_ID, unitPrice } from './units';
 
@@ -41,12 +43,13 @@ export type Action =
   | { type: 'rerollCard'; slot: number } // swap one offered card, once per slot
   | { type: 'pickPower'; card: string } // one of the power cards on offer
   | { type: 'rerollPower'; slot: number } // swap one offered power card, once per slot
-  | { type: 'pickFactionOrb'; trait: string } // Faction Synergy: one of the faction orbs on offer
+  | { type: 'pickFactionOrb'; trait: string } // Prime Selection: one of the faction orbs on offer
   | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
   | { type: 'pickItem'; item: string } // one of the basic items on offer
   | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (a roll a round, unused ones bank up)
   | { type: 'openTrove' } // Kaela: cash in the Trove's points
   | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device from the inventory
+  | { type: 'useDuplicator'; item: number } // item uid: copy it with an Equipment Duplicator from the inventory
   | { type: 'offer'; altar: AltarKey; unit: number } // Dyroth: offer a hero (uid) on one of his altars
   | { type: 'bless'; unit: number } // Lunox: place the Twilight Blessing on a hero (uid)
   | { type: 'bloodPact'; unit: number } // Alice: use a Blood Pact on a hero (uid)
@@ -74,6 +77,60 @@ export function canClaim(p: Player, defId: string): boolean {
   return p.bench.includes(null) || nearMerge(p, defId) || bloodRoom(p, defId) !== null;
 }
 
+// As canClaim, but an empty board cell will do too (gainUnit with `board`).
+export function canClaimToBoard(p: Player, defId: string): boolean {
+  return canClaim(p, defId) || p.board.some((u, i) => !u && !pieceBlock(p, defId, { area: 'board', index: i }));
+}
+
+// Pas de Deux, Reinforcement Plus: a 2★ copy of `defId` to the bench, else to an empty board cell (past the level limit if need
+// be), else lost. `have`: copies already out of the pool for it (a bought one). It takes what copies the pool has left, and is made up past that; selling it gives back
+// only what it took.
+export function giveTwoStar(state: GameState, p: Player, defId: string, have = 0): void {
+  giveStarred(state, p, defId, 2, have);
+}
+
+// A hero at `star` (its copies from the pool as it has them, made up past that; with `fromPool` false, all made up:
+// the pool untouched, and selling it returns nothing) to the bench, else an empty board cell. `extra` goes on the
+// new unit (e.g. a hero card's buff). False, and nothing taken, if no room.
+export function giveStarred(state: GameState, p: Player, defId: string, star: 2 | 3, have = 0, extra: Partial<Unit> = {}, fromPool = true): boolean {
+  const bench = p.bench.indexOf(null);
+  const cell = bench < 0 ? p.board.indexOf(null) : -1;
+  if (bench < 0 && cell < 0) return false;
+  const want = mergeSize(defId) ** (star - 1);
+  const took = fromPool ? Math.min(want - have, state.pool[defId] ?? 0) : 0;
+  if (defId in state.pool) state.pool[defId] -= took;
+  const unit: Unit = { uid: state.nextUid++, defId, star, ...(have + took < want ? { shortfall: want - have - took } : {}), ...extra };
+  if (bench >= 0) p.bench[bench] = unit;
+  else p.board[cell] = unit;
+  mergeUnits(p, defId);
+  return true;
+}
+
+// Sells the unit in `slots[index]`: its copies back to the pool, their price to the player.
+export function sellAt(state: GameState, p: Player, slots: (Unit | null)[], index: number): void {
+  const unit = slots[index]!;
+  slots[index] = null;
+  if (unit.defId in state.pool) state.pool[unit.defId] += pooledOf(unit);
+  p.gold += unitPrice(unit.defId) * copiesOf(unit);
+}
+
+// At the start of a fight, a board past the level limit loses its weakest units (lowest star, then cheapest;
+// ties at random) one by one: to the bench, or sold when the bench is full.
+export function trimBoard(state: GameState, p: Player): void {
+  while (boardCount(p) > heroCapOf(p)) {
+    const cells = p.board.flatMap((u, i) => (u && !UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece ? [i] : []));
+    const weight = (i: number) => p.board[i]!.star * 100 + unitPrice(p.board[i]!.defId);
+    const low = Math.min(...cells.map(weight));
+    const weakest = cells.filter((i) => weight(i) === low);
+    const cell = weakest[nextInt(state, weakest.length)];
+    const free = p.bench.indexOf(null);
+    if (free >= 0) {
+      p.bench[free] = p.board[cell];
+      p.board[cell] = null;
+    } else sellAt(state, p, p.board, cell);
+  }
+}
+
 // Moves a shop unit onto the bench (no payment) and merges. Check canClaim first.
 export function claimShopSlot(state: GameState, p: Player, slot: number): void {
   const defId = p.shop[slot]!;
@@ -82,18 +139,36 @@ export function claimShopSlot(state: GameState, p: Player, slot: number): void {
   gainUnit(state, p, defId);
 }
 
-// Puts a new 1★ copy on the bench (or straight into the pair it completes) and merges.
-// The copy must already be out of the pool. Check canClaim first.
-export function gainUnit(state: GameState, p: Player, defId: string): void {
+// An empty board cell a unit may stand on (any row), picked at random, or -1.
+function freeBoardCell(state: GameState, p: Player, defId: string): number {
+  const cells = p.board.flatMap((u, i) => (!u && !pieceBlock(p, defId, { area: 'board', index: i }) ? [i] : []));
+  return cells.length ? cells[nextInt(state, cells.length)] : -1;
+}
+
+// Puts a new 1★ copy on the bench (or straight into the pair it completes) and merges. With `board`, a full
+// bench sends it to an empty board cell instead, even past the level limit (trimmed when the fight starts).
+// The copy must already be out of the pool. Check canClaim (or canClaimToBoard) first.
+// `outside`: a copy that never came from the pool (counted as shortfall, so selling it returns nothing).
+export function gainUnit(state: GameState, p: Player, defId: string, board = false, merc = false, outside = false): void {
   // Alice's Blood Pact hero takes the copy straight in.
-  if (bloodRoom(p, defId)) return bloodMerge(p, defId, 1);
+  const blood = bloodRoom(p, defId);
+  if (blood) {
+    if (outside) blood.shortfall = (blood.shortfall ?? 0) + 1;
+    return bloodMerge(p, defId, 1);
+  }
+  const extra = { ...(merc && { merc: true }), ...(outside && { shortfall: 1 }) };
   const free = p.bench.indexOf(null);
+  const cell = free < 0 && board && !nearMerge(p, defId) ? freeBoardCell(state, p, defId) : -1;
   if (free >= 0) {
-    p.bench[free] = { uid: state.nextUid++, defId, star: 1 };
+    p.bench[free] = { uid: state.nextUid++, defId, star: 1, ...extra };
+  } else if (cell >= 0) {
+    p.board[cell] = { uid: state.nextUid++, defId, star: 1, ...extra };
   } else {
     // Absorbed straight into the set it completes.
     const [keep, ...others] = findCopies(p, defId, 1);
     const keeper = slotsOf(p, keep.area)[keep.index]!;
+    if (merc) keeper.merc = true;
+    if (outside) keeper.shortfall = (keeper.shortfall ?? 0) + 1;
     promote(p, keeper, 2);
     for (const loc of others.slice(0, mergeSize(defId) - 2)) absorb(p, keeper, loc);
   }
@@ -113,10 +188,15 @@ function perform(state: GameState, p: Player, action: Action): Result {
   switch (action.type) {
     case 'reroll': {
       if (p.freeRerolls) p.freeRerolls--;
-      else if (p.gold < REROLL_COST) return fail('Not enough gold');
+      // Death Oracle: 1 hp instead of gold (never the last hp: then gold as usual).
+      else if (p.bloodRefreshes && p.hp > DEATH_ORACLE.hp) {
+        p.hp -= DEATH_ORACLE.hp;
+        p.bloodRefreshes = p.bloodRefreshes - 1 || undefined;
+      } else if (p.gold < REROLL_COST) return fail('Not enough gold');
       else p.gold -= REROLL_COST;
       refreshShop(state, p);
       rollFreeRefresh(state, p);
+      refreshXp(state, p); // Experienced Shuffle
       return OK;
     }
 
@@ -142,6 +222,18 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (isItemCard(defId)) return upgradeItem(p, slot);
       const cost = shopPrice(p, slot);
       if (p.gold < cost) return fail('Not enough gold');
+      // Opening Promotion: this was the round's free buy (unless Guiness had made the hero free anyway).
+      if (p.freeBuy && p.freeSlot !== slot) p.freeBuy = undefined;
+      // Fast Promotion: it comes 2★ (bench, else the board).
+      if (p.promoteNext) {
+        if (!p.bench.includes(null) && !p.board.includes(null)) return fail('No room');
+        p.gold -= cost;
+        p.shop[slot] = null;
+        if (p.freeSlot === slot) p.freeSlot = null;
+        p.promoteNext = p.promoteNext - 1 || undefined;
+        giveTwoStar(state, p, defId, 1);
+        return OK;
+      }
       if (!canClaim(p, defId)) return fail('Bench is full');
       p.gold -= cost;
       claimShopSlot(state, p, slot);
@@ -153,11 +245,8 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!slots) return fail('Bad location');
       const unit = slots[action.from.index];
       if (!unit) return fail('No unit there');
-      if (UNIT_BY_ID[unit.defId].piece) return fail(`The ${UNIT_BY_ID[unit.defId].name} can't be sold`);
-      const copies = copiesOf(unit);
-      slots[action.from.index] = null;
-      if (unit.defId in state.pool) state.pool[unit.defId] += copies;
-      p.gold += unitPrice(unit.defId) * copies;
+      if (UNIT_BY_ID[unit.defId].piece || UNIT_BY_ID[unit.defId].turret) return fail(`The ${UNIT_BY_ID[unit.defId].name} can't be sold`);
+      sellAt(state, p, slots, action.from.index);
       return OK;
     }
 
@@ -172,13 +261,9 @@ function perform(state: GameState, p: Player, action: Action): Result {
       // Commander pieces only go where they may stand, even when swapped.
       const blocked = pieceBlock(p, unit.defId, to) ?? (other ? pieceBlock(p, other.defId, from) : null);
       if (blocked) return fail(blocked);
+      // Past the level limit is fine: the board is trimmed when the fight starts (trimBoard).
       src[from.index] = other;
       dst[to.index] = unit;
-      if (boardCount(p) > p.level) {
-        dst[to.index] = other;
-        src[from.index] = unit;
-        return fail(`Board is full (${p.level} units at level ${p.level})`);
-      }
       return OK;
     }
 
@@ -272,6 +357,9 @@ function perform(state: GameState, p: Player, action: Action): Result {
 
     case 'useMirror':
       return result(useMirror(state, p, action.unit));
+
+    case 'useDuplicator':
+      return result(useDuplicator(state, p, action.item));
 
     case 'offer':
       return result(offer(state, p, action.altar, action.unit));

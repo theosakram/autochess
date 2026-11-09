@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createGame } from '../game/game';
+import { powerCardName } from '../game/powerCards';
 import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
@@ -324,19 +325,41 @@ describe('skill damage colours', () => {
   });
 });
 
-test('the gallery Cards tab lists power cards by tier and every commander card, marking yours', () => {
+test('the gallery Cards tab: tier pills, one tier shown at a time, marking yours', () => {
   const state = createGame(1, [{ id: 'p', name: 'P', isBot: false, commander: 'lukas' }]);
   const p = state.players[0];
   p.powerCards = [{ id: 'magicSurge', tier: 'purple' }];
-  const html = galleryHtml(p, state.chosen, 'deck', state.powerTiers);
-  for (const n of ['Magic Surge I', 'Magic Surge II', 'Magic Surge III', 'Vanguard Beast']) expect(html).toContain(n);
-  expect(html).toContain('tier-purple held');
-  expect(html).toContain('your commander');
+  const blue = galleryHtml(p, state.chosen, 'deck', state.powerTiers);
+  for (const t of ['blue', 'purple', 'gold']) expect(blue).toContain(`data-action="cardTier" data-tier="${t}"`);
+  expect(blue).toContain('card-tier-pill tier-blue on'); // blue by default
+  expect(blue).toContain('Magic Immersion I');
+  expect(blue).not.toContain('Magic Immersion II');
+  expect(blue).not.toContain('card-entry tier-blue mine');
+  expect(blue).toContain('Vanguard Beast');
+  expect(blue).toContain('your commander');
+  const purple = galleryHtml(p, state.chosen, 'deck', state.powerTiers, 'purple');
+  expect(purple).toContain('card-tier-pill tier-purple on');
+  expect(purple).toContain('Magic Immersion II');
+  expect(purple).toContain('card-entry tier-purple mine'); // the tier held
+  expect(galleryHtml(p, state.chosen, 'deck', state.powerTiers, 'gold')).toContain('Magic Immersion III');
+});
+
+test('a card offered at one tier: only under that pill, no numeral', () => {
+  const state = createGame(1, [{ id: 'p', name: 'P', isBot: false, commander: 'lukas' }]);
+  const at = (t: 'blue' | 'purple' | 'gold') => galleryHtml(state.players[0], state.chosen, 'deck', state.powerTiers, t);
+  expect(at('purple')).toContain('Pas de Deux');
+  expect(at('purple')).not.toContain('Pas de Deux II');
+  expect(at('purple')).toContain('Purple only');
+  expect(at('blue')).not.toContain('Pas de Deux');
+  expect(at('gold')).not.toContain('Pas de Deux');
+  expect(powerCardName('pasDeDeux', 'purple')).toBe('Pas de Deux');
+  expect(powerCardName('magicSurge', 'purple')).toBe('Magic Immersion II');
+  expect(powerCardName('excellentRecruit', 'blue')).toBe('Excellent Recruit I');
 });
 
 test('the home gallery has the Cards tab too', () => {
   const p = createGame(0, [{ id: 'v', name: '', isBot: false }]).players[0];
-  const html = homeGalleryHtml(p, 'cards');
-  expect(html).toContain('Magic Surge III');
-  expect(html).toContain('Commander cards');
+  expect(homeGalleryHtml(p, 'cards')).toContain('Magic Immersion I');
+  expect(homeGalleryHtml(p, 'cards', 'gold')).toContain('Magic Immersion III');
+  expect(homeGalleryHtml(p, 'cards')).toContain('Commander cards');
 });

@@ -4,6 +4,7 @@ import { nextInt, shuffle } from '../rng';
 import type { GameState, Loc, Player } from '../types';
 import { UNIT_BY_ID } from '../units';
 import { addXp } from '../player';
+import { spendFortunes } from '../powerCards';
 import { payEcho } from '../essence';
 import { alice } from './alice';
 import { amon } from './amon';
@@ -190,9 +191,12 @@ const addChests = (p: Player, n: number) => ((p.chests ??= { kills: 0, earned: 0
 // may leave them at 1 HP instead.
 export function hurtPlayer(p: Player, damage: number): void {
   if (damage <= 0) return;
-  // Paladin: the commander shield soaks it first.
+  // Rock Solid: the commander shield soaks it first.
   const soak = Math.min(p.shield ?? 0, damage);
-  if (soak) p.shield! -= soak;
+  if (soak) {
+    p.shield! -= soak;
+    spendFortunes(p, soak); // Shield of Fortune's shield goes first
+  }
   damage -= soak;
   if (damage <= 0) return;
   p.hp -= damage;

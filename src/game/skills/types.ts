@@ -110,9 +110,9 @@ export interface SkillDef {
   // One description for every star; each {key} is filled from values(), one value per star.
   desc: string;
   values(): Record<string, string[]>; // a value the same at every star may be given once
-  // Which {key}s are damage, and of what type ('attack': its basic attack's type; 'higher': magic if its
-  // magic attack is above its attack, else physical), for the hero details.
-  damage?: Record<string, DamageType | 'attack' | 'higher'>;
+  // Which {key}s are damage, and of what type ('attack': its basic attack's type; 'adaptive': physical or magic,
+  // whichever of its attack and magic attack is higher).
+  damage?: Record<string, DamageType | 'attack'>;
   cast(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
   // A passive: runs once when the fight starts (positions are the starting ones).
   atStart?(api: SkillApi, caster: SkillFighter): void;

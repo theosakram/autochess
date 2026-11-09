@@ -23,17 +23,17 @@ import {
   POWER_CARD_ROUNDS,
   POWER_TIERS,
 } from './config';
-import { copiesOf, mergeUnits } from './merge';
+import { copiesOf, mergeUnits, pooledOf } from './merge';
 import { openChest, stageItems, takeOfferedItem } from './inventory';
 import { cardRolls } from './luckyDice';
 import { addXp, recordFight, roundIncome, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop, rollFreeHero } from './shop';
-import { applyAction, claimShopSlot, canClaim } from './actions';
+import { applyAction, claimShopSlot, canClaim, trimBoard } from './actions';
 import { checkRally, payHeirs } from './cyclops';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
-import { offerPowerCards, pickFactionOrb, pickPowerCard, roundHealOf } from './powerCards';
+import { ageTurrets, cashFortunes, gloriousClaim, checkChestTriggers, freeBuyOf, traitGoldOf, lendArms, returnArms, cycleChests, cycleRefreshes, transmute, hurtExtraOf, offerPowerCards, pickFactionOrb, pickPowerCard, roundHealOf } from './powerCards';
 import { hurtPlayer, offerCards, payCard, powersOf } from './commanders';
 import type { Side } from './grid';
 import { BASIC_ITEMS, isItemCard, ITEMS } from './items';
@@ -136,6 +136,7 @@ export function startRound(state: GameState): RoundBonus[] {
     // Healing Fountain: the commander heals, up to full.
     p.hp = Math.min(START_HP, p.hp + roundHealOf(p));
     // That paid one round of each Payday owed.
+    p.freeBuy = freeBuyOf(p) || undefined; // Opening Promotion
     if (p.payday) p.payday = p.payday.map((d) => ({ ...d, rounds: d.rounds - 1 })).filter((d) => d.rounds > 0);
     // A locked shop keeps what's left in it for this round, then unlocks.
     if (p.shopLocked) p.shopLocked = false;
@@ -147,7 +148,12 @@ export function startRound(state: GameState): RoundBonus[] {
   // The commander card round: everyone gets an offer to pick from.
   if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
   // Power card rounds: an offer at the tier this match rolled.
-  for (const p of alive) offerPowerCards(state, p);
+  for (const p of alive) {
+    offerPowerCards(state, p);
+    transmute(state, p); // Transmutation: a random gold card
+    cashFortunes(state, p); // Shield of Fortune
+    ageTurrets(state, p); // Turret of Guardians
+  }
   // The basic item round: a few random basic items, pick one.
   if (state.round === BASIC_ITEM_ROUND) for (const p of alive) {
     p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
@@ -157,6 +163,12 @@ export function startRound(state: GameState): RoundBonus[] {
   for (const p of alive) grantBlood(state, p);
   // Kaela's card: its Lucky Dice rolls due this round.
   for (const p of alive) cardRolls(state, p);
+  // Cyclical Support's chests due this round.
+  for (const p of alive) {
+    cycleChests(state, p);
+    cycleRefreshes(state, p); // Adequate Stock
+    checkChestTriggers(state, p); // Counter Action: hp lost last fight
+  }
   // Equipment Chests earned last fight (one at a time; the rest open as each is picked).
   for (const p of alive) openChest(state, p);
   // Units deployed at the start of the round feed counting traits (before bots rearrange).
@@ -213,9 +225,18 @@ export function resolveCombat(state: GameState): Fight[] {
     if (p.factionOrbOffer) pickFactionOrb(state, p, p.factionOrbOffer[0]);
     // Likewise unpicked items: the first on offer, chest after chest.
     while (p.itemOffer?.length) takeOfferedItem(state, p, p.itemOffer[0]);
+    trimBoard(state, p); // past the level limit: the weakest to the bench, or sold
     syncPlayer(state, p);
   }
-  if (isMonsterRound(state.round)) return monsterRound(state);
+  // Fully Armed: equipment lent for this round's fights only.
+  for (const p of state.players.filter(isAlive)) lendArms(state, p);
+  const fights = isMonsterRound(state.round) ? monsterRound(state) : playerFights(state);
+  for (const p of state.players) returnArms(p);
+  return fights;
+}
+
+// Every player fights another (or a ghost of one, for an odd one out).
+function playerFights(state: GameState): Fight[] {
   const alive = shuffle(state, state.players.filter(isAlive));
   const fights: Fight[] = [];
 
@@ -229,11 +250,15 @@ export function resolveCombat(state: GameState): Fight[] {
       away = alive[nextInt(state, alive.length - 1)];
     }
     const result = simulateCombat(state, home, away, { chosen: state.chosen, round: state.round });
-    const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
-    if (result.winner === 1) hurtPlayer(home, damage);
-    else if (result.winner === 0 && !ghost) hurtPlayer(away, damage);
+    // Vanguard Leader: the loser's own extra is part of it (and of what the results show).
+    const loser = result.winner === 1 ? home : result.winner === 0 && !ghost ? away : null;
+    const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0) + (loser ? hurtExtraOf(loser) : 0);
+    if (loser) hurtPlayer(loser, damage);
     recordFight(home, result.winner === 0, WIN_GOLD);
     if (!ghost) recordFight(away, result.winner === 1, WIN_GOLD);
+    // Glorious Claim (a draw neither stores nor pays).
+    gloriousClaim(home, result.winner === 0, result.winner === 1);
+    if (!ghost) gloriousClaim(away, result.winner === 1, result.winner === 0);
     // A ghost is a copy, so its owner gains nothing from the fight.
     const tally = (side: 0 | 1) => (traitId: string) => ({ kills: enemyDeaths(result, side), memberSkills: memberSkills(result, side, traitId) });
     gainStacks(home, result.traits[0], tally(0));
@@ -251,6 +276,9 @@ export function resolveCombat(state: GameState): Fight[] {
 function afterFight(p: Player, result: CombatResult, side: Side): void {
   const gold = powersOf(p).roundGold;
   if (gold && result.winner !== null) p.gold += result.winner === side ? gold.win : gold.loss;
+  // The More the Merrier: gold per synergy active in the fight.
+  const perTrait = traitGoldOf(p);
+  if (perTrait) p.gold += perTrait * Object.values(result.traits[side]).filter((l) => l > 0).length;
   payBounty(p, result, side);
   earnChests(p, result, side);
 }
@@ -291,8 +319,8 @@ function monsterRound(state: GameState): Fight[] {
   const fights = alive.map((p): Fight => {
     const { player: monsters, statMult } = monsterSide(state.round);
     const result = simulateCombat(state, p, monsters, { chosen: state.chosen, statMult: [1, statMult], round: state.round });
-    const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0);
-    if (result.winner === 1) hurtPlayer(p, damage);
+    const damage = result.winner === null ? 0 : BASE_DAMAGE + result.survivors.reduce((n, f) => n + f.star, 0) + (result.winner === 1 ? hurtExtraOf(p) : 0);
+    if (result.winner === 1) hurtPlayer(p, damage); // Vanguard Leader's extra included
     gainStacks(p, result.traits[0], (traitId: string) => ({ kills: enemyDeaths(result, 0), memberSkills: memberSkills(result, 0, traitId) }));
     afterFight(p, result, 0);
     const loot = isEquipmentRound(state.round) ? EQUIPMENT_DROPS : 0;
@@ -323,7 +351,7 @@ function releaseUnits(state: GameState, p: Player): void {
   for (const slots of [p.bench, p.board]) {
     slots.forEach((u, i) => {
       if (!u) return;
-      if (u.defId in state.pool) state.pool[u.defId] += copiesOf(u);
+      if (u.defId in state.pool) state.pool[u.defId] += pooledOf(u);
       slots[i] = null;
     });
   }

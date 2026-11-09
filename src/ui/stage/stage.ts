@@ -167,6 +167,8 @@ export class Stage {
           defId: u.defId,
           star: u.star,
           copies: u.copies,
+          merc: u.merc,
+          signature: u.signature,
           size: area === 'board' ? this.L.boardCell : this.L.benchCell,
           crowned: crowned.has(u.defId),
           leads: area === 'board' ? leadsOf(p, levels, u.uid) : [],
@@ -260,6 +262,8 @@ export class Stage {
         defId: f.defId,
         star: f.star,
         copies: f.copies,
+        merc: f.merc,
+        signature: f.signature,
         size: this.L.boardCell,
         crowned: f.chosen !== null,
         leads: f.leads,
@@ -593,7 +597,7 @@ export class Stage {
     if (!this.prep) return;
     this.prep.player.bench.forEach((u, index) => {
       if (!u) return;
-      const token = makeToken({ defId: u.defId, star: u.star, copies: u.copies, size: this.L.benchCell });
+      const token = makeToken({ defId: u.defId, star: u.star, copies: u.copies, merc: u.merc, signature: u.signature, size: this.L.benchCell });
       const p = this.L.benchCenter(index);
       token.root.position.set(p.x, p.y);
       token.root.alpha = 0.6;

@@ -7,7 +7,7 @@ import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
 import { EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
 import { nextInt, shuffle } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
-import { powerMods, TEAMWORK_COUNT } from './powerCards';
+import { constellationOf, DISCO_FEVER, discoStarsOf, extraOfferingsOf, offeringShareOf, powerMods, ROGUE_MERCENARY, SIGNATURE, TEAMWORK_COUNT } from './powerCards';
 import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
 import type { GameState, Item, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
@@ -63,9 +63,12 @@ export function syncItems(state: GameState, p: Player): void {
   for (const [id, level] of Object.entries(playerTraits(p))) {
     const rule = TRAITS[id].items;
     if (!rule) continue;
-    let missing = rule.grants[level - 1] - p.items.filter((it) => rule.pool.includes(it.id)).length;
+    // Exclusive Offering: more Pyre Offerings (copies of the same item).
+    const extra = id === 'cultoffire' ? extraOfferingsOf(p) : 0;
+    let missing = rule.grants[level - 1] + extra - p.items.filter((it) => rule.pool.includes(it.id)).length;
     while (missing-- > 0) {
-      const left = rule.pool.filter((itemId) => !p.items.some((it) => it.id === itemId));
+      const unowned = rule.pool.filter((itemId) => !p.items.some((it) => it.id === itemId));
+      const left = unowned.length || !extra ? unowned : rule.pool;
       if (left.length === 0) break;
       p.items.push({ uid: state.nextUid++, id: left[nextInt(state, left.length)], tier: 1, holder: null });
     }
@@ -112,6 +115,19 @@ export function stageItems(state: GameState, p: Player): void {
     const def = ITEMS[it.id];
     if (def.tierByStage) it.tier = Math.min(def.maxTier, stageOf(state.round));
   }
+}
+
+// A fielded hero's synergies: its own, any orb's on its type (Magic Orb, Mist orbs, Lunox's blessing), any
+// its (active) items give it, and its honorary one.
+export function heroTraits(p: Player, u: Unit, items: { id: string }[]): Set<string> {
+  const orbs = p.orb ? [p.orb, ...fieldedMistOrbs(p)] : fieldedMistOrbs(p);
+  const own = UNIT_BY_ID[u.defId].honorary;
+  return new Set([
+    ...UNIT_BY_ID[u.defId].traits,
+    ...orbs.filter((o) => o.defId === u.defId).map((o) => o.trait),
+    ...honoraryTraits(items),
+    ...(own ? [own.trait] : []),
+  ]);
 }
 
 // Traits whose member bonuses these (active) items grant their holder.
@@ -162,17 +178,23 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
   const protect = powersOf(p).protect;
   const core = coreHolder(p)?.uid;
   const counts = playerTraitCounts(p);
-  const orbs = p.orb ? [p.orb, ...fieldedMistOrbs(p)] : fieldedMistOrbs(p);
+  const disco = discoStarsOf(p); // Disco Fever
+  const constellation = constellationOf(p, Object.values(levels).filter((l) => l > 0).length); // Synergy Constellation
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
     const own = UNIT_BY_ID[u.defId].honorary;
     const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
     const leads = Object.keys(leaders).filter((id) => leaders[id].includes(u.uid));
-    // The hero's synergies: its own, any orb's on its type, and any its items give it.
-    const mine = new Set([...UNIT_BY_ID[u.defId].traits, ...orbs.filter((o) => o.defId === u.defId).map((o) => o.trait), ...honorary]);
+    const mine = heroTraits(p, u, items);
     const big = [...mine].filter((t) => (counts[t] ?? 0) >= TEAMWORK_COUNT).length;
-    const mods: StatMod[] = [...extra, ...powerMods(p, cell, heldBy(p, u.uid).length, big)];
+    const mods: StatMod[] = [...extra, ...powerMods(p, cell, heldBy(p, u.uid).length, big, u.defId)];
+    // Rogue Mercenary: its permanent buff.
+    if (u.merc) mods.push({ stat: 'damageAmp', add: ROGUE_MERCENARY.damage }, { stat: 'hp', add: ROGUE_MERCENARY.hp });
+    if (disco.has(u.uid)) mods.push({ stat: 'atk', pct: DISCO_FEVER.atk }, { stat: 'ap', pct: DISCO_FEVER.atk });
+    if (constellation) mods.push({ stat: 'atk', pct: constellation }, { stat: 'ap', pct: constellation });
+    // Hero cards: their 3★ hero's permanent buff.
+    if (u.signature) mods.push({ stat: 'atk', pct: SIGNATURE.atk }, { stat: 'ap', pct: SIGNATURE.atk }, { stat: 'hp', pct: SIGNATURE.hp });
     // Kagura's card: the dancing hero fights harder.
     const boost = u.uid === markedUid(p, 'boost') ? powersOf(p).boost : undefined;
     if (boost) {
@@ -202,8 +224,11 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     if (!holder) continue;
     for (const it of heldBy(p, holder.uid)) {
       const tier = effectiveTier(it, levels);
-      const aura = tier ? ITEMS[it.id].aura?.(tier) : undefined;
-      if (!aura) continue;
+      const own = tier ? ITEMS[it.id].aura?.(tier) : undefined;
+      if (!own) continue;
+      // Exclusive Offering: every Pyre Offering gives its own share.
+      const share = it.id === 'offering' ? offeringShareOf(p) : null;
+      const aura = share === null ? own : { ...own, share };
       const held = stats.get(holder.uid)!;
       const from = aura.from.reduce((best, k) => (held[k] > held[best] ? k : best));
       const base = held[from];

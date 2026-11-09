@@ -21,6 +21,8 @@ export interface TokenSpec {
   selected?: boolean;
   bars?: boolean; // hp and mana bars, for combat
   copies?: number; // Alice's Blood Pact hero: red stars, the last one partly filled
+  merc?: boolean; // Rogue Mercenary: a briefcase in the corner
+  signature?: boolean; // a hero card's hero: a medal in the corner
 }
 
 export interface TokenView {
@@ -139,7 +141,7 @@ export function makeToken(s: TokenSpec): TokenView {
       root.addChild(badge);
     });
   }
-  const badges = (s.marks ?? []).join('') + (s.orb ? '🔮' : '') + '🌫️'.repeat(s.mistOrbs?.length ?? 0) + (s.crowned ? '👑' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
+  const badges = (s.marks ?? []).join('') + (s.orb ? '🔮' : '') + '🌫️'.repeat(s.mistOrbs?.length ?? 0) + (s.crowned ? '👑' : '') + (s.merc ? '💼' : '') + (s.signature ? '🏅' : '') + (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
   if (badges) corner(badges, half - 3, -half + 3 + barSpace, 1, 0);
   if (s.itemIds?.length) corner(s.itemIds.map((id) => ITEMS[id].icon).join(''), -half + 3, ribbonTop - 1, 0, 1);
 

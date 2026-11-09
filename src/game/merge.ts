@@ -10,6 +10,9 @@ export const mergeSize = (defId: string) => UNIT_BY_ID[defId]?.mergeSize ?? 3;
 // 1★ copies a unit is made of; what goes back to the pool when it leaves play.
 export const copiesOf = (u: Unit) => u.copies ?? mergeSize(u.defId) ** (u.star - 1);
 
+// Of those, the ones that came out of the pool (and go back to it).
+export const pooledOf = (u: Unit) => copiesOf(u) - (u.shortfall ?? 0);
+
 // Owning this many 1★ copies means the next one completes a star-up.
 export const nearMerge = (p: Player, defId: string) => findCopies(p, defId, 1).length >= mergeSize(defId) - 1;
 
@@ -72,6 +75,10 @@ export function findCopies(p: Player, defId: string, star: Star): Loc[] {
 // (the rest go back to the inventory on the next sync).
 export function absorb(p: Player, keeper: Unit, loc: Loc): void {
   const gone = slotsOf(p, loc.area)[loc.index]!;
+  // Copies the pool never gave carry into the merged hero, so it never hands them back.
+  if (gone.shortfall) keeper.shortfall = (keeper.shortfall ?? 0) + gone.shortfall;
+  if (gone.merc) keeper.merc = true; // Rogue Mercenary's buff stays with the hero
+  if (gone.signature) keeper.signature = true; // so does a hero card's
   for (const it of p.items) {
     if (it.holder !== gone.uid) continue;
     if (p.items.filter((i) => i.holder === keeper.uid).length < MAX_ITEMS_PER_UNIT) it.holder = keeper.uid;

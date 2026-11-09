@@ -1,3 +1,4 @@
+import { interestCapOf } from './powerCards';
 import { bloodBlock } from './blood';
 import { claimable } from './freya';
 import { blessBlock } from './twilight';
@@ -8,7 +9,7 @@ import { MAX_INTEREST } from './config';
 import { nextInt } from './rng';
 import { equipBlock } from './inventory';
 import { isItemCard } from './items';
-import { boardCount, interest, levelUpCost } from './player';
+import { boardCount, heroCapOf, interest, levelUpCost } from './player';
 import { orbOptions } from './orb';
 import { playerTraitCounts, tileSeating, traitCounts, traitLevel } from './traits';
 import type { GameState, Player } from './types';
@@ -45,7 +46,7 @@ function easyBot(state: GameState, p: Player): void {
     if (id && (isItemCard(id) || shopPrice(p, i) <= p.gold)) applyAction(state, p.id, { type: 'buy', slot: i });
   }
 
-  for (let i = 0; i < p.bench.length && boardCount(p) < p.level; i++) {
+  for (let i = 0; i < p.bench.length && boardCount(p) < heroCapOf(p); i++) {
     if (!p.bench[i]) continue;
     const to = p.board.indexOf(null);
     applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: i }, to: { area: 'board', index: to } });
@@ -66,7 +67,7 @@ function easyBot(state: GameState, p: Player): void {
   }
 
   // Smallest bank that still earns max interest.
-  const keep = interestBank();
+  const keep = interestBank(p);
   for (let cost = levelUpCost(p); cost !== null && p.gold - cost >= keep; cost = levelUpCost(p)) {
     applyAction(state, p.id, { type: 'levelUp' });
   }
@@ -94,9 +95,11 @@ export function placeMarks(state: GameState, p: Player): void {
   }
 }
 
-export function interestBank(): number {
+// Gold to bank for the most interest (Vault Upgrade raises the limit).
+export function interestBank(p?: Player): number {
+  const cap = p ? interestCapOf(p) : MAX_INTEREST;
   let gold = 0;
-  while (interest(gold) < MAX_INTEREST) gold += 10;
+  while (interest(gold, cap) < cap) gold += 10;
   return gold;
 }
 

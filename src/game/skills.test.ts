@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { simulateCombat } from './combat';
-import { TICKS_PER_SECOND } from './config';
+import { MAX_COMBAT_TICKS, TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { dist, GRID_H, GRID_W, type Point } from './grid';
 import { JIMAT } from './items';
@@ -1858,7 +1858,7 @@ describe('Starward', () => {
     b.atStart('starward');
     expect(b.log.shieldTargets.sort((x, y) => x - y)).toEqual([b.caster.id, 70, 71]);
     expect(b.log.shields.map((s) => s.amount)).toEqual([0, 1, 2].map(() => STARWARD.shield[1]));
-    expect(b.log.shields.every((s) => s.seconds >= 45)).toBe(true);
+    expect(b.log.shields.every((s) => s.seconds >= MAX_COMBAT_TICKS / TICKS_PER_SECOND)).toBe(true);
   });
 
   test('active: heals the 2 lowest-HP allies (itself included) by their own max hp', () => {
@@ -2454,7 +2454,7 @@ describe('Defender skills', () => {
     b.allies.push({ ...b.caster, id: 70, x: 2, y: 5 }, { ...b.caster, id: 71, x: 4, y: 5 }, { ...b.caster, id: 72, x: 6, y: 5 });
     b.atStart('dragonsdominion');
     expect(b.log.shieldTargets.sort((x, y) => x - y)).toEqual([0, 70, 71]);
-    expect(b.log.shields.every((s) => s.amount === 2000 * DRAGONS_DOMINION.lava[0] && s.seconds >= 45)).toBe(true);
+    expect(b.log.shields.every((s) => s.amount === 2000 * DRAGONS_DOMINION.lava[0] && s.seconds >= MAX_COMBAT_TICKS / TICKS_PER_SECOND)).toBe(true);
     // The shield on the ally at (2,5) breaks: the enemy at (2,4) is beside it, the one at (0,0) isn't.
     const at = b.log.shieldTargets.indexOf(70);
     b.log.shieldEnds[at]!();
@@ -3066,17 +3066,17 @@ describe('Spectral Cataclysm', () => {
     expect(blast.map((h) => h.target).sort()).toEqual(reached);
     expect(reached).not.toContain(5);
     expect(blast.every((h) => h.raw === atk * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
-    expect(b.log.hitTypes.every((t) => t === 'physical')).toBe(true);
+    expect(b.log.hitTypes.every((t) => t === 'adaptive')).toBe(true); // physical here: attack is the higher
   });
 
-  test('scales off magic attack and deals magic damage when magic attack is the higher', () => {
+  test('adaptive: scales off magic attack when it is the higher', () => {
     const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }]);
     b.caster.stats = { ...unitStats(UNIT_BY_ID.bossalpha, 1), ap: 900 };
     b.cast('spectralcataclysm');
     b.log.repeats[0].fn();
     const hits = b.log.hits;
     expect(hits.length).toBeGreaterThan(0);
-    expect(b.log.hitTypes.every((t) => t === 'magic')).toBe(true);
+    expect(b.log.hitTypes.every((t) => t === 'adaptive')).toBe(true); // lands as magic in a fight (see combat tests)
     expect(hits.filter((h) => h.effect === 'spectralcataclysm').every((h) => h.raw === 900 * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { createGame } from '../game/game';
-import type { BotLevel, Player } from '../game/types';
+import type { BotLevel, Player, PowerTier } from '../game/types';
 import { DIFFICULTIES, homeGalleryHtml, homeHtml, type HomeTab, traitDetailHtml, unitInfoHtml } from './views';
 
 // The screen before a game: Play, or browse the gallery (heroes, commanders, items, synergies).
@@ -14,6 +14,7 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
   const viewer: Player = { ...createGame(0, [{ id: 'viewer', name: '', isBot: false }]).players[0], bench: [], board: [] };
   let view: 'home' | 'gallery' = 'home';
   let tab: HomeTab = 'heroes';
+  let cardTier: PowerTier = 'blue'; // the Cards tab's tier pill
   let openUnit: string | null = null;
   let openTrait: string | null = null;
   const scrolls = new Map<string, number>();
@@ -22,7 +23,7 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
   function render(): void {
     for (const el of root.querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolls.set(el.dataset.keepScroll!, el.scrollTop);
     root.innerHTML =
-      (view === 'home' ? homeHtml(difficulty) : homeGalleryHtml(viewer, tab)) +
+      (view === 'home' ? homeHtml(difficulty) : homeGalleryHtml(viewer, tab, cardTier)) +
       (openTrait ? traitDetailHtml(openTrait, viewer, {}, false) : '') +
       (openUnit ? unitInfoHtml(openUnit, viewer) : '');
     for (const el of root.querySelectorAll<HTMLElement>('[data-keep-scroll]')) el.scrollTop = scrolls.get(el.dataset.keepScroll!) ?? 0;
@@ -61,6 +62,7 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
         if (a === 'openGallery') view = 'gallery';
         else if (a === 'home') view = 'home';
         else if (a === 'homeTab') tab = btn.dataset.tab as HomeTab;
+        else if (a === 'cardTier') cardTier = btn.dataset.tier as PowerTier;
         else if (a === 'closeUnitInfo') openUnit = null;
         else if (a === 'closeTrait') openTrait = null;
         else return;

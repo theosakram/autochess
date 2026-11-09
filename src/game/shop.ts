@@ -1,13 +1,15 @@
-import { POOL_SIZE, SHOP_ODDS } from './config';
+import { POOL_SIZE } from './config';
 import { isItemCard, itemCard } from './items';
 import { nextFloat, nextInt } from './rng';
 import { playerTraits, TRAITS } from './traits';
 import { powersOf } from './commanders';
+import { shopOdds } from './powerCards';
 import type { GameState, Player } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
 
-function pickTier(state: GameState, level: number): number {
-  const odds = SHOP_ODDS[level - 1];
+// `p`, when given, brings its Customize Recruitment cards in.
+function pickTier(state: GameState, level: number, p?: Player): number {
+  const odds = shopOdds(level, p);
   let r = nextFloat(state) * 100;
   for (let i = 0; i < odds.length; i++) {
     r -= odds[i];
@@ -18,7 +20,7 @@ function pickTier(state: GameState, level: number): number {
 
 // Weighted by remaining copies, so contested units get rarer for everyone. The player's own Johnnie
 // (Johnson) rolls with its tier as if it had a full pool that never runs out (Johnson's card adds copies): it's theirs alone.
-function drawFromTier(state: GameState, tier: number, p?: Player): string | null {
+export function drawFromTier(state: GameState, tier: number, p?: Player): string | null {
   const defs = UNITS.filter((u) => (u.shopTier ?? u.tier) === tier && u.shop !== false && (!u.locked || !!p?.unlocked?.includes(u.id)));
   const johnnie = p?.johnnie?.defId && UNIT_BY_ID[p.johnnie.defId].tier === tier ? p.johnnie.defId : null;
   const own = johnnie ? POOL_SIZE[tier] + (powersOf(p!).johnniePool ?? 0) : 0;
@@ -37,10 +39,10 @@ function drawFromTier(state: GameState, tier: number, p?: Player): string | null
   return null;
 }
 
-// `p`, when given, lets locked units it has unlocked show up.
+// `p`, when given, lets locked units it has unlocked show up, and its Customize Recruitment change the odds.
 export function drawUnit(state: GameState, level: number, p?: Player): string | null {
   // A drained tier falls back to cheaper ones rather than leaving the slot empty.
-  for (let t = pickTier(state, level); t >= 1; t--) {
+  for (let t = pickTier(state, level, p); t >= 1; t--) {
     const id = drawFromTier(state, t, p);
     if (id) return id;
   }
@@ -65,7 +67,8 @@ export function refreshShop(state: GameState, p: Player): void {
 export function shopPrice(p: Player, slot: number): number {
   const id = p.shop[slot];
   if (!id || isItemCard(id)) return 0;
-  return p.freeSlot === slot ? 0 : UNIT_BY_ID[id].price ?? UNIT_BY_ID[id].tier;
+  // Guiness's free slot; Opening Promotion's free first buy of the round.
+  return p.freeSlot === slot || p.freeBuy ? 0 : UNIT_BY_ID[id].price ?? UNIT_BY_ID[id].tier;
 }
 
 // Guiness: after the free after-fight refresh, maybe make one hero in the shop free: always while his card's

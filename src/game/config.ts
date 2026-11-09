@@ -89,7 +89,10 @@ export const EQUIPMENT_DROPS = 2;
 export const FREE_UNITS = 3;
 
 export const TICKS_PER_SECOND = 10;
-export const MAX_COMBAT_TICKS = 45 * TICKS_PER_SECOND;
+export const MAX_COMBAT_TICKS = 40 * TICKS_PER_SECOND;
+// Overtime: from this tick to the end, every second each living unit gains OVERTIME's attack speed and damage.
+export const OVERTIME_TICKS = 30 * TICKS_PER_SECOND;
+export const OVERTIME = { attackSpeed: 0.1, damageAmp: 0.1 }; // per second of overtime: +100% each by the buzzer
 export const MOVE_TICKS = 4; // ticks to cross one cell
 // hp/atk multiplier, indexed by star - 1.
 // A 4th entry for units a trait makes fight one star above 3.

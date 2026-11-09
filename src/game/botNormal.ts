@@ -5,7 +5,7 @@ import { REROLL_COST, STAR_MULT, stageRound } from './config';
 import { equipBlock } from './inventory';
 import { isItemCard, ITEMS } from './items';
 import { mergeSize } from './merge';
-import { levelUpCost } from './player';
+import { heroCapOf, levelUpCost } from './player';
 import { nextInt } from './rng';
 import { tileSeating, traitCounts, traitLevel } from './traits';
 import type { GameState, Player, Unit } from './types';
@@ -68,7 +68,7 @@ function bestTeam(p: Player, cards: Card[]): { team: Card[]; value: number } {
   const team: Card[] = cards.filter((c) => UNIT_BY_ID[c.defId].freeSlot);
   const rest = cards.filter((c) => !UNIT_BY_ID[c.defId].freeSlot);
   let value = teamValue(p, team);
-  for (let placed = 0; placed < p.level && rest.length; placed++) {
+  for (let placed = 0; placed < heroCapOf(p) && rest.length; placed++) {
     let best = -1;
     let bestValue = -Infinity;
     rest.forEach((c, i) => {
@@ -256,7 +256,7 @@ export function normalBot(state: GameState, p: Player): void {
   playTwilight(state, p);
   playBlood(state, p);
 
-  const bank = interestBank();
+  const bank = interestBank(p);
   const { stage } = stageRound(state.round);
   // Level up on the curve (or with gold to spare past the bank).
   const behind = () => p.level < (B.levelCurve[stage] ?? 10);

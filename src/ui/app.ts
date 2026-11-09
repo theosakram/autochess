@@ -4,7 +4,7 @@ import type { CombatEvent } from '../game/combat';
 import { isGameOver, resolveCombat, startRound, type Fight } from '../game/game';
 import { isAlive } from '../game/player';
 import { TRAITS } from '../game/traits';
-import type { GameState, Loc, Player } from '../game/types';
+import type { GameState, Loc, Player, PowerTier } from '../game/types';
 import { UNIT_BY_ID } from '../game/units';
 import { createMeter, meterHtml, recordEvent, type Meter, type MeterTab } from './meter';
 import { MIST_WARES } from '../game/mistShop';
@@ -19,6 +19,7 @@ import {
   graveHtml,
   mistChoiceHtml,
   mirrorPickHtml,
+  duplicatorPickHtml,
   johnnieOfferHtml,
   altarPickHtml,
   blessPickHtml,
@@ -75,6 +76,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let mistPick: number | null = null;
   // The Mirror Device picker (Kaela's dice prizes) is open.
   let mirrorOpen = false;
+  let duplicatorOpen = false;
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
   let blessOpen = false; // Lunox's blessing picker
@@ -92,6 +94,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   // What the sidebar shows beside its icons; null when collapsed.
   let railPanel: RailPanel | null = 'synergy';
   let galleryTab: GalleryTab = 'cards';
+  let cardTier: PowerTier = 'blue'; // the Cards tab's tier pill
   // Own unit shown in the right column; cleared once it's no longer owned (sold, merged away).
   let selectedUid: number | null = null;
   // Item or orb picked up in the Equipment panel, waiting for a slot to be clicked.
@@ -275,7 +278,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     const scrolled = new Map<string, [number, number]>();
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolled.set(el.dataset.keepScroll!, [el.scrollTop, el.scrollLeft]);
     slot('overlays').innerHTML = [
-      galleryOpen ? galleryHtml(p, state.chosen, galleryTab, state.powerTiers) : '',
+      galleryOpen ? galleryHtml(p, state.chosen, galleryTab, state.powerTiers, cardTier) : '',
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
@@ -283,6 +286,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       orbFor !== null && p.orbs.length ? orbChoiceHtml(p, orbFor) : '',
       mistPick !== null && p.mistShop ? mistChoiceHtml(p, mistPick) : '',
       mirrorOpen && p.mirrors ? mirrorPickHtml(p) : '',
+      duplicatorOpen && p.duplicators ? duplicatorPickHtml(p) : '',
       altarOpen ? altarPickHtml(p, altarOpen) : '',
       blessOpen && p.twilight?.holder === null ? blessPickHtml(p) : '',
       essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
@@ -474,6 +478,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'useMirror') {
         mirrorOpen = false;
         dispatch({ type: 'useMirror', unit: Number(btn.dataset.unit) });
+      } else if (a === 'openDuplicator' || a === 'closeDuplicator') {
+        duplicatorOpen = a === 'openDuplicator';
+        render();
+      } else if (a === 'useDuplicator') {
+        duplicatorOpen = false;
+        dispatch({ type: 'useDuplicator', item: Number(btn.dataset.item) });
       } else if (a === 'toggleSkill') {
         skillOpen = !skillOpen;
         skillFor = selectedUid;
@@ -547,6 +557,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'openGallery' || a === 'closeGallery') showGallery(a === 'openGallery');
       else if (a === 'galleryTab') {
         galleryTab = btn.dataset.tab as GalleryTab;
+        render();
+      } else if (a === 'cardTier') {
+        cardTier = btn.dataset.tier as PowerTier;
         render();
       }
       else if (a === 'closeUnit') selectUnit(null);

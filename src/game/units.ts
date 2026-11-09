@@ -150,7 +150,21 @@ export const JOHNNIES: UnitDef[] = FACTIONS.flatMap((f) =>
   ROLES.map((r) => ({ ...JOHNNIE, id: johnnieId(f, r), traits: [f, r], attackTicks: ROLE_TICKS[r] ?? JOHNNIE.attackTicks })),
 );
 
-export const UNIT_BY_ID: Record<string, UnitDef> = Object.fromEntries([...UNITS, ...JOHNNIES].map((u) => [u.id, u]));
+// Turret of Guardians (a gold power card): a unit with one faction and one role (any pair, as Johnnie's) and a
+// 4-gold hero's stats. Never walks and can't be moved by enemies; shoots across the board. Takes no board slot and
+// can't be sold. Stars up with time (see turrets in powerCards), never by copies. Kept out of UNITS, like the Johnnies.
+export const turretId = (faction: string, role: string) => `turret-${faction}-${role}`;
+const TURRET: Omit<UnitDef, 'id' | 'traits'> = {
+  name: 'Turret', tier: 4, price: 0, turret: true, rooted: true, freeSlot: true, shop: false,
+  hp: 3100, atk: 145, ap: 145, armor: 24, mr: 24, mana: 60, range: 12, attackTicks: 13,
+  starStats: { hp: [3100, 5580, 13795], atk: [145, 220, 325], ap: [145, 220, 325] },
+};
+const MAGIC_ROLES = new Set([mage.id, stargazer.id]);
+export const TURRETS: UnitDef[] = FACTIONS.flatMap((f) =>
+  ROLES.map((r) => ({ ...TURRET, id: turretId(f, r), traits: [f, r], attackTicks: ROLE_TICKS[r] ?? TURRET.attackTicks, ...(MAGIC_ROLES.has(r) && { attackType: 'magic' as const }) })),
+);
+
+export const UNIT_BY_ID: Record<string, UnitDef> = Object.fromEntries([...UNITS, ...JOHNNIES, ...TURRETS].map((u) => [u.id, u]));
 
 // Gold to buy a unit, and what one copy sells for.
 export const unitPrice = (defId: string) => UNIT_BY_ID[defId].price ?? UNIT_BY_ID[defId].tier;

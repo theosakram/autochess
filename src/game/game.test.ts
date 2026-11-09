@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { formation } from './formation';
-import { applyAction, type Action } from './actions';
+import { applyAction, trimBoard, type Action } from './actions';
 import { BASE_REWARD, BENCH_SIZE, BOARD_COLS, BOARD_ROWS, FREE_UNITS, MAX_LEVEL, POOL_SIZE, REROLL_COST, SHOP_ODDS, START_LEVEL } from './config';
-import { boardCount, interest, levelUpCost, roundIncome } from './player';
+import { boardCount, heroCapOf, interest, levelUpCost, roundIncome } from './player';
 import { runBot } from './bot';
 import { createGame, resolveCombat, rollPowerTiers, startRound } from './game';
 import { copiesOf } from './merge';
@@ -133,10 +133,12 @@ describe('shop', () => {
 });
 
 describe('board', () => {
-  test('board is capped at player level', () => {
+  test('the board may go past the level limit; the fight start trims it', () => {
     const state = newGame();
     const p = you(state);
     p.level = 1;
+    p.board.fill(null);
+    p.bench.fill(null);
     p.bench[0] = { uid: 900, defId: 'footman', star: 1 };
     p.bench[1] = { uid: 901, defId: 'archer', star: 1 };
     const move = (i: number, to: number): Action => ({
@@ -145,12 +147,37 @@ describe('board', () => {
       to: { area: 'board', index: to },
     });
     expect(applyAction(state, p.id, move(0, 0)).ok).toBe(true);
-    expect(applyAction(state, p.id, move(1, 1)).ok).toBe(false);
-    expect(p.bench[1]?.uid).toBe(901);
-    // Swapping into an occupied cell keeps the count, so it's allowed.
-    expect(applyAction(state, p.id, move(1, 0)).ok).toBe(true);
-    expect(p.board[0]?.uid).toBe(901);
-    expect(p.bench[1]?.uid).toBe(900);
+    expect(applyAction(state, p.id, move(1, 1)).ok).toBe(true);
+    expect(boardCount(p)).toBe(2);
+    trimBoard(state, p);
+    expect(boardCount(p)).toBe(1);
+    expect(p.bench.filter(Boolean)).toHaveLength(1);
+  });
+
+  test('trimming: the weakest (lowest star, then cheapest) to the bench; sold when the bench is full', () => {
+    const state = newGame();
+    const p = you(state);
+    p.level = 2;
+    p.board.fill(null);
+    p.bench.fill(null);
+    p.board[0] = { uid: 900, defId: 'archer', star: 2 };
+    p.board[1] = { uid: 901, defId: 'footman', star: 1 }; // 1 cost
+    p.board[2] = { uid: 902, defId: 'natalie', star: 1 }; // 2 cost
+    trimBoard(state, p);
+    expect(p.bench.find(Boolean)?.uid).toBe(901);
+    expect(p.board.some((u) => u?.uid === 900)).toBe(true);
+
+    // Bench full: sold, its copies back to the pool.
+    p.level = 1;
+    for (let i = 0; i < p.bench.length; i++) p.bench[i] ??= { uid: 950 + i, defId: 'imp', star: 2 };
+    const left = p.board.find((u) => u && u.uid !== 900)!;
+    const gold = p.gold;
+    const pool = state.pool[left.defId];
+    trimBoard(state, p);
+    expect(boardCount(p)).toBe(1);
+    expect(p.board.some((u) => u?.uid === left.uid)).toBe(false);
+    expect(state.pool[left.defId]).toBe(pool + 1);
+    expect(p.gold).toBe(gold + UNIT_BY_ID[left.defId].tier);
   });
 
   test('rejects out-of-range locations', () => {
@@ -242,10 +269,10 @@ describe('invariants', () => {
       applyAction(state, p.id, actions[nextInt(fuzz, actions.length)]);
       if (i % 50 === 0) {
         resolveCombat(state);
+        // Trimmed to the limit for the fight. Free-slot units (Plane Wanderers) don't count toward it.
+        for (const pl of state.players) expect(boardCount(pl)).toBeLessThanOrEqual(heroCapOf(pl));
         startRound(state);
       }
-      // Free-slot units (Plane Wanderers) don't count toward the limit.
-      for (const pl of state.players) expect(boardCount(pl)).toBeLessThanOrEqual(pl.level);
     }
     expect(totalCopies(state)).toBe(POOL_TOTAL);
     expect(Object.values(state.pool).every((n) => n >= 0)).toBe(true);
@@ -332,7 +359,7 @@ describe('economy', () => {
   });
 
   test('interest is +2 per 10 gold, capped at +4', () => {
-    expect([0, 9, 10, 19, 20, 35, 99].map(interest)).toEqual([0, 0, 2, 2, 4, 4, 4]);
+    expect([0, 9, 10, 19, 20, 35, 99].map((g) => interest(g))).toEqual([0, 0, 2, 2, 4, 4, 4]);
   });
 
   test('level up buys exactly the missing xp, in one click', () => {

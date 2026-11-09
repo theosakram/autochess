@@ -1,13 +1,14 @@
 import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type IceArrowPower, type WardPower } from './commanders';
-import { attackManaOf, BERSERK_SECONDS, berserkOf, kamikazeOf, backManaOf, castRefundOf, sharpshooterOf } from './powerCards';
+import { DISCO_FEVER, discoOf, DIVINE_EXECUTION, executeOf, sharpArmoryOf } from './powerCards';
+import { AFTERSHOCK, BLAZING_VALOR, CRITICAL_SPELLCRAFT, CUTTHROAT, HAIL_OF_SHOTS, KO_PUNCH, PERKS, perksOf, STAR_CHORUS, WHIRL_OF_CARNAGE, antiHealOf, ASTRAL_JUDGEMENT, attackManaOf, CRUSHING_CLAW, crushingClawOf, judgementOf, DARK_BLADE_SECONDS, dragonShieldOf, fortifyOf, BERSERK_SECONDS, berserkOf, kamikazeOf, backManaOf, castRefundOf, sharpshooterOf } from './powerCards';
 import { essenceTriggers } from './essence';
-import { stageOf, BOARD_COLS, BOARD_ROWS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MOVE_TICKS, TICKS_PER_SECOND } from './config';
+import { stageOf, BOARD_COLS, BOARD_ROWS, MANA_PER_ATTACK, MANA_PER_HIT_TAKEN, MAX_COMBAT_TICKS, MAX_ITEMS_PER_UNIT, MOVE_TICKS, OVERTIME, OVERTIME_TICKS, TICKS_PER_SECOND } from './config';
 import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, type Side, type Point } from './grid';
-import { activeItems, fieldStats, heldBy, leadsOf } from './inventory';
+import { activeItems, fieldStats, heldBy, heroTraits, leadsOf, slotsUsed } from './inventory';
 import { EQUIPMENT, ITEMS, type HealingSpring, type LowHpFury, type StackingPassive } from './items';
 import { nextFloat, nextInt, shuffle } from './rng';
 import { lineThrough, SKILLS, type SkillApi } from './skills';
-import { applyMods, attackInterval, BURN_SECONDS, type DamageType, type Stats, type StatKey, baseStats } from './stats';
+import { adaptivePower, adaptiveType, applyMods, attackInterval, BURN_SECONDS, type DamageType, type Stats, type StatKey, baseStats } from './stats';
 import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -33,6 +34,8 @@ export interface Fighter {
   orb: string | null; // trait its player's Magic Orb boosts through this unit type
   mistOrbs: string[]; // traits of the Mist orbs it holds
   copies?: number; // Alice's Blood Pact hero: copies piled in (its red stars)
+  merc?: boolean; // Rogue Mercenary: shown with its marker
+  signature?: boolean; // a hero card's hero: shown with its marker
 }
 
 // Mana values are after the event, rounded for display. Regen between events isn't logged.
@@ -121,15 +124,30 @@ interface SimFighter extends Fighter {
   refund: number; // Angela's protection: share of max mana regained after each cast
   loveBeam: { every: number; heal: number; damage: number } | null; // Angela's card: every `every` ticks
   castMana: number; // flat mana regained after each cast (Purple Buff)
-  attackMana: number; // Magic Surge: bonus mana on every basic attack
+  attackMana: number; // Magic Immersion: bonus mana on every basic attack
   chill: { effect: string; radius: number; attackSpeed: number; linger: number } | null; // Dominance Ice aura
   hurtMana: number; // Dominance Ice: extra share of mana from taking hits
   deter: { effect: string; perStack: number; max: number; seconds: number } | null; // Antique Cuirass
   deterStacks: { n: number; until: number }; // Deter stacks on this unit (as an attacker)
   regen: number; // Guardian Helmet: share of max hp healed every second
-  sharpshooter: number; // Sharpshooter: share more damage per tile between it and its target
-  kamikaze: number; // Kamikaze: share of max hp blasted at the enemies around it when it dies
-  berserk: { pct: number; atk: number; ap: number } | null; // Berserk: share of its starting atk/ap gained each second
+  sharpshooter: number; // Dimensional Shoot: share more damage per tile between it and its target
+  // Trait perks from power cards (null: none). quakes: Aftershocks already set off; valor: Blazing Valor seconds
+  // gained and what it's a share of; hail: Hail of Shots attack speed it has now.
+  perks: {
+    ko: boolean;
+    quakes: number | null;
+    valor: { seconds: number; hp: number; atk: number; ap: number } | null;
+    whirl: boolean;
+    hail: number | null;
+    chorus: boolean;
+    cutthroat: number | null; // the tick its next enhanced attack is ready
+    spellCrit: boolean;
+  };
+  judgement: { readyAt: number; tick: number } | null; // Astral Judgement (an Astral Sovereign): next ready tick, and the tick it last fired
+  fortify: number; // Fortified Defense: shield it gives itself and its left/right neighbours at the start
+  dragonShield: number; // Valor's Embrace: share of a fallen ally's max hp it gets as a shield (Dragon Altar heroes)
+  kamikaze: number; // Meltdown Armor: share of max hp blasted at the enemies around it when it dies
+  berserk: { pct: number; atk: number; ap: number } | null; // Rising Fury: share of its starting atk/ap gained each second
   revive: number; // Ruby's Cloak: share of max hp it gets back up with, until used (0: none)
   rageMark: { effect: string; heal: number } | null; // Ruby's Cloak: its basic attacks mark their target
   marked: number | null; // the enemy its Rage Mark is on
@@ -138,6 +156,7 @@ interface SimFighter extends Fighter {
   arrows: number; // basic attacks toward the next volley
   killHeal: number; // Ice Longbow: a kill heals the lowest ally this share of its max hp
   killer: number | null; // the fighter whose hit first left it at 0 hp
+  lastDealer: number | null; // the enemy that last damaged it (Divine Execution)
   huntNext: number; // tick its next Hunt strike is ready
   vengeance: number; // Blade Armor: share of basic-attack damage sent back to the attacker
   thunder: { effect: string; every: number; share: number; radius: number } | null; // Thunder Belt
@@ -162,6 +181,8 @@ interface SimFighter extends Fighter {
   buffs: { effect: string; mods: { stat: StatKey; add: number }[]; until: number }[]; // timed, from skills
   busyUntil: number; // a skill is using it (e.g. a rampage): no attacking or walking before this tick
   rooted: boolean; // never walks (see SkillApi.stance)
+  anchored: boolean; // can't be moved by anything (Turret)
+  execute: number; // Divine Execution: its damage finishes enemies under this share of max hp
   noBasic: boolean; // never basic-attacks, only casts when its mana is full (see SkillApi.stance)
   guardUntil: number; // takes less damage before this tick
   guardReduction: number;
@@ -228,7 +249,13 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
   const rage = berserkOf(p);
   const blast = kamikazeOf(p);
   const sharp = sharpshooterOf(p);
+  const darkBlade = antiHealOf(p);
+  const fortify = fortifyOf(p);
+  const perks = perksOf(p);
+  const dragonShield = dragonShieldOf(p);
   const sovereign = backManaOf(p);
+  const armory = sharpArmoryOf(p);
+  const execute = executeOf(p);
   const blessing = castRefundOf(p);
   const beaming = beam ? protectedUids(p) : new Set<number>();
   const tiles = traitTiles(levels);
@@ -245,6 +272,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       defId: u.defId,
       star: u.star,
       ...(u.copies !== undefined && { copies: u.copies }),
+      ...(u.merc && { merc: true }),
+      ...(u.signature && { signature: true }),
       ...boardToGrid(side, cell),
       hp: stats.hp,
       maxHp: stats.hp,
@@ -270,16 +299,24 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       spring: items.map(({ id }) => ITEMS[id].spring).find((s) => s) ?? null,
       fury: items.map(({ id }) => ITEMS[id].lowHpFury).find((s) => s) ?? null,
       engulf: Math.max(0, ...items.map(({ id }) => ITEMS[id].engulf ?? 0)),
-      lifebane: items.map(({ id }) => ITEMS[id].lifebane).find((s) => s) ?? null,
+      // Sea Halberd's Lifebane and Dark Blade: the stronger cut, the longer time.
+      lifebane: ((own) =>
+        darkBlade ? { cut: Math.max(own?.cut ?? 0, darkBlade), seconds: Math.max(own?.seconds ?? 0, DARK_BLADE_SECONDS) } : own)(
+        items.map(({ id }) => ITEMS[id].lifebane).find((s) => s) ?? null,
+      ),
       antiHeal: { cut: 0, until: 0 },
       scorch: items.map(({ id }) => ITEMS[id].scorch).find((s) => s) ?? null,
       freeze: items.map(({ id }) => ITEMS[id].freeze).find((s) => s) ?? null,
       frozen: { until: 0, healPerTick: 0 },
       hexes: [...new Map(items.flatMap(({ id }) => (ITEMS[id].skillHex ? [[ITEMS[id].skillHex!.effect, ITEMS[id].skillHex!] as const] : []))).values()],
       ccImmuneUntil: Math.round(Math.max(0, ...items.map(({ id }) => ITEMS[id].ccImmune ?? 0)) * TICKS_PER_SECOND),
-      stacking: [...new Map(items.flatMap(({ id }) => (ITEMS[id].stacking ? [[ITEMS[id].stacking!.effect, ITEMS[id].stacking!] as const] : []))).values()].map(
-        (def) => ({ def, n: 0, until: 0 }),
-      ),
+      stacking: [
+        ...[...new Map(items.flatMap(({ id }) => (ITEMS[id].stacking ? [[ITEMS[id].stacking!.effect, ITEMS[id].stacking!] as const] : []))).values()],
+        // Sharp Armory: back-row heroes build attack and magic attack with each basic attack, for the fight.
+        ...(armory && cell >= BOARD_COLS * (BOARD_ROWS - 1)
+          ? [{ effect: 'sharpArmory', on: 'basic' as const, perStack: [{ stat: 'atk' as const, add: stats.atk * armory.pct }, { stat: 'ap' as const, add: stats.ap * armory.pct }], atMax: [], max: armory.max, seconds: Infinity }]
+          : []),
+      ].map((def) => ({ def, n: 0, until: 0 })),
       // One per item id (the highest tier): a second copy doesn't fire again.
       pulses: [...new Map(items.map(({ id, tier }) => [id, tier] as const).sort((a, b) => a[1] - b[1])).entries()].flatMap(([id, tier]) => {
         const pulse = ITEMS[id].pulse?.(tier);
@@ -314,6 +351,22 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       regen: Math.max(0, ...items.map(({ id }) => ITEMS[id].regen ?? 0)),
       berserk: rage ? { pct: rage, atk: stats.atk, ap: stats.ap } : null,
       kamikaze: blast,
+      perks: ((mine: Set<string>) => {
+        const has = (k: keyof typeof PERKS) => perks.has(k) && mine.has(PERKS[k]);
+        return {
+          ko: has('koPunch'),
+          quakes: has('aftershock') ? 0 : null,
+          valor: has('blazingValor') ? { seconds: 0, hp: stats.hp, atk: stats.atk, ap: stats.ap } : null,
+          whirl: has('whirlOfCarnage'),
+          hail: has('hailOfShots') ? 0 : null,
+          chorus: has('starChorus'),
+          cutthroat: has('cutthroat') ? Math.round(CUTTHROAT.every * TICKS_PER_SECOND) : null,
+          spellCrit: has('criticalSpellcraft'),
+        };
+      })(heroTraits(p, u, items)),
+      judgement: judgementOf(p) && leadsOf(p, levels, u.uid).includes('astral') ? { readyAt: 0, tick: -1 } : null,
+      fortify: fortify && slotsUsed(p, u.uid) >= MAX_ITEMS_PER_UNIT ? fortify : 0,
+      dragonShield: dragonShield && heroTraits(p, u, items).has('dragonaltar') ? dragonShield : 0, // orbs count too
       sharpshooter: sharp,
       revive: Math.max(0, ...items.map(({ id }) => ITEMS[id].revive ?? 0)),
       rageMark: items.map(({ id }) => ITEMS[id].rageMark).find((s) => s) ?? null,
@@ -323,6 +376,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       arrows: 0,
       killHeal: Math.max(0, ...items.map(({ id }) => ITEMS[id].killHeal ?? 0)),
       killer: null,
+      lastDealer: null,
       huntNext: Math.round((items.map(({ id }) => ITEMS[id].hunt).find((s) => s)?.every ?? 0) * TICKS_PER_SECOND),
       vengeance: Math.max(0, ...items.map(({ id }) => ITEMS[id].vengeance ?? 0)),
       thunder: items.map(({ id }) => ITEMS[id].thunder).find((s) => s) ?? null,
@@ -334,7 +388,9 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       taunt: null,
       buffs: [],
       busyUntil: 0,
-      rooted: false,
+      rooted: !!def.rooted,
+      anchored: !!def.rooted,
+      execute,
       noBasic: false,
       guardUntil: 0,
       guardReduction: 0,
@@ -386,6 +442,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   const stage = stageOf(opts.round ?? 1);
   deploy(withCopies(rng, home), 0, traits[0], scale[0], chosen, fighters, stage);
   deploy(withCopies(rng, away), 1, traits[1], scale[1], chosen, fighters, stage);
+  const disco = [discoOf(home), discoOf(away)]; // Disco Fever, per side
   const start = fighters.map(snapshot);
 
   const occupied = new Int16Array(GRID_W * GRID_H).fill(-1);
@@ -400,7 +457,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   };
 
   // The one place hp goes down. `dealer` is the unit dealing it (credited for it), or null for trait damage.
-  function damage(target: SimFighter, raw: number, type: DamageType, dealer: SimFighter | null): number {
+  function damage(target: SimFighter, raw: number, given: DamageType, dealer: SimFighter | null): number {
+    // Adaptive: physical or magic by the dealer's higher stat, right now (physical without a dealer).
+    const type = given === 'adaptive' ? (dealer ? adaptiveType(dealer.stats) : 'physical') : given;
     if (t < target.frozen.until) return 0;
     // Blade of Despair: a low target fuels the dealer before this hit is worked out.
     if (dealer?.fury && target.hp < target.maxHp * dealer.fury.below) {
@@ -413,7 +472,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Magic penetration ignores a share of what magic resist is left.
     const defense = type === 'magic' && dealer && raw0 > 0 ? raw0 * (1 - Math.min(1, dealer.stats.magicPen)) : raw0;
     const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
-    // Sharpshooter: tiles between dealer and target (none when next to each other).
+    // Dimensional Shoot: tiles between dealer and target (none when next to each other).
     const range = dealer?.sharpshooter ? 1 + dealer.sharpshooter * Math.max(0, dist(dealer, target) - 1) : 1;
     const dealt = Math.round(raw * (1 + amp) * (1 + target.stats.damageTaken) * defenseMult(defense) * guard * range);
     // Shield layers soak it first, newest first.
@@ -434,6 +493,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Winter Crown: a lethal hit freezes it at 1 hp instead.
     const lethal = target.freeze !== null && dealt - absorbed >= target.hp;
     target.hp = lethal ? 1 : Math.max(0, target.hp - (dealt - absorbed));
+    if (dealer && dealer.side !== target.side) target.lastDealer = dealer.id;
     if (target.hp <= 0 && dealer && target.killer === null) target.killer = dealer.id;
     if (lethal) freezeNow(target);
     if (dealer) dealer.dealt += dealt;
@@ -457,6 +517,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   function reactToDamage(target: SimFighter, t: number): void {
+    aftershock(target, t);
     if (target.hp <= 0 && target.revive > 0) getUp(target, t);
     if (target.hp > 0) checkExecute(target, t);
     if (target.hp > 0) checkWard(target, t);
@@ -483,6 +544,14 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         if (f.hp > 0 && f.rageMark) api.heal(f, f.maxHp * f.rageMark.heal);
       }
       kamikazeBlast(target, t);
+      // Valor's Embrace: a fallen hero (not a summon) shields its side's Dragon Altar heroes.
+      if (target.owner === null) {
+        for (const f of fighters) {
+          if (f.side !== target.side || f.hp <= 0 || !f.dragonShield) continue;
+          f.shields.push({ effect: 'valorsEmbrace', amount: Math.round(target.maxHp * f.dragonShield), until: MAX_COMBAT_TICKS, onEnd: null });
+          shieldEvent(f);
+        }
+      }
       for (const m of fighters) {
         // Mirror summons vanish with their owner; fighter summons fight on.
         if (m.owner !== target.id || m.hp <= 0 || !m.mirror) continue;
@@ -532,7 +601,11 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       victim.shred = Math.max(victim.shred, s.stats.armorShred);
       crit = s.stats.critChance > 0 && nextFloat(rng) < s.stats.critChance;
     }
-    const dealt = damage(victim, raw * (1 + s.stats.skillAmp) * (basic ? 1 + s.stats.basicAmp : 1) * (crit ? s.stats.critDamage : 1), type, s);
+    // Critical Spellcraft: a Mage's skill damage may crit, for its own multiplier (rolled only for heroes with it).
+    const spellCrit = !basic && s.perks.spellCrit && nextFloat(rng) < CRITICAL_SPELLCRAFT.chance;
+    const critMult = crit ? s.stats.critDamage : spellCrit ? CRITICAL_SPELLCRAFT.mult : 1;
+    crit ||= spellCrit;
+    const dealt = damage(victim, raw * (1 + s.stats.skillAmp) * (basic ? 1 + s.stats.basicAmp : 1) * critMult, type, s);
     events.push({ t, type: 'effect', effect, by: s.id, target: victim.id, damage: dealt, hp: victim.hp, ...(crit && { crit: true }) });
     afterDamage(victim, t);
     leech(s, dealt, basic, t);
@@ -541,7 +614,23 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       ignite(s, victim);
     } else hex(s, victim);
     if (basic && dealt > 0) sheepOnHit(s, victim);
+    judgementBolt(s, victim);
     return victim.hp <= 0;
+  }
+
+  // Astral Judgement: a skill hit starts a Judgement (then ASTRAL_JUDGEMENT.cooldown); every enemy that skill
+  // hits on that tick takes a bolt of pure damage.
+  function judgementBolt(s: SimFighter, victim: SimFighter): void {
+    const j = s.judgement;
+    if (!j || victim.hp <= 0 || s.hp <= 0) return;
+    if (t >= j.readyAt) {
+      j.tick = t;
+      j.readyAt = t + Math.round(ASTRAL_JUDGEMENT.cooldown * TICKS_PER_SECOND);
+    }
+    if (t !== j.tick) return;
+    const dealt = damage(victim, Math.max(s.stats.atk, s.stats.ap) * ASTRAL_JUDGEMENT.atk, 'pure', s);
+    events.push({ t, type: 'effect', effect: 'astralJudgement', by: s.id, target: victim.id, damage: dealt, hp: victim.hp });
+    afterDamage(victim, t);
   }
 
   // Item hexes (e.g. Ice Queen Wand's Ice Bound): skill damage puts them on the target, refreshed per hit.
@@ -632,7 +721,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const e of hit) afterDamage(e, t);
   }
 
-  // Kamikaze: a hero that dies blasts the enemies on the tiles around it with a share of its max hp, magic.
+  // Meltdown Armor: a hero that dies blasts the enemies on the tiles around it with a share of its max hp, magic.
   // A kill can set off the next blast.
   function kamikazeBlast(f: SimFighter, t: number): void {
     if (!f.kamikaze) return;
@@ -642,6 +731,90 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       events.push({ t, type: 'effect', effect: 'kamikaze', by: f.id, target: e.id, damage: dealt, hp: e.hp });
     }
     for (const e of hit) afterDamage(e, t);
+  }
+
+  // Aftershock: a Defender sets one off for every AFTERSHOCK.every of its max hp lost (the killing blow too).
+  function aftershock(f: SimFighter, t: number): void {
+    if (f.perks.quakes === null) return;
+    const due = Math.min(Math.floor(1 / AFTERSHOCK.every), Math.floor((1 - Math.max(0, f.hp) / f.maxHp) / AFTERSHOCK.every + 1e-9));
+    while (f.perks.quakes < due) {
+      f.perks.quakes++;
+      const hit = fighters.filter((e) => e.side !== f.side && e.hp > 0 && dist(e, f) <= 1);
+      for (const e of hit) {
+        const dealt = damage(e, f.maxHp * AFTERSHOCK.share, 'magic', f);
+        events.push({ t, type: 'effect', effect: 'aftershock', by: f.id, target: e.id, damage: dealt, hp: e.hp });
+      }
+      for (const e of hit) afterDamage(e, t);
+    }
+  }
+
+  // Whirl of Carnage and Star Chorus: what a cast sets off.
+  function castPerks(f: SimFighter): void {
+    if (f.hp <= 0) return;
+    if (f.perks.whirl) {
+      const hit = fighters.filter((e) => e.side !== f.side && e.hp > 0 && dist(e, f) <= 1);
+      for (const e of hit) {
+        const dealt = damage(e, f.stats.atk * WHIRL_OF_CARNAGE.atk, 'physical', f);
+        events.push({ t, type: 'effect', effect: 'whirlOfCarnage', by: f.id, target: e.id, damage: dealt, hp: e.hp });
+      }
+      for (const e of hit) afterDamage(e, t);
+    }
+    if (f.perks.chorus) {
+      const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      const hit = shuffle(rng, foes).slice(0, STAR_CHORUS.targets);
+      for (const e of hit) {
+        const dealt = damage(e, f.stats.ap * STAR_CHORUS.ap, 'magic', f);
+        events.push({ t, type: 'effect', effect: 'starChorus', by: f.id, target: e.id, damage: dealt, hp: e.hp });
+      }
+      for (const e of hit) afterDamage(e, t);
+    }
+  }
+
+  // Once a second: Blazing Valor grows while shielded (to its cap and bonus); Hail of Shots fades.
+  // Disco Fever: every few seconds from the start, random enemies of a side holding it dance (can't act).
+  function fireDisco(t: number): void {
+    if (t % Math.round(DISCO_FEVER.every * TICKS_PER_SECOND) !== 0) return;
+    for (const side of [0, 1] as const) {
+      if (!disco[side]) continue;
+      const dj = fighters.find((f) => f.side === side && f.hp > 0);
+      if (!dj) continue;
+      const floor = shuffle(rng, fighters.filter((f) => f.side !== side && f.hp > 0)).slice(0, DISCO_FEVER.dancers);
+      for (const e of floor) disable(e, DISCO_FEVER.seconds, dj, 'disco');
+    }
+  }
+
+  // Overtime: from OVERTIME_TICKS, every second, every living unit gets faster and hits harder (to end stalls).
+  function fireOvertime(t: number): void {
+    if (t < OVERTIME_TICKS || (t - OVERTIME_TICKS) % TICKS_PER_SECOND !== 0) return;
+    for (const f of fighters) {
+      if (f.hp <= 0) continue;
+      f.stats = applyMods(f.stats, [{ stat: 'attackSpeed', add: OVERTIME.attackSpeed }, { stat: 'damageAmp', add: OVERTIME.damageAmp }]);
+      if (t === OVERTIME_TICKS) events.push({ t, type: 'buff', id: f.id, by: f.id, effect: 'overtime' });
+    }
+  }
+
+  function firePerks(t: number): void {
+    if (t % TICKS_PER_SECOND !== 0) return;
+    for (const f of fighters) {
+      if (f.hp <= 0) continue;
+      const v = f.perks.valor;
+      if (v && t > 0 && v.seconds < BLAZING_VALOR.seconds && f.shields.some((l) => t < l.until && l.amount > 0)) {
+        v.seconds++;
+        const share = BLAZING_VALOR.perSecond + (v.seconds === BLAZING_VALOR.seconds ? BLAZING_VALOR.bonus : 0);
+        const hp = Math.round(v.hp * share);
+        f.maxHp += hp;
+        f.hp += hp;
+        f.stats = applyMods(f.stats, [{ stat: 'atk', add: v.atk * share }, { stat: 'ap', add: v.ap * share }]);
+        events.push({ t, type: 'buff', id: f.id, by: f.id, effect: 'blazingValor', until: t + TICKS_PER_SECOND });
+      }
+      if (f.perks.hail !== null) {
+        const now = HAIL_OF_SHOTS.speed * Math.max(0, 1 - t / (HAIL_OF_SHOTS.seconds * TICKS_PER_SECOND));
+        if (now !== f.perks.hail) {
+          f.stats = applyMods(f.stats, [{ stat: 'attackSpeed', add: now - f.perks.hail }]);
+          f.perks.hail = now;
+        }
+      }
+    }
   }
 
   // Miya's Ice Arrow Blessing: every `every`th basic attack, arrows at the nearest enemies (the target among
@@ -743,7 +916,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const f of regenerators) if (f.hp > 0) api.heal(f, f.maxHp * f.regen);
   }
 
-  // Berserk: living heroes gain a share of their starting attack and magic attack once a second, for the
+  // Rising Fury: living heroes gain a share of their starting attack and magic attack once a second, for the
   // first BERSERK_SECONDS seconds.
   const berserkers = fighters.filter((f) => f.berserk);
   function fireBerserk(t: number): void {
@@ -826,23 +999,37 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     shieldEvent(f);
   }
 
-  // Passive executes (see SkillDef.executeBelow): a living executor next to a damaged enemy that's
-  // under its threshold finishes it off, ignoring shields.
+  // Executes, ignoring shields: passive ones (see SkillDef.executeBelow), a living executor next to a damaged
+  // enemy under its threshold; and Divine Execution, whoever last hurt it holding the card.
   const executors = fighters.filter((f) => {
     const skill = UNIT_BY_ID[f.defId].skill;
     return skill && SKILLS[skill].executeBelow;
   });
+  function execute(by: SimFighter, target: SimFighter, effect: string, t: number): void {
+    const dealt = target.hp;
+    target.hp = 0;
+    if (target.killer === null) target.killer = by.id;
+    by.dealt += dealt;
+    events.push({ t, type: 'effect', effect, by: by.id, target: target.id, damage: dealt, hp: 0 });
+    reactToDamage(target, t);
+  }
   function checkExecute(target: SimFighter, t: number): void {
     for (const ex of executors) {
       if (ex.hp <= 0 || ex.side === target.side || dist(ex, target) > 1) continue;
       const below = SKILLS[UNIT_BY_ID[ex.defId].skill!].executeBelow![ex.star - 1];
       if (target.hp >= target.maxHp * below) continue;
-      const dealt = target.hp;
-      target.hp = 0;
-      ex.dealt += dealt;
-      events.push({ t, type: 'effect', effect: 'execute', by: ex.id, target: target.id, damage: dealt, hp: 0 });
-      reactToDamage(target, t);
-      return;
+      return execute(ex, target, 'execute', t);
+    }
+    // Divine Execution (never through Winter Crown's freeze): the executed one's neighbours take true damage.
+    const by = target.lastDealer === null ? null : fighters[target.lastDealer];
+    if (!by?.execute || t < target.frozen.until || target.hp >= target.maxHp * by.execute) return;
+    const around = fighters.filter((e) => e !== target && e.side === target.side && e.hp > 0 && dist(e, target) <= 1);
+    execute(by, target, 'divineExecution', t);
+    for (const e of around) {
+      if (e.hp <= 0) continue;
+      const dealt = damage(e, DIVINE_EXECUTION.splash, 'pure', by);
+      events.push({ t, type: 'effect', effect: 'divineSmite', by: by.id, target: e.id, damage: dealt, hp: e.hp });
+      reactToDamage(e, t);
     }
   }
 
@@ -895,8 +1082,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     safestCell: (f) => safestCell(occupied, f, fighters.filter((e) => e.side !== f.side && e.hp > 0)),
     dashTo: (who, to) => {
       const f = fighters[who.id];
-      // Displacement: an enemy's skill moving it. Immune units stay put.
-      if (casting && casting.side !== f.side && t < f.ccImmuneUntil) return;
+      // Displacement: an enemy's skill moving it. Immune units stay put; a Turret never moves.
+      if (f.anchored || (casting && casting.side !== f.side && t < f.ccImmuneUntil)) return;
       occupied[gridIndex(f)] = -1;
       f.x = to.x;
       f.y = to.y;
@@ -1057,6 +1244,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         regen: 0,
         berserk: null,
         kamikaze: 0,
+        perks: { ko: false, quakes: null, valor: null, whirl: false, hail: null, chorus: false, cutthroat: null, spellCrit: false },
+        judgement: null,
+        fortify: 0,
+        dragonShield: 0,
         sharpshooter: 0,
         revive: 0,
         rageMark: null,
@@ -1067,6 +1258,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         arrows: 0,
         killHeal: 0,
         killer: null,
+        lastDealer: null,
         vengeance: 0,
         thunder: null,
         thunderReady: 0,
@@ -1089,6 +1281,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         buffs: [],
         busyUntil: independent ? 0 : Infinity, // a mirror never acts on its own: it only repeats its owner's hits
         rooted: false,
+        anchored: false,
+        execute: 0,
         noBasic: false,
         guardUntil: 0,
         guardReduction: 0,
@@ -1223,12 +1417,14 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       casting = f;
       SKILLS[skill].cast(api, f, target);
       casting = null;
+      castPerks(f);
     } else if (cast) {
       const dealt = damage(target, f.stats.ap * f.stats.castMult * (1 + f.stats.skillAmp), 'magic', f);
       f.mana = 0;
       hitEvent(f, target, t, 'cast', dealt, false);
       leech(f, dealt, false, t);
       hex(f, target);
+      castPerks(f);
     } else {
       fullBasicAttack(f, target, t);
     }
@@ -1276,6 +1472,15 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     vengeance(target, f, dealt);
     ignite(f, target);
     if (dealt > 0) sheepOnHit(f, target);
+    // Cutthroat: when ready, this attack adds adaptive damage, then it recharges.
+    if (f.perks.cutthroat !== null && t >= f.perks.cutthroat && target.hp > 0) {
+      f.perks.cutthroat = t + Math.round(CUTTHROAT.every * TICKS_PER_SECOND);
+      const extra = damage(target, adaptivePower(f.stats) * CUTTHROAT.adaptive, 'adaptive', f);
+      events.push({ t, type: 'effect', effect: 'cutthroat', by: f.id, target: target.id, damage: extra, hp: target.hp });
+      afterDamage(target, t);
+    }
+    // KO Punch: a chance to stun (rolled only for heroes with it).
+    if (f.perks.ko && dealt > 0 && target.hp > 0 && nextFloat(rng) < KO_PUNCH.chance) disable(target, KO_PUNCH.seconds, f, 'koPunch');
     // Its summons repeat the hit on the same target, crit and all. They copy the hit itself, not the
     // owner's damage bonuses (those are the owner's alone).
     for (const m of fighters) {
@@ -1308,6 +1513,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   // Trait pulses: each side's fire on the tick they're due, hitting every living enemy.
+  const claw = [crushingClawOf(home), crushingClawOf(away)];
   const pulses = ([0, 1] as const).flatMap((side) =>
     traitPulses(traits[side]).map(({ trait, pulse }) => ({ side, trait, pulse, every: Math.round(pulse.every * TICKS_PER_SECOND) })),
   );
@@ -1316,9 +1522,16 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       if (t === 0 || t % every !== 0 || t / every > pulse.times) continue;
       for (const target of fighters) {
         if (target.side === side || target.hp <= 0) continue;
-        const dealt = damage(target, target.maxHp * pulse.pctMaxHp, pulse.damageType, null);
+        // Crushing Claw: Skybringer lightning hits harder, as pure damage, and lowers defenses for the fight.
+        const crush = claw[side] && trait === 'skybringer';
+        const raw = target.maxHp * pulse.pctMaxHp * (crush ? 1 + CRUSHING_CLAW.damage : 1);
+        const dealt = damage(target, raw, crush ? 'pure' : pulse.damageType, null);
         events.push({ t, type: 'effect', effect: trait, target: target.id, damage: dealt, hp: target.hp });
         afterDamage(target, t);
+        if (crush && target.hp > 0 && !target.debuffs.some((d) => d.effect === 'crushingClaw')) {
+          target.debuffs.push({ effect: 'crushingClaw', armor: CRUSHING_CLAW.def, mr: CRUSHING_CLAW.def, until: MAX_COMBAT_TICKS });
+          events.push({ t, type: 'debuff', id: target.id, by: -1, effect: 'crushingClaw', armor: CRUSHING_CLAW.def, mr: CRUSHING_CLAW.def, until: MAX_COMBAT_TICKS });
+        }
       }
     }
   }
@@ -1425,6 +1638,18 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
           ally.shields.push({ effect: `${s.effect}${f.id}`, amount: Math.round(ally.maxHp * s.share), until: Math.round(s.seconds * TICKS_PER_SECOND), onEnd: null });
           shieldEvent(ally);
         }
+      }
+    }
+  }
+
+  // Fortified Defense: a hero with full item slots shields itself and its left and right neighbours for the fight.
+  function fireFortify(): void {
+    for (const f of fighters) {
+      if (!f.fortify) continue;
+      for (const ally of fighters) {
+        if (ally.side !== f.side || ally.hp <= 0 || ally.y !== f.y || Math.abs(ally.x - f.x) > 1) continue;
+        ally.shields.push({ effect: `fortify${f.id}`, amount: f.fortify, until: MAX_COMBAT_TICKS, onEnd: null });
+        shieldEvent(ally);
       }
     }
   }
@@ -1547,6 +1772,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   if (alive(0) && alive(1)) {
     fireOpeners();
     fireSideShields();
+    fireFortify();
+    firePerks(0); // Hail of Shots: its full speed from the start
+    fireDisco(0);
     fireRowBuffs();
     fireProvoke();
     fireBeasts();
@@ -1585,6 +1813,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireChills(t);
     fireRegen(t);
     fireBerserk(t);
+    firePerks(t);
+    if (t > 0) fireDisco(t);
+    fireOvertime(t);
     fireHunts(t);
     updateProvoked(t);
     expireBuffs(t);

@@ -33,6 +33,8 @@ export interface UnitDef {
   // Gets this trait's member bonuses without being a member or counting toward it (like an item bearer).
   honorary?: { trait: string; icon: string };
   attackType?: 'physical' | 'magic'; // damage type of basic attacks; physical if unset
+  rooted?: true; // never walks in a fight, and enemy skills can't move it (Turret)
+  turret?: true; // Turret of Guardians: one def per faction + role pair (see TURRETS)
   // Hand-set hp, atk and ap per star (index 0 = 1★), instead of scaling the 1★ stats by STAR_MULT.
   // A 4★ (from star bonuses) scales the 3★ values by STAR_MULT's 4★/3★ step.
   // `mana`, if given, sets max mana per star the same way (a 4★ uses the 3★ value).
@@ -44,6 +46,10 @@ export interface Unit {
   defId: string;
   star: Star;
   copies?: number; // Alice's Blood Pact: 1-star copies piled into this hero (its star follows them)
+  shortfall?: number; // copies the pool couldn't give it (Pas de Deux, Fast Promotion): never handed back to the pool
+  merc?: boolean; // Rogue Mercenary: its permanent damage and hp
+  signature?: boolean; // a hero card's 3★ hero: its permanent attack, magic attack and hp (SIGNATURE)
+  turretFrom?: number; // Turret of Guardians: the round it came; it stars up with time (TURRET_STAR_ROUNDS)
 }
 
 export interface MistOrb {
@@ -57,6 +63,7 @@ export interface Item {
   id: string; // item def id, see items/
   tier: number;
   holder: number | null; // uid of the unit holding it, null = in the inventory
+  loan?: true; // Fully Armed: lent for this round's fight only, taken back after it
 }
 
 // An applied Magic Orb: every fielded unit of this type adds +1 to this trait.
@@ -100,9 +107,16 @@ export interface Player {
   cardOffer?: string[]; // commander cards on offer, waiting for a pick
   cardRerolled?: boolean[]; // per offer slot: its one reroll is spent
   powerCards?: { id: string; tier: PowerTier }[]; // power cards picked (see powerCards.ts)
+  chestTriggers?: import('./powerCards').ChestTrigger[]; // Counter Action, Apex Weaponry: chests waiting on a condition
+  signatures?: string[]; // hero cards' 3★ heroes waiting for room
+  rift?: { defId: string; given: boolean }; // Emergency Rift: the second Plane Wanderer (handed out once there's room)
+  levelCap?: number; // Territory Agreement: the highest level this player can reach
+  transmutes?: number[]; // Transmutation: the rounds its cards turn into random gold cards
+  refreshCycles?: { every: number; from: number }[]; // Adequate Stock: a free shop refresh every `every` rounds after round `from`
+  chestCycles?: { every: number; from: number }[]; // Cyclical Support: a chest every `every` rounds after round `from`
   payday?: { gold: number; rounds: number }[]; // Payday: gold still owed, paid with each round's income
-  shield?: number; // commander shield (Paladin): soaks hp damage first
-  factionOrbOffer?: string[]; // Faction Synergy: faction orbs to choose one from (faction trait ids)
+  shield?: number; // commander shield (Rock Solid): soaks hp damage first
+  factionOrbOffer?: string[]; // Prime Selection: faction orbs to choose one from (faction trait ids)
   freeRerolls?: number; // banked free shop refreshes (Premium Client), used before gold
   powerOffer?: { tier: PowerTier; cards: string[]; rerolled: boolean[] }; // waiting for a pick
   itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
@@ -113,13 +127,21 @@ export interface Player {
   hurt?: { taken: number; paid: number }; // damage taken toward Nana's gold, and payouts made
   trove?: { points: number; rolls: number; rolledRound: number; opens: number; lastRoll: number | null; bust: boolean }; // Kaela's Treasure Grove
   luck?: { rolled: number[]; last: string | null }; // Lucky Dice: card rolls done (by round), and the latest prize
+  promoteNext?: number; // Fast Promotion: heroes still to come 2★ when bought
   mirrors?: number; // Mirror Devices won, waiting for a unit to copy
+  duplicators?: number; // Equipment Duplicators (Copycat), waiting for an item to copy
+  bloodRefreshes?: number; // Death Oracle: shop refreshes left that cost 1 hp instead of gold
+  claim?: number; // Glorious Claim: gold stored from wins, paid on a loss or once it's full
+  refreshXpRound?: number; // Experienced Shuffle: the round its refresh XP was last given
+  turrets?: { defId: string; from: number }[]; // Turret of Guardians: turrets waiting for room
+  fortunes?: { round: number; shield: number }[]; // Shield of Fortune: on `round`, up to `shield` of the commander shield left turns to gold
   mirrorBar?: { steps: number; made: number }; // Amon's Mirror Bar: steps filled, devices it has made
   starGold?: number; // gold paid so far by Amon's card
   freya?: { trait: string | null; claimed: number[] };
   rallied?: { trait: string | null; heroes: string[] }; // Cyclops's low-hp rally, once given: the trait and heroes it gave
   heirGold?: number;
   freeSlot?: number | null; // the shop slot whose hero is free this round (Guiness), until bought or refreshed
+  freeBuy?: true; // Opening Promotion: this round's first hero bought costs nothing
   freeHeroes?: number; // Guiness's card: after-fight shops left that get a free hero // gold Cyclops's powers paid from knockouts so far // Freya: the blessed role, and the reward levels (1-3) claimed
   survivorGold?: number; // gold paid so far by Ruby's card
   streak?: number; // fights against players: +n won in a row, -n lost in a row
