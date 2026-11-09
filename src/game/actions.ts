@@ -11,9 +11,10 @@ import { cardRolls, openTrove, rollTrove } from './luckyDice';
 import { useMirror } from './mirror';
 import { DEATH_ORACLE, refreshXp, pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
 import { useDuplicator } from './duplicator';
+import { useEnhancer } from './enhancer';
 import { offer, type AltarKey } from './altar';
 import { syncPlayer } from './sync';
-import { cardItem, isItemCard, ITEMS } from './items';
+import { baseItemOf, cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
 import { absorb, bloodMerge, bloodRoom, copiesOf, pooledOf, findCopies, mergeSize, mergeUnits, nearMerge, promote, slotsOf } from './merge';
 import { addXp, boardCount, heroCapOf, isAlive, levelUpCost } from './player';
@@ -50,6 +51,7 @@ export type Action =
   | { type: 'openTrove' } // Kaela: cash in the Trove's points
   | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device from the inventory
   | { type: 'useDuplicator'; item: number } // item uid: copy it with an Equipment Duplicator from the inventory
+  | { type: 'useEnhancer'; item: number } // item uid: enhance it with one of Minos's Enhancement Charges
   | { type: 'offer'; altar: AltarKey; unit: number } // Dyroth: offer a hero (uid) on one of his altars
   | { type: 'bless'; unit: number } // Lunox: place the Twilight Blessing on a hero (uid)
   | { type: 'bloodPact'; unit: number } // Alice: use a Blood Pact on a hero (uid)
@@ -360,6 +362,8 @@ function perform(state: GameState, p: Player, action: Action): Result {
 
     case 'useDuplicator':
       return result(useDuplicator(state, p, action.item));
+    case 'useEnhancer':
+      return result(useEnhancer(p, action.item));
 
     case 'offer':
       return result(offer(state, p, action.altar, action.unit));
@@ -409,7 +413,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
 // Upgrade cards are free: they raise the matching owned item one tier, up to the shop's cap.
 function upgradeItem(p: Player, slot: number): Result {
   const itemId = cardItem(p.shop[slot]!);
-  const item = p.items.find((i) => i.id === itemId);
+  const item = p.items.find((i) => baseItemOf(i.id) === itemId); // its enhanced version too
   if (!item) return fail(`You don't own ${ITEMS[itemId].name}`);
   const trait = ITEMS[itemId].trait;
   const cap = (trait && TRAITS[trait].items?.maxShopTier) || ITEMS[itemId].maxTier;

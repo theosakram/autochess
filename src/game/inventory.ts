@@ -4,10 +4,10 @@ import { johnnieMods } from './johnnie';
 import { enhanceMods } from './freya';
 import { markedUid, powersOf, protectedUids } from './commanders';
 import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
-import { EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
+import { baseItemOf, EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
 import { nextInt, shuffle } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
-import { constellationOf, DISCO_FEVER, discoStarsOf, extraOfferingsOf, offeringShareOf, powerMods, ROGUE_MERCENARY, SIGNATURE, TEAMWORK_COUNT } from './powerCards';
+import { constellationOf, DISCO_FEVER, discoStarsOf, enhanceOwned, extraOfferingsOf, offeringShareOf, powerMods, ROGUE_MERCENARY, SIGNATURE, TEAMWORK_COUNT } from './powerCards';
 import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitLeaders, TRAITS, unitStats, type TraitLevels } from './traits';
 import type { GameState, Item, Player, Unit } from './types';
 import { UNIT_BY_ID } from './units';
@@ -47,10 +47,11 @@ export function effectiveTier(item: Item, levels: TraitLevels): number {
 }
 
 // What a unit's items do in a fight: id and working tier of each active one.
-export function activeItems(items: Item[], levels: TraitLevels): { id: string; tier: number }[] {
+export function activeItems(items: Item[], levels: TraitLevels): { id: string; tier: number; uid?: number; count?: number }[] {
   return items.flatMap((it) => {
     const tier = effectiveTier(it, levels);
-    return tier ? [{ id: it.id, tier }] : [];
+    // uid and count only for items with a counter (Supreme Blade), so everything else is as before.
+    return tier ? [{ id: it.id, tier, ...(ITEMS[it.id].counted && { uid: it.uid, count: it.count ?? 0 }) }] : [];
   });
 }
 
@@ -65,14 +66,17 @@ export function syncItems(state: GameState, p: Player): void {
     if (!rule) continue;
     // Exclusive Offering: more Pyre Offerings (copies of the same item).
     const extra = id === 'cultoffire' ? extraOfferingsOf(p) : 0;
-    let missing = rule.grants[level - 1] + extra - p.items.filter((it) => rule.pool.includes(it.id)).length;
+    // An enhanced item counts as its base.
+    let missing = rule.grants[level - 1] + extra - p.items.filter((it) => rule.pool.includes(baseItemOf(it.id))).length;
     while (missing-- > 0) {
-      const unowned = rule.pool.filter((itemId) => !p.items.some((it) => it.id === itemId));
+      const unowned = rule.pool.filter((itemId) => !p.items.some((it) => baseItemOf(it.id) === itemId));
       const left = unowned.length || !extra ? unowned : rule.pool;
       if (left.length === 0) break;
       p.items.push({ uid: state.nextUid++, id: left[nextInt(state, left.length)], tier: 1, holder: null });
     }
   }
+  // Cards that keep items enhanced (Gustiwana Unbound, Manic Slam...): new ones included.
+  enhanceOwned(p);
 }
 
 // Puts an offered item into the player's items (unequipped) and closes the offer; the next chest opens.
@@ -216,6 +220,9 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     if (ice) mods.push({ stat: 'attackSpeed', add: ice.attackSpeed });
     // Angela: protected heroes hit harder with their skills.
     if (protect && blessed.has(u.uid)) mods.push({ stat: 'skillAmp', add: protect.skillAmp });
+    // Katarina's card: the Supreme Blade's holder.
+    const itemBoost = powersOf(p).itemBoost;
+    if (itemBoost && items.some((i) => baseItemOf(i.id) === itemBoost.item)) mods.push(...itemBoost.mods);
     // Luo Yi: the Essence Core's holder.
     if (core === u.uid) mods.push(...essenceMods(p));
     stats.set(u.uid, unitStats(UNIT_BY_ID[u.defId], u.star, { levels, cell, scale, chosen, stacks: p.stacks, items, honorary, leads, extra: mods }));
@@ -227,7 +234,7 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
       const own = tier ? ITEMS[it.id].aura?.(tier) : undefined;
       if (!own) continue;
       // Exclusive Offering: every Pyre Offering gives its own share.
-      const share = it.id === 'offering' ? offeringShareOf(p) : null;
+      const share = baseItemOf(it.id) === 'offering' ? offeringShareOf(p) : null;
       const aura = share === null ? own : { ...own, share };
       const held = stats.get(holder.uid)!;
       const from = aura.from.reduce((best, k) => (held[k] > held[best] ? k : best));

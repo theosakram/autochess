@@ -49,6 +49,8 @@ function totalCopies(state: GameState): number {
     // Units with no pool (Plane Wanderers, raised by the grave) were never copies of anything.
     for (const u of [...p.bench, ...p.board]) if (u && u.defId in state.pool) n += copiesOf(u);
     n += p.gifts?.length ?? 0;
+    // A hero on Luo Yi's Essence Altar is off the board and bench, but still a copy.
+    if (p.essence?.hero && p.essence.hero.defId in state.pool) n += copiesOf(p.essence.hero);
   }
   return n;
 }

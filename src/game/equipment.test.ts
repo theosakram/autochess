@@ -3,7 +3,7 @@ import { defenseMult, simulateCombat } from './combat';
 import { EQUIPMENT_DROPS, isEquipmentRound, isMonsterRound, roundAt } from './config';
 import { createGame, resolveCombat, startRound } from './game';
 import { effectiveTier, fieldStats } from './inventory';
-import { AEGIS, BASIC_ITEMS, BERSERKER_FURY, DIVINE_GLAIVE, GLOWING_WAND, HOLY_CRYSTAL, ICE_QUEEN_WAND, DOMINANCE_ICE, ANTIQUE_CUIRASS, GUARDIAN_HELMET, BLADE_ARMOR, THUNDER_BELT, ORACLE, ANCIENT_WRATH, RED_CLOAK, SCYTHE, BLADE_OF_DESPAIR, DEMON_HUNTER_SWORD, EQUIPMENT, GOLDEN_STAFF, HAAS_CLAW, INSPIRE, ITEMS, PURIFY, PURPLE_BUFF, RETRIBUTION, REVITALIZE, SEA_HALBERD, SHEEP_STICK, SPELLBLADE_TALISMAN, THIEF_TOOL, WAR_AXE, WINTER_CROWN } from './items';
+import { AEGIS, baseItemOf, BASIC_ITEMS, BERSERKER_FURY, DIVINE_GLAIVE, GLOWING_WAND, HOLY_CRYSTAL, ICE_QUEEN_WAND, DOMINANCE_ICE, ANTIQUE_CUIRASS, GUARDIAN_HELMET, BLADE_ARMOR, THUNDER_BELT, ORACLE, ANCIENT_WRATH, RED_CLOAK, SCYTHE, BLADE_OF_DESPAIR, DEMON_HUNTER_SWORD, EQUIPMENT, GOLDEN_STAFF, HAAS_CLAW, INSPIRE, ITEMS, PURIFY, PURPLE_BUFF, RETRIBUTION, REVITALIZE, SEA_HALBERD, SHEEP_STICK, SPELLBLADE_TALISMAN, THIEF_TOOL, WAR_AXE, WINTER_CROWN } from './items';
 import { stageItems } from './inventory';
 import { applyAction } from './actions';
 import { LUKAS } from './commanders';
@@ -443,7 +443,8 @@ describe('Sea Halberd', () => {
     const levels = playerTraits(p);
     const base = unitStats(UNIT_BY_ID.cici, 1, { levels });
     const s = fieldStats(p, levels, {}).get(900)!;
-    expect(s.armorShred - base.armorShred).toBe(SEA_HALBERD.penetration); // once, not twice
+    expect(s.armorPen - base.armorPen).toBeCloseTo(SEA_HALBERD.armorPen, 5); // once, not twice
+    expect(s.armorShred).toBe(base.armorShred); // no flat shred any more
   });
 
   test("Lifebane: the target's lifesteal heals 40% less once it's been hit", () => {
@@ -972,20 +973,18 @@ describe('Blade Armor', () => {
     const foe = r.fighters.find((f) => f.side === 1)!.id;
     const hits = r.events.filter((e) => e.type === 'attack' && e.id === foe && e.target === me && e.damage > 0);
     const back = r.events.filter((e) => e.type === 'effect' && e.effect === 'vengeance');
-    expect(back.length).toBe(hits.length);
-    hits.forEach((h, i) => {
-      const v = back[i];
-      if (h.type !== 'attack' || v.type !== 'effect') return;
-      expect(v.t).toBe(h.t);
+    // Every basic attack on it is answered at that tick (skills too, see below).
+    for (const h of hits) expect(back.some((v) => v.t === h.t)).toBe(true);
+    for (const v of back) {
+      if (v.type !== 'effect') continue;
       expect(v.by).toBe(me);
       expect(v.target).toBe(foe);
-      // The paladin's armor trims it below 30% of the hit.
       expect(v.damage).toBeGreaterThan(0);
-      expect(v.damage).toBeLessThan(h.damage * BLADE_ARMOR.reflect);
-    });
-    // Casts aren't basic attacks: no vengeance at those ticks unless a basic attack landed too.
-    const casts = r.events.filter((e) => e.type === 'cast' && e.id === foe);
-    for (const c of casts) expect(back.filter((v) => v.t === c.t).length).toBe(hits.filter((h) => h.t === c.t).length);
+    }
+    // A basic hit's reflection: the paladin's armor trims it below 30% of the hit.
+    const h = hits[0];
+    const v = back.find((x) => x.t === h.t);
+    if (h.type === 'attack' && v?.type === 'effect') expect(v.damage).toBeLessThan(h.damage * BLADE_ARMOR.reflect);
   });
 });
 
@@ -1053,7 +1052,7 @@ describe('Oracle', () => {
     const archer = r.fighters.find((f) => f.defId === 'archer')!.id;
     const resist = r.events.filter((e) => e.type === 'buff' && e.effect === 'resist');
     const ids = resist.map((e) => (e.type === 'buff' ? e.id : -1)).sort();
-    const rowmates = r.fighters.filter((f) => f.side === 0 && f.defId === 'footman').map((f) => f.id).sort();
+    const rowmates = r.fighters.filter((f) => f.side === 0 && (f.defId === 'footman' || f.id === holder)).map((f) => f.id).sort();
     expect(ids).toEqual(rowmates);
     for (const e of resist) if (e.type === 'buff') {
       expect(e.t).toBe(0);
@@ -1061,12 +1060,12 @@ describe('Oracle', () => {
       expect(e.until).toBeUndefined(); // the whole fight
     }
     expect(ids).not.toContain(archer);
-    expect(ids).not.toContain(holder);
+    expect(ids).toContain(holder); // the holder too: 20 + 20 on it
   });
 });
 
 describe('Ancient Wrath', () => {
-  test('+15% max HP; taunts enemies within 2 cells at the start; more armor and magic resist the more enemies target it', () => {
+  test('+15% max HP; taunts the enemy in front and those within 1 cell of it at the start; more armor and magic resist the more enemies target it', () => {
     const state = createGame(1, SEEDS);
     const [a, b] = state.players;
     for (const p of state.players) {
@@ -1128,7 +1127,7 @@ describe('Ancient Wrath', () => {
 describe('equipment groups', () => {
   test('every equipment is physical, magic, hybrid or armor; nothing else has a group', () => {
     for (const id of EQUIPMENT) expect(['physical', 'magic', 'hybrid', 'armor']).toContain(ITEMS[id].group!);
-    for (const def of Object.values(ITEMS)) if (!EQUIPMENT.includes(def.id)) expect(def.group).toBeUndefined();
+    for (const def of Object.values(ITEMS)) if (!EQUIPMENT.includes(baseItemOf(def.id))) expect(def.group).toBeUndefined();
   });
 });
 

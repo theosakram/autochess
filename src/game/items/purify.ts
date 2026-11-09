@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Basic item. Tune with `bun run balance`.
@@ -21,3 +22,5 @@ export const purify: ItemDef = {
   mods: () => [{ stat: 'attackSpeed', add: PURIFY.attackSpeed }],
   ccImmune: PURIFY.seconds,
 };
+purify.enhanced = withPassives(purify, PASSIVES.swift);
+

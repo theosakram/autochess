@@ -1222,6 +1222,18 @@ button.commander-tab:hover { border-color: var(--accent); }
 .gallery-card.card-entry[class*='tier-'] { border-left: 3px solid var(--tier); }
 .gallery-card.card-entry[class*='tier-'] .trait-desc { margin: 0; font-size: 13px; line-height: 1.4; }
 .card-only { font-size: 11px; font-weight: 600; }
+/* Enhanced items: a gold edge and a spark in the corner. */
+.item-chip .item-count { font-size: 11px; color: #ffc93c; } /* an item counter (Supreme Blade) */
+/* Item gallery: Base / Enhanced pills on items that have an enhanced version. */
+.enh-pills { display: flex; gap: 6px; margin: 0 0 8px; }
+.enh-pills label { padding: 2px 12px; border-radius: 999px; border: 1px solid var(--muted); color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
+.enh-pills .pill-e { border-color: #ffc93c88; color: #ffc93c; }
+.enh-b:checked ~ .enh-pills .pill-b { background: var(--accent); border-color: var(--accent); color: #14161c; font-weight: 700; }
+.enh-e:checked ~ .enh-pills .pill-e { background: #ffc93c; border-color: #ffc93c; color: #14161c; font-weight: 700; }
+.enh-b:checked ~ .enh-plus, .enh-e:checked ~ .enh-base { display: none; }
+.has-enhanced:has(.enh-e:checked) { box-shadow: 0 0 0 1px #ffc93c88; }
+.item-chip.enhanced { box-shadow: 0 0 0 1px #ffc93c, 0 0 6px #ffc93c88; position: relative; }
+.item-chip.enhanced::after { content: '✦'; position: absolute; top: -4px; right: -3px; font-size: 10px; color: #ffc93c; }
 
 /* The picked card flying into its tray slot. */
 .card-fly { position: fixed; z-index: 200; margin: 0; pointer-events: none; }

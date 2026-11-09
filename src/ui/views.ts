@@ -1,7 +1,7 @@
 import { MAX_LEVEL } from '../game/config';
 import { skillIcon } from './skillIcons';
 import { coreHolder, ESSENCE_ROLES, essenceBlock, essenceMods, essenceRoles } from '../game/essence';
-import { ESSENCE_CORE } from '../game/items';
+import { ESSENCE_CORE, baseItemOf, canEnhance, enhancedId } from '../game/items';
 import type { TraitLevels } from '../game/traits';
 import { bloodBlock, bloodStars } from '../game/blood';
 import { blessBlock, blessedUnit } from '../game/twilight';
@@ -12,9 +12,10 @@ import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUi
 import { cardTiers, DEATH_ORACLE, TURRET_OF_GUARDIANS, interestCapOf, offeringShareOf, POWER_CARDS, powerCardName, powerPool, ROGUE_MERCENARY, SIGNATURE } from '../game/powerCards';
 import { COMMANDER_CARD_ROUND, POWER_CARD_ROUNDS, POWER_TIERS, BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
-import { cardItem, EQUIPMENT_GROUPS, isItemCard, ITEMS, type ItemDef } from '../game/items';
+import { cardItem, EQUIPMENT_GROUPS, giftDamage, isItemCard, ITEMS, plunderDamage, type ItemDef } from '../game/items';
 import { MIRROR } from '../game/mirror';
 import { canDuplicate, DUPLICATOR } from '../game/duplicator';
+import { canUseEnhancer, ENHANCER } from '../game/enhancer';
 import { MIST_WARES, mistCoins } from '../game/mistShop';
 import { ALTAR_KEYS, altarOf, altarStatus, nextTier, offerBlock, type AltarKey } from '../game/altar';
 import { orbOptions } from '../game/orb';
@@ -109,7 +110,7 @@ const auraText = (g: AuraGrant) =>
 
 // An item as player `p` sees it: Exclusive Offering raises every Pyre Offering's share.
 function shownItem(def: ItemDef, p?: Player): ItemDef {
-  const share = def.id === 'offering' && p ? offeringShareOf(p) : null;
+  const share = baseItemOf(def.id) === 'offering' && p ? offeringShareOf(p) : null;
   if (share === null) return def;
   return { ...def, values: () => ({ ...def.values(), share: def.values().share.map(() => `${Math.round(share * 100)}%`) }) };
 }
@@ -127,7 +128,7 @@ function traitItemsHtml(itemIds: string[], p: Player, compact = false): string {
   const rows = itemIds
     .map((id) => {
       const def = shownItem(ITEMS[id], p);
-      const owned = p.items.find((it) => it.id === id);
+      const owned = p.items.find((it) => baseItemOf(it.id) === id);
       const grant = owned && grants.get(owned.uid);
       return `<li class="${owned ? 'owned' : ''}">
         <b>${def.icon} ${def.name}</b> <small>${def.kind} · ${owned ? `tier ${owned.tier}` : 'not yet'}</small>
@@ -554,14 +555,26 @@ function commanderGalleryHtml(): string {
 
 // Every item, grouped by where it comes from. Tiered values show every tier.
 function itemGalleryHtml(): string {
-  const all = Object.values(ITEMS);
-  const card = (def: ItemDef) =>
-    `<article class="gallery-card item-entry">
-      <h3 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name} <small>${def.kind}${def.maxTier > 1 ? ` · ${def.maxTier} tiers` : ''}</small></h3>
+  // Base items only: an enhanced version shows on its base's card, behind the Enhanced pill.
+  const all = Object.values(ITEMS).filter((i) => !i.enhancedFrom);
+  const body = (def: ItemDef) =>
+    `<h3 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name} <small>${def.kind}${def.maxTier > 1 ? ` · ${def.maxTier} tiers` : ''}</small></h3>
       <p class="trait-desc">${descHtml(def, 0)}</p>
       ${def.membersOnly && def.trait ? `<p class="meta">Only ${TRAITS[def.trait].name} units can hold it.</p>` : ''}
-      ${def.forbidden ? `<p class="meta">${TRAITS[def.forbidden].name} units can't hold it.</p>` : ''}
+      ${def.forbidden ? `<p class="meta">${TRAITS[def.forbidden].name} units can't hold it.</p>` : ''}`;
+  // An item with an enhanced version: Base / Enhanced pills switch the card (radio inputs, no app state).
+  const card = (def: ItemDef) => {
+    const plus = canEnhance(def.id) ? ITEMS[enhancedId(def.id)] : null;
+    if (!plus) return `<article class="gallery-card item-entry">${body(def)}</article>`;
+    const name = `enh-${def.id}`;
+    return `<article class="gallery-card item-entry has-enhanced">
+      <input type="radio" class="enh-b" name="${name}" id="${name}-b" checked hidden>
+      <input type="radio" class="enh-e" name="${name}" id="${name}-e" hidden>
+      <nav class="enh-pills"><label class="pill-b" for="${name}-b">Base</label><label class="pill-e" for="${name}-e">✦ Enhanced</label></nav>
+      <div class="enh-base">${body(def)}</div>
+      <div class="enh-plus">${body(plus)}</div>
     </article>`;
+  };
   const section = (title: string, list: ItemDef[], note = '') =>
     list.length ? `<h3 class="gallery-section">${title}</h3>${note ? `<p class="meta">${note}</p>` : ''}<div class="gallery-grid">${list.map(card).join('')}</div>` : '';
   const traitIds = [...new Set(all.flatMap((i) => (i.trait ? [i.trait] : [])))];
@@ -720,7 +733,7 @@ function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string
       if (!id) return `<div class="shop-card empty"></div>`;
       if (isItemCard(id)) {
         const item = ITEMS[cardItem(id)];
-        const tier = p.items.find((it) => it.id === item.id)?.tier ?? 0;
+        const tier = p.items.find((it) => baseItemOf(it.id) === item.id)?.tier ?? 0;
         return `<button class="shop-card item-card" data-action="buy" data-slot="${slot}" ${locked ? 'disabled' : ''} title="${item.name} tier ${tier + 1}: ${itemText(item, tier + 1)}">
           <span class="portrait shop-face">${item.icon}</span>
           <span class="shop-body">
@@ -783,7 +796,7 @@ const RAIL: { id: RailPanel; icon: string; name: string }[] = [
 // The sidebar's icons. Equipment counts what's waiting for a hero, so new loot isn't missed while
 // another panel is open.
 export function railHtml(open: RailPanel | null, p: Player): string {
-  const loose = p.items.filter((it) => it.holder === null).length + p.orbs.length + (p.mistOrbs ?? []).filter((o) => o.holder === null).length + (p.mirrors ?? 0) + (p.duplicators ?? 0);
+  const loose = p.items.filter((it) => it.holder === null).length + p.orbs.length + (p.mistOrbs ?? []).filter((o) => o.holder === null).length + (p.mirrors ?? 0) + (p.duplicators ?? 0) + (p.enhancers ?? 0);
   const buttons = RAIL.map(({ id, icon, name }) => {
     const badge = id === 'equipment' && loose ? `<b class="rail-badge">${loose}</b>` : '';
     return `<button class="rail-btn${id === open ? ' on' : ''}" data-action="rail" data-panel="${id}" title="${name}" aria-label="${name}">${icon}${badge}</button>`;
@@ -818,9 +831,10 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
     const grant = grants.get(it.uid);
     const state = !def.trait ? 'equipment' : tier ? `tier ${tier}` : `inactive: needs ${TRAITS[def.trait].name}`;
     const selected = samePick(picked, { kind: 'item', uid: it.uid });
-    return `<div class="item-chip${tier ? '' : ' inactive'}${holder && !inSlot ? ' equipped' : ''}${selected ? ' selected' : ''}" data-item="${it.uid}"
+    return `<div class="item-chip${tier ? '' : ' inactive'}${holder && !inSlot ? ' equipped' : ''}${selected ? ' selected' : ''}${def.enhancedFrom ? ' enhanced' : ''}" data-item="${it.uid}"
       title="${def.name} (${state})${holder ? ` on ${holder}` : ''}. ${itemText(def, tier || it.tier, p)}${grant ? ` Now: ${auraText(grant)}.` : ''}">
       <span class="item-icon">${def.icon}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}
+      ${def.counted ? `<b class="item-count" title="Counter">${it.count ?? 0}</b>` : ''}
       ${grant && !inSlot ? `<small class="aura-line">+${grant.amount}</small>` : ''}
     </div>`;
   };
@@ -848,7 +862,13 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
         <span class="item-icon">${DUPLICATOR.icon}</span>${p.duplicators > 1 ? `<b>×${p.duplicators}</b>` : ''}
       </button>`
     : '';
-  const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, dupChip, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
+  // Minos's Enhancement Charges: click to pick an item to enhance.
+  const enhChip = p.enhancers
+    ? `<button class="usable-chip" data-action="openEnhancer" title="${ENHANCER.name}: ${ENHANCER.desc} Click to use.">
+        <span class="item-icon">${ENHANCER.icon}</span>${p.enhancers > 1 ? `<b>×${p.enhancers}</b>` : ''}
+      </button>`
+    : '';
+  const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, dupChip, enhChip, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
 
   const heroes = p.board
     .flatMap((u) => (u && !UNIT_BY_ID[u.defId].piece ? [u] : []))
@@ -1042,6 +1062,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       ${optStat('🔻', 'Damage taken', 'damageTaken', pctS)}
       ${optStat('🔨', 'Armor shred', 'armorShred')}
       ${optStat('🌀', 'Magic pen', 'magicPen', pctS)}
+      ${optStat('🗡️', 'Armor pen', 'armorPen', pctS)}
       ${optStat('🎲', 'Crit chance', 'critChance', pctS)}
       ${s.critChance ? stat('💢', 'Crit damage', 'critDamage', pctS) : ''}
       ${optStat('📜', 'Skill damage', 'skillAmp', pctS)}
@@ -1239,9 +1260,11 @@ export function itemDetailHtml(p: Player, uid: number, actions: boolean, chosen:
     def.membersOnly ? `Only ${traitBadgeHtml(trait!.id)} ${trait!.name} units can hold it.` : '',
     def.forbidden ? `${traitBadgeHtml(def.forbidden)} ${TRAITS[def.forbidden].name} units can't hold it.` : '',
     def.slots && def.slots > 1 ? `Takes ${def.slots} item slots.` : '',
+    def.gift ? `Counter: <b>${it.count ?? 0}</b> execution${it.count === 1 ? '' : 's'}, +${Math.round(giftDamage(it.count ?? 0) * 100)}% damage.` : '',
+    def.plunder ? `Plundered: <b>${it.count ?? 0}</b> / ${def.plunder.goldCap} gold${plunderDamage(it.count ?? 0) ? `, now +${Math.round(plunderDamage(it.count ?? 0) * 100)}% damage` : ''}.` : '',
     aura ? `Gives ${auraText(aura)}, to ${aura.receivers} unit${aura.receivers === 1 ? '' : 's'} now.` : '',
   ].filter(Boolean);
-  if (def.id === ESSENCE_CORE) facts.unshift(...essenceFacts(p));
+  if (baseItemOf(def.id) === ESSENCE_CORE) facts.unshift(...essenceFacts(p));
   return modalHtml(
     'closeItem',
     'trait-popup',
@@ -1635,6 +1658,20 @@ export function duplicatorPickHtml(p: Player): string {
     `<h2 class="trait-title">${DUPLICATOR.icon} ${DUPLICATOR.name}${p.duplicators! > 1 ? ` ×${p.duplicators}` : ''}</h2>
     <p class="trait-desc">${DUPLICATOR.desc}</p>
     <div class="orb-options">${options.join('') || '<p class="meta">No equipment to copy.</p>'}</div>`,
+  );
+}
+
+// Minos's Enhancement Charge (from the inventory): pick one of your items to enhance.
+export function enhancerPickHtml(p: Player): string {
+  const options = p.items
+    .filter((it) => canUseEnhancer(p, it.uid))
+    .map((it) => `<button class="chip" data-action="useEnhancer" data-item="${it.uid}">${ITEMS[it.id].icon} ${ITEMS[it.id].name}</button>`);
+  return modalHtml(
+    'closeEnhancer',
+    'trait-popup',
+    `<h2 class="trait-title">${ENHANCER.icon} ${ENHANCER.name}${p.enhancers! > 1 ? ` ×${p.enhancers}` : ''}</h2>
+    <p class="trait-desc">${ENHANCER.desc}</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">No item to enhance.</p>'}</div>`,
   );
 }
 

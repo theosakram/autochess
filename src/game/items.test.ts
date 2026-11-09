@@ -252,7 +252,8 @@ describe('Cult of Fire and the Pyre Offering', () => {
     const gain = Math.round(withIt.get(titan)!.atk * OFFERING.share[0]);
     expect(withIt.get(cici)!.atk).toBe(without.get(cici)!.atk + gain);
     expect(withIt.get(zhuxin)!.atk).toBe(without.get(zhuxin)!.atk + gain);
-    expect(withIt.get(titan)!.atk).toBe(without.get(titan)!.atk);
+    // The bearer gets no share, only the item's own +25% attack.
+    expect(Math.abs(withIt.get(titan)!.atk - without.get(titan)!.atk * (1 + OFFERING.hybridAtk))).toBeLessThanOrEqual(1);
     expect(withIt.get(footman)!.atk).toBe(without.get(footman)!.atk);
   });
 

@@ -5,7 +5,7 @@ import { openChest } from './inventory';
 import { addXp } from './player';
 import { drawFromTier } from './shop';
 import { nextFloat, nextInt, shuffle } from './rng';
-import { EQUIPMENT, ITEMS } from './items';
+import { enhanceItem, EQUIPMENT, ITEMS } from './items';
 import type { StatMod } from './stats';
 import { TRAITS } from './traits';
 import type { GameState, Player, PowerTier, Star } from './types';
@@ -71,6 +71,8 @@ export interface PowerCardDef {
   chestTriggers?: Partial<Record<PowerTier, ChestTrigger[]>>; // Equipment Chests once a condition is met (each once)
   pickItem?: Partial<Record<PowerTier, string>>; // an equipment (tier 1) to the inventory on the pick
   pickItems?: Partial<Record<PowerTier, string[]>>; // several, likewise
+  enhances?: Partial<Record<PowerTier, string[]>>; // these items are enhanced: the ones owned now and every one gained later
+  novelItems?: Partial<Record<PowerTier, number>>; // this many random equipment (different), enhanced, and kept enhanced like `enhances`
   heroCap?: Partial<Record<PowerTier, number>>; // more heroes allowed on the board
   pickRefreshes?: Partial<Record<PowerTier, number>>; // free shop refreshes on the pick
   levelRefreshes?: Partial<Record<PowerTier, number>>; // free shop refreshes with each level gained
@@ -140,9 +142,23 @@ const FAST_GROWTH_XP = { gold: 5 }; // XP on the pick, gold only
 const EXCELLENT_RECRUIT = { blue: { count: 3, cost: 3 }, purple: { count: 3, cost: 4 } };
 const CYCLICAL_SUPPORT = { blue: 8, purple: 7, gold: 6 };
 const JUMP_THE_GUN = { blue: 11, purple: 18, gold: 25 };
-export const DARK_BLADE_SECONDS = 3;
+export const DARK_BLADE_SECONDS = 5; // as long as Sea Halberd's Lifebane
 const DARK_BLADE = { blue: 0.3, purple: 0.4, gold: 0.5 };
 const ROGUES_AID = { blue: 'thieftool' };
+// Gustiwana Unbound: its items enhanced, and free refreshes.
+// Novel Equipment: random equipment, enhanced (and kept so).
+export const NOVEL_EQUIPMENT = 3;
+export const GUSTIWANA_UNBOUND = { items: ['keris', 'blangkon', 'jimat'], refreshes: 5 };
+// Purple cards that give an enhanced item, and enhance every copy of it from then on.
+export const ENHANCING_CARDS = [
+  { id: 'manicSlam', name: 'Manic Slam', icon: '🔨', item: 'goldenstaff' },
+  { id: 'howlingWind', name: 'Howling Wind', icon: '🌬️', item: 'wintercrown' },
+  { id: 'totalDomination', name: 'Total Domination', icon: '👑', item: 'dominanceice' },
+  { id: 'brightSunshine', name: 'Bright Sunshine', icon: '☀️', item: 'oracle' },
+  { id: 'bloodClaw', name: 'Blood Claw', icon: '🐾', item: 'haasclaw' },
+  { id: 'talismanUnleashed', name: 'Talisman Unleashed', icon: '✨', item: 'spellbladetalisman' },
+  { id: 'gloriousRogue', name: 'Glorious Rogue', icon: '🎭', item: 'thieftool' },
+];
 const CUSTOM_UP = 10;
 const CUSTOM_DOWN = 5;
 const CUSTOMIZE_RECRUITMENT = { blue: { up: 3, down: [1, 2] }, purple: { up: 4, down: [1, 2, 3] } };
@@ -631,10 +647,36 @@ export const POWER_CARDS: Record<string, PowerCardDef> = {
     icon: '🔥',
     tiers: ['purple'],
     offerings: { purple: EXCLUSIVE_OFFERING },
+    enhances: { purple: ['offering'] },
     desc: () =>
       `While Cult of Fire is active, gain <b>${EXCLUSIVE_OFFERING.extra}</b> more Pyre Offering. Each Offering gives the cult ` +
-      `<b>${EXCLUSIVE_OFFERING.share * 100}%</b> of its bearer's attack (its bearer still gets none).`,
+      `<b>${EXCLUSIVE_OFFERING.share * 100}%</b> of its bearer's attack (its bearer still gets none). Your Pyre Offerings are <b>enhanced</b>.`,
   },
+  gustiwanaUnbound: {
+    id: 'gustiwanaUnbound',
+    name: 'Gustiwana Unbound',
+    icon: '🔓',
+    tiers: ['purple'],
+    enhances: { purple: GUSTIWANA_UNBOUND.items },
+    pickRefreshes: { purple: GUSTIWANA_UNBOUND.refreshes },
+    desc: () =>
+      `Your Gustiwana items (${GUSTIWANA_UNBOUND.items.map((i) => ITEMS[i].name).join(', ')}) are <b>enhanced</b>, now and from now on. ` +
+      `Gain <b>${GUSTIWANA_UNBOUND.refreshes}</b> free shop refreshes.`,
+  },
+  ...Object.fromEntries(
+    ENHANCING_CARDS.map(({ id, name, icon, item }) => [
+      id,
+      {
+        id,
+        name,
+        icon,
+        tiers: ['purple'],
+        pickItem: { purple: item },
+        enhances: { purple: [item] },
+        desc: () => `Gain an <b>Enhanced ${ITEMS[item].name}</b>. Every ${ITEMS[item].name} you have or get is <b>enhanced</b>.`,
+      } satisfies PowerCardDef,
+    ]),
+  ),
   neonZenith: {
     id: 'neonZenith',
     name: 'Neon Zenith',
@@ -854,7 +896,16 @@ export const POWER_CARDS: Record<string, PowerCardDef> = {
     pickGold: { gold: COPYCAT.gold },
     pickDuplicators: { gold: COPYCAT.duplicators },
     desc: () =>
-      `Gain <b>${COPYCAT.gold}</b> gold and an <b>Equipment Duplicator</b>: use it on a piece of equipment to make <b>3</b> copies of it (not trait or other special items).`,
+      `Gain <b>${COPYCAT.gold}</b> gold and an <b>Equipment Duplicator</b>: use it on a piece of equipment to make <b>3</b> copies of it (not enhanced, trait or other special items).`,
+  },
+  novelEquipment: {
+    id: 'novelEquipment',
+    name: 'Novel Equipment',
+    icon: '📖',
+    tiers: ['gold'],
+    novelItems: { gold: NOVEL_EQUIPMENT },
+    desc: () =>
+      `Gain <b>${NOVEL_EQUIPMENT}</b> random <b>enhanced</b> equipment, straight to your inventory. Every other copy of them you have or get is <b>enhanced</b> too.`,
   },
   ...Object.fromEntries(
     (['slow', 'fast'] as const).map((speed): [string, PowerCardDef] => {
@@ -1101,6 +1152,14 @@ function gainPowerCard(state: GameState, p: Player, id: string, tier: PowerTier)
   }
   const item = POWER_CARDS[id].pickItem?.[tier];
   if (item) p.items.push({ uid: state.nextUid++, id: item, tier: 1, holder: null });
+  // Novel Equipment: random different equipment, each kept enhanced from now on.
+  const novel = POWER_CARDS[id].novelItems?.[tier] ?? 0;
+  if (novel) {
+    const picks = shuffle(state, EQUIPMENT.filter((e) => !(p.enhancedItems ?? []).includes(e))).slice(0, novel);
+    (p.enhancedItems ??= []).push(...picks);
+    for (const e of picks) p.items.push({ uid: state.nextUid++, id: e, tier: 1, holder: null });
+  }
+  enhanceOwned(p); // Manic Slam and co.: the item just given, and any owned already
   const c = POWER_CARDS[id];
   p.freeRerolls = (p.freeRerolls ?? 0) + (c.pickRefreshes?.[tier] ?? 0) || p.freeRerolls; // Golden Era
   if (c.bloodRefreshes?.[tier]) p.bloodRefreshes = (p.bloodRefreshes ?? 0) + c.bloodRefreshes[tier]!;
@@ -1469,6 +1528,16 @@ export function syncRift(state: GameState, p: Player): void {
     rift.given = true;
   }
   if (state.round >= EMERGENCY_RIFT.round) for (const u of [...p.board, ...p.bench]) if (u?.defId === rift.defId && u.star < 2) u.star = 2;
+}
+
+// The items the player's cards keep enhanced (base ids).
+export const enhancedItemsOf = (p: Player): Set<string> =>
+  new Set([...(p.powerCards ?? []).flatMap((c) => POWER_CARDS[c.id].enhances?.[c.tier] ?? []), ...(p.enhancedItems ?? [])]);
+// Enhances every owned item a card says to (run on the pick and whenever items change, see syncItems).
+export function enhanceOwned(p: Player): void {
+  const ids = enhancedItemsOf(p);
+  if (!ids.size) return;
+  for (const it of p.items) if (ids.has(it.id)) enhanceItem(it);
 }
 
 // Exclusive Offering: extra Pyre Offerings, and the share each gives (null: the item's own).

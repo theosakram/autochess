@@ -5,7 +5,12 @@ import type { ItemDef } from './types';
 export const SPELLBLADE_TALISMAN = {
   hybridAtk: 0.15, // + share of attack and magic attack
   startMana: 0.55, // Recharge: of max mana, when the fight starts
+  enhanced: { startMana: 0.8, skillDamage: 0.15 },
 };
+
+const text = (mana: number, skill = 0) =>
+  `+${pct(SPELLBLADE_TALISMAN.hybridAtk)} attack and magic attack${skill ? `, +${pct(skill)} skill damage` : ''}. ` +
+  `Recharge (unique): starts every fight with ${pct(mana)} of its max mana.`;
 
 export const spellbladeTalisman: ItemDef = {
   id: 'spellbladetalisman',
@@ -14,11 +19,20 @@ export const spellbladeTalisman: ItemDef = {
   kind: 'offense',
   group: 'hybrid',
   maxTier: 1,
-  desc: `+${pct(SPELLBLADE_TALISMAN.hybridAtk)} attack and magic attack. Recharge (unique): starts every fight with ${pct(SPELLBLADE_TALISMAN.startMana)} of its max mana.`,
+  desc: text(SPELLBLADE_TALISMAN.startMana),
   values: () => ({}),
   mods: () => [
     { stat: 'atk', pct: SPELLBLADE_TALISMAN.hybridAtk },
     { stat: 'ap', pct: SPELLBLADE_TALISMAN.hybridAtk },
   ],
   startMana: SPELLBLADE_TALISMAN.startMana,
+  enhanced: {
+    desc: text(SPELLBLADE_TALISMAN.enhanced.startMana, SPELLBLADE_TALISMAN.enhanced.skillDamage),
+    startMana: SPELLBLADE_TALISMAN.enhanced.startMana,
+    mods: () => [
+      { stat: 'atk', pct: SPELLBLADE_TALISMAN.hybridAtk },
+      { stat: 'ap', pct: SPELLBLADE_TALISMAN.hybridAtk },
+      { stat: 'skillAmp', add: SPELLBLADE_TALISMAN.enhanced.skillDamage },
+    ],
+  },
 };

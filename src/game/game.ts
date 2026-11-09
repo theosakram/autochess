@@ -36,7 +36,7 @@ import { grantOrbs } from './orb';
 import { ageTurrets, cashFortunes, gloriousClaim, checkChestTriggers, freeBuyOf, traitGoldOf, lendArms, returnArms, cycleChests, cycleRefreshes, transmute, hurtExtraOf, offerPowerCards, pickFactionOrb, pickPowerCard, roundHealOf } from './powerCards';
 import { hurtPlayer, offerCards, payCard, powersOf } from './commanders';
 import type { Side } from './grid';
-import { BASIC_ITEMS, isItemCard, ITEMS } from './items';
+import { BASIC_ITEMS, isItemCard, ITEMS, baseItemOf } from './items';
 import { MONSTER_ID, monsterSide } from './monsters';
 import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
@@ -281,6 +281,39 @@ function afterFight(p: Player, result: CombatResult, side: Side): void {
   if (perTrait) p.gold += perTrait * Object.values(result.traits[side]).filter((l) => l > 0).length;
   payBounty(p, result, side);
   earnChests(p, result, side);
+  countGifts(p, result, side);
+  countPlunder(p, result, side);
+}
+
+// Plunderer's Claw: gold for each enemy its holder hooked (its cost), until the claw's counter reaches the cap.
+export function countPlunder(p: Player, result: CombatResult, side: Side): void {
+  for (const f of result.fighters) {
+    if (f.side !== side) continue;
+    const held = f.items.find((i) => ITEMS[i.id].plunder && i.uid !== undefined);
+    const claw = held && p.items.find((i) => i.uid === held.uid);
+    if (!claw) continue;
+    const cap = ITEMS[claw.id].plunder!.goldCap;
+    for (const e of result.events) {
+      if (e.type !== 'effect' || e.effect !== 'plunder' || e.by !== f.id) continue;
+      const prey = result.fighters.find((x) => x.id === e.target);
+      const gold = Math.min(prey ? UNIT_BY_ID[prey.defId].tier : 0, cap - (claw.count ?? 0));
+      if (gold <= 0) continue;
+      claw.count = (claw.count ?? 0) + gold;
+      p.gold += gold;
+    }
+  }
+}
+
+// Supreme Blade: each Gift execution adds 1 to the holder's blade counter (its damage, kept across fights).
+export function countGifts(p: Player, result: CombatResult, side: Side): void {
+  for (const f of result.fighters) {
+    if (f.side !== side) continue;
+    const blade = f.items.find((i) => ITEMS[i.id].gift && i.uid !== undefined);
+    if (!blade) continue;
+    const n = result.events.filter((e) => e.type === 'effect' && e.effect === 'gift' && e.by === f.id).length;
+    const it = p.items.find((i) => i.uid === blade.uid);
+    if (n && it) it.count = (it.count ?? 0) + n;
+  }
 }
 
 // Ruby's card: gold for every Cloak and Scythe whose holder is still standing at the end, up to a limit a game.
@@ -290,7 +323,7 @@ export function payBounty(p: Player, result: CombatResult, side: Side): void {
   const dead = new Set(result.events.flatMap((e) => (e.type === 'death' ? [e.id] : [])));
   const standing = result.fighters
     .filter((f) => f.side === side && !dead.has(f.id))
-    .reduce((n, f) => n + f.items.filter((i) => rule.items.includes(i.id)).length, 0);
+    .reduce((n, f) => n + f.items.filter((i) => rule.items.includes(baseItemOf(i.id))).length, 0);
   const paid = p.survivorGold ?? 0;
   const gold = Math.min(rule.gold * standing, rule.max - paid);
   if (gold <= 0) return;

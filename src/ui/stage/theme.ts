@@ -73,6 +73,7 @@ export const EFFECT_COLORS: Record<string, number> = {
   stormflurry: 0xffe066,
   galeshot: 0x9be7ff,
   weak: 0x9be7ff,
+  sheepweak: 0x9be7ff, // enhanced Sheep Stick: Weak while a sheep
   altarspark: 0xe0a63a,
   gravewhisper: 0x9db4ff,
   ashstorm: 0xff8a3d,
@@ -110,6 +111,8 @@ export const EFFECT_COLORS: Record<string, number> = {
   stalkersmark: 0xff5a36,
   stalkersknife: 0xff5a36,
   execute: 0xff2d2d,
+  gift: 0xff2d2d, // Supreme Blade's execute
+  plunder: 0xffc93c, // Plunderer's Claw's hook
   beastmaul: 0xc9a26b,
   divinebeast: 0xffe9a8,
   umbrella: 0xff7eb6,

@@ -363,3 +363,13 @@ test('the home gallery has the Cards tab too', () => {
   expect(homeGalleryHtml(p, 'cards', 'gold')).toContain('Magic Immersion III');
   expect(homeGalleryHtml(p, 'cards')).toContain('Commander cards');
 });
+
+test('item gallery: an item with an enhanced version shows both behind Base / Enhanced pills; no separate enhanced cards', () => {
+  const p = createGame(0, [{ id: 'v', name: '', isBot: false }]).players[0];
+  const html = homeGalleryHtml(p, 'items');
+  expect(html).toContain('id="enh-waraxe-b"');
+  expect(html).toContain('id="enh-waraxe-e"');
+  expect(html).toContain('Enhanced War Axe');
+  expect(html.split('Enhanced War Axe').length - 1).toBe(1); // once, inside the War Axe card
+  expect(html).not.toContain('enh-waraxe+'); // enhanced versions get no cards (or pills) of their own
+});

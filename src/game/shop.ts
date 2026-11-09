@@ -1,5 +1,5 @@
 import { POOL_SIZE } from './config';
-import { isItemCard, itemCard } from './items';
+import { baseItemOf, isItemCard, itemCard } from './items';
 import { nextFloat, nextInt } from './rng';
 import { playerTraits, TRAITS } from './traits';
 import { powersOf } from './commanders';
@@ -90,8 +90,9 @@ function upgradeCard(state: GameState, p: Player): string | null {
   for (const id of Object.keys(playerTraits(p))) {
     const rule = TRAITS[id].items;
     if (!rule) continue;
-    const upgradable = p.items.filter((it) => rule.pool.includes(it.id) && it.tier < rule.maxShopTier);
-    if (upgradable.length > 0 && nextFloat(state) < rule.shopChance) return itemCard(upgradable[nextInt(state, upgradable.length)].id);
+    const upgradable = p.items.filter((it) => rule.pool.includes(baseItemOf(it.id)) && it.tier < rule.maxShopTier);
+    // The card names the base item (an enhanced one is upgraded through it).
+    if (upgradable.length > 0 && nextFloat(state) < rule.shopChance) return itemCard(baseItemOf(upgradable[nextInt(state, upgradable.length)].id));
   }
   return null;
 }

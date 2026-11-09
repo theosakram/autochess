@@ -8,7 +8,14 @@ export const SHEEP_STICK = {
   opening: 3, // seconds: the enemy with the highest star, when the fight starts
   onHit: 1.5, // seconds: its basic attack target
   cooldown: 12, // seconds between on-hit sheep
+  vulnerableEnhanced: 0.6, // enhanced: + damage a sheep takes while it's one
 };
+
+const text = (vuln = 0) =>
+  `+${pct(SHEEP_STICK.hybridAtk)} attack and magic attack, +${pct(SHEEP_STICK.hp)} max HP. ` +
+  `Witchcraft (unique): when a fight starts, turns the enemy with the highest star into a sheep for ${SHEEP_STICK.opening}s ` +
+  `(it can't move, attack or cast${vuln ? `, and takes ${pct(vuln)} more damage` : ''}). Its basic attacks turn their target into a sheep for ${SHEEP_STICK.onHit}s, once every ${SHEEP_STICK.cooldown}s.`;
+const sheep = (vulnerable?: number) => ({ opening: SHEEP_STICK.opening, onHit: SHEEP_STICK.onHit, cooldown: SHEEP_STICK.cooldown, ...(vulnerable && { vulnerable }) });
 
 export const sheepStick: ItemDef = {
   id: 'sheepstick',
@@ -17,15 +24,13 @@ export const sheepStick: ItemDef = {
   kind: 'utility',
   group: 'hybrid',
   maxTier: 1,
-  desc:
-    `+${pct(SHEEP_STICK.hybridAtk)} attack and magic attack, +${pct(SHEEP_STICK.hp)} max HP. ` +
-    `Witchcraft (unique): when a fight starts, turns the enemy with the highest star into a sheep for ${SHEEP_STICK.opening}s ` +
-    `(it can't move, attack or cast). Its basic attacks turn their target into a sheep for ${SHEEP_STICK.onHit}s, once every ${SHEEP_STICK.cooldown}s.`,
+  desc: text(),
   values: () => ({}),
   mods: () => [
     { stat: 'atk', pct: SHEEP_STICK.hybridAtk },
     { stat: 'ap', pct: SHEEP_STICK.hybridAtk },
     { stat: 'hp', pct: SHEEP_STICK.hp },
   ],
-  sheep: { opening: SHEEP_STICK.opening, onHit: SHEEP_STICK.onHit, cooldown: SHEEP_STICK.cooldown },
+  sheep: sheep(),
+  enhanced: { desc: text(SHEEP_STICK.vulnerableEnhanced), sheep: sheep(SHEEP_STICK.vulnerableEnhanced) },
 };

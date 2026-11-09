@@ -56,7 +56,8 @@ describe('Luo Yi: Essence Altar', () => {
     expect(coreHolder(p)?.uid).toBe(901);
     const after = fieldStats(p, playerTraits(p)).get(901)!;
     const s = baseStats(mage, 2);
-    expect(after.hp).toBeCloseTo(before.hp + s.hp * LUO_YI.essence.share, -0.5);
+    // HP: the share, and the core's own +10% max HP on top.
+    expect(after.hp).toBeGreaterThan(before.hp + s.hp * LUO_YI.essence.share);
     expect(after.armor).toBeCloseTo(before.armor + s.armor * LUO_YI.essence.share, -0.5);
     const m = sword.mods(1)[0];
     const share = LUO_YI.essence.share;
@@ -169,5 +170,24 @@ describe('Luo Yi card: Earthen Echo', () => {
     }
     expect(p.echo!.given).toBe(LUO_YI.echo.total);
     expect(owned()).toBe(LUO_YI.echo.total);
+  });
+});
+
+describe('Essence Core: its own stats', () => {
+  test('+10% attack, magic attack and max hp (Duality Transformation on top); enhanced +20%', () => {
+    expect(ITEMS.essencecore.mods(1)).toEqual([{ stat: 'atk', pct: 0.1 }, { stat: 'ap', pct: 0.1 }, { stat: 'hp', pct: 0.1 }]);
+    expect(ITEMS['essencecore+'].mods(1)).toEqual([{ stat: 'atk', pct: 0.2 }, { stat: 'ap', pct: 0.2 }, { stat: 'hp', pct: 0.2 }]);
+    expect(ITEMS.essencecore.desc).toContain('Duality Transformation');
+  });
+
+  test('an enhanced core still counts as the core: found, and taken away with the hero', () => {
+    const { state, p } = luoGame();
+    const hero = UNITS.find((u) => u.shop !== false && !u.piece)!;
+    p.bench[0] = { uid: 900, defId: hero.id, star: 1 };
+    applyAction(state, p.id, { type: 'essenceIn', unit: 900 });
+    essenceCore(p)!.id = 'essencecore+';
+    expect(essenceCore(p)?.id).toBe('essencecore+');
+    applyAction(state, p.id, { type: 'essenceOut' });
+    expect(p.items.some((i) => i.id.startsWith('essencecore'))).toBe(false);
   });
 });

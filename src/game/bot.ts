@@ -1,3 +1,4 @@
+import { canUseEnhancer } from './enhancer';
 import { interestCapOf } from './powerCards';
 import { bloodBlock } from './blood';
 import { claimable } from './freya';
@@ -143,7 +144,7 @@ export function playJohnnie(state: GameState, p: Player): void {
 }
 
 // Kaela's Trove: cash in at 6+ points, else roll while it's safe-ish (from 5 up a roll may go bust).
-// Mirror Devices copy the highest-star fielded unit that can still be copied.
+// Mirror Devices copy the highest-star fielded unit that can still be copied; Enhancement Charges go on held items.
 export function playTrove(state: GameState, p: Player): void {
   // Banked rolls too: open at 6+, roll below 5, until out of rolls (or the Trove is spent).
   for (;;) {
@@ -154,6 +155,11 @@ export function playTrove(state: GameState, p: Player): void {
   while (p.mirrors) {
     const unit = p.board.filter((u) => u !== null && UNIT_BY_ID[u.defId].shop !== false && state.pool[u.defId] > 0).sort((a, b) => b!.star - a!.star)[0];
     if (!unit || !applyAction(state, p.id, { type: 'useMirror', unit: unit.uid }).ok) break;
+  }
+  // Minos's Enhancement Charges: on held items first (they work now), then any.
+  while (p.enhancers) {
+    const it = [...p.items].sort((x, y) => Number(y.holder !== null) - Number(x.holder !== null)).find((i) => canUseEnhancer(p, i.uid));
+    if (!it || !applyAction(state, p.id, { type: 'useEnhancer', item: it.uid }).ok) break;
   }
 }
 

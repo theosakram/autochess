@@ -64,6 +64,7 @@ export interface Item {
   tier: number;
   holder: number | null; // uid of the unit holding it, null = in the inventory
   loan?: true; // Fully Armed: lent for this round's fight only, taken back after it
+  count?: number; // an item's counter, kept across fights (Supreme Blade's executions)
 }
 
 // An applied Magic Orb: every fielded unit of this type adds +1 to this trait.
@@ -130,6 +131,8 @@ export interface Player {
   promoteNext?: number; // Fast Promotion: heroes still to come 2★ when bought
   mirrors?: number; // Mirror Devices won, waiting for a unit to copy
   duplicators?: number; // Equipment Duplicators (Copycat), waiting for an item to copy
+  enhancers?: number; // Minos's Enhancement Charges, waiting for an item to enhance (see enhancer.ts)
+  enhancedItems?: string[]; // Novel Equipment: equipment kept enhanced for this player (base ids), owned and future copies
   bloodRefreshes?: number; // Death Oracle: shop refreshes left that cost 1 hp instead of gold
   claim?: number; // Glorious Claim: gold stored from wins, paid on a loss or once it's full
   refreshXpRound?: number; // Experienced Shuffle: the round its refresh XP was last given

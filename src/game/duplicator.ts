@@ -8,9 +8,10 @@ export const DUPLICATOR = {
   name: 'Equipment Duplicator',
   icon: '🧬',
   copies: 3,
-  desc: 'Use it on a piece of equipment to make 3 copies of it. Trait items (like Gustiwana or Cult of Fire ones) and other special items can\'t be copied.',
+  desc: 'Use it on a piece of equipment to make 3 copies of it. Enhanced equipment, trait items (like Gustiwana or Cult of Fire ones) and other special items can\'t be copied.',
 };
 
+// Base equipment only: not an enhanced one.
 export const canDuplicate = (id: string) => EQUIPMENT.includes(id);
 
 // Why item `uid` can't be duplicated, or null.

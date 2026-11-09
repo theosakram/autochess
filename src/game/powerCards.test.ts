@@ -7,8 +7,9 @@ import { createGame, resolveCombat, startRound } from './game';
 import { fieldStats } from './inventory';
 import { mergeUnits, pooledOf } from './merge';
 import { addXp, boardCount, heroCapOf, roundIncome, xpToNext } from './player';
-import { ITEMS } from './items';
-import { ageTurrets, constellationOf, BADGE_TRAITS, badgeHeroes, BLAZING_VALOR, cashFortunes, gloriousClaim, checkChestTriggers, POWER_CARDS, cycleChests, cycleRefreshes, hurtExtraOf, powerMods, powerPool, shopOdds } from './powerCards';
+import { baseItemOf, enhancedId, EQUIPMENT, isEnhanced, ITEMS } from './items';
+import { canDuplicate, duplicateBlock } from './duplicator';
+import { ageTurrets, constellationOf, BADGE_TRAITS, badgeHeroes, BLAZING_VALOR, cashFortunes, gloriousClaim, checkChestTriggers, POWER_CARDS, cycleChests, cycleRefreshes, ENHANCING_CARDS, hurtExtraOf, powerMods, powerPool, shopOdds } from './powerCards';
 import { refreshShop, shopPrice } from './shop';
 import { syncPlayer } from './sync';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -1281,11 +1282,12 @@ describe('Exclusive Offering', () => {
     a.board[3] = { uid: 3, defId: 'minos', star: 1 };
     a.board[4] = { uid: 4, defId: 'eudora', star: 1 };
     syncPlayer(state, a);
-    expect(a.items.filter((i) => i.id === 'offering')).toHaveLength(1);
+    expect(a.items.filter((i) => baseItemOf(i.id) === 'offering')).toHaveLength(1);
     a.powerOffer = { tier: 'purple', cards: ['exclusiveOffering'], rerolled: [] };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'exclusiveOffering' }).ok).toBe(true);
-    const offerings = a.items.filter((i) => i.id === 'offering');
+    const offerings = a.items.filter((i) => baseItemOf(i.id) === 'offering');
     expect(offerings).toHaveLength(2);
+    expect(offerings.every((i) => i.id === 'offering+')).toBe(true); // and enhanced
     const before = fieldStats(a, playerTraits(a));
     offerings[0].holder = 3;
     offerings[1].holder = 4;
@@ -1293,8 +1295,9 @@ describe('Exclusive Offering', () => {
     const gift = (uid: number) => Math.round(Math.max(after.get(uid)!.atk, after.get(uid)!.ap) * 0.8);
     expect(after.get(1)!.atk - before.get(1)!.atk).toBeCloseTo(gift(3) + gift(4), -1);
     // The bearers themselves gain nothing from either Offering.
-    expect(after.get(3)!.atk).toBe(before.get(3)!.atk);
-    expect(after.get(4)!.atk).toBe(before.get(4)!.atk);
+    // The bearers get no share: only each Offering's own +25% attack (they're enhanced here).
+    expect(Math.abs(after.get(3)!.atk - before.get(3)!.atk * (1 + ITEMS.offering.mods(1)[0].pct!))).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.get(4)!.atk - before.get(4)!.atk * (1 + ITEMS.offering.mods(1)[0].pct!))).toBeLessThanOrEqual(1);
   });
 });
 
@@ -2229,5 +2232,105 @@ describe('Prime Selection', () => {
     const first = a.factionOrbOffer![0];
     resolveCombat(state);
     expect(a.mistOrbs!.map((o) => o.trait)).toEqual([first]);
+  });
+});
+
+describe('cards that enhance items', () => {
+  const pick = (card: string, setup?: (state: GameState, a: Player) => void) => {
+    const state = createGame(23, SEEDS);
+    const [a] = state.players;
+    setup?.(state, a);
+    a.powerOffer = { tier: 'purple', cards: [card], rerolled: [] };
+    expect(applyAction(state, a.id, { type: 'pickPower', card }).ok).toBe(true);
+    return { state, a };
+  };
+
+  test('Manic Slam and co. (purple): an enhanced item now; copies owned, and later ones, enhanced too', () => {
+    for (const { id, item } of ENHANCING_CARDS) {
+      expect(POWER_CARDS[id].tiers).toEqual(['purple']);
+      const { state, a } = pick(id, (s, p) => p.items.push({ uid: s.nextUid++, id: item, tier: 1, holder: null }));
+      expect(a.items.filter((i) => baseItemOf(i.id) === item).map((i) => i.id)).toEqual([enhancedId(item), enhancedId(item)]);
+      a.items.push({ uid: state.nextUid++, id: item, tier: 1, holder: null }); // a later drop
+      syncPlayer(state, a);
+      expect(a.items.every((i) => baseItemOf(i.id) !== item || i.id === enhancedId(item))).toBe(true);
+      expect(POWER_CARDS[id].desc('purple')).toContain(`Enhanced ${ITEMS[item].name}`);
+    }
+  });
+
+  test('Gustiwana Unbound: Keris, Blangkon and Jimat enhanced, now and later; +5 free refreshes', () => {
+    const { state, a } = pick('gustiwanaUnbound', (s, p) => p.items.push({ uid: s.nextUid++, id: 'keris', tier: 2, holder: null }));
+    expect(a.items.find((i) => baseItemOf(i.id) === 'keris')).toMatchObject({ id: 'keris+', tier: 2 });
+    expect(a.freeRerolls).toBe(5);
+    a.items.push({ uid: state.nextUid++, id: 'jimat', tier: 1, holder: null });
+    syncPlayer(state, a);
+    expect(a.items.some((i) => i.id === 'jimat+')).toBe(true);
+  });
+
+  test('Exclusive Offering: Pyre Offerings enhanced', () => {
+    const { a } = pick('exclusiveOffering', (s, p) => p.items.push({ uid: s.nextUid++, id: 'offering', tier: 1, holder: null }));
+    expect(a.items.some((i) => i.id === 'offering+')).toBe(true);
+  });
+
+  test('an enhanced trait item still counts for its trait: no extra copies granted', () => {
+    const state = createGame(23, SEEDS);
+    const [a] = state.players;
+    a.board.fill(null);
+    a.bench.fill(null);
+    a.items = [];
+    const gusti = UNITS.filter((u) => u.traits.includes('gustiwana') && u.shop !== false);
+    gusti.slice(0, 4).forEach((u, i) => (a.board[i] = { uid: 500 + i, defId: u.id, star: 1 }));
+    syncPlayer(state, a);
+    const n = a.items.length;
+    expect(n).toBeGreaterThan(0);
+    for (const it of a.items) it.id = enhancedId(it.id);
+    syncPlayer(state, a);
+    expect(a.items.length).toBe(n);
+  });
+});
+
+describe('Novel Equipment', () => {
+  const pick = () => {
+    const state = createGame(29, SEEDS);
+    const [a] = state.players;
+    a.items = [];
+    a.powerOffer = { tier: 'gold', cards: ['novelEquipment'], rerolled: [] };
+    expect(applyAction(state, a.id, { type: 'pickPower', card: 'novelEquipment' }).ok).toBe(true);
+    return { state, a };
+  };
+
+  test('gold only: 3 different random equipment, enhanced, straight to the inventory', () => {
+    expect(POWER_CARDS.novelEquipment.tiers).toEqual(['gold']);
+    const { a } = pick();
+    expect(a.items).toHaveLength(3);
+    expect(new Set(a.items.map((i) => i.id)).size).toBe(3);
+    for (const it of a.items) {
+      expect(isEnhanced(it.id)).toBe(true);
+      expect(EQUIPMENT).toContain(baseItemOf(it.id));
+      expect(it.holder).toBeNull();
+    }
+    expect(a.enhancedItems).toEqual(a.items.map((i) => baseItemOf(i.id)));
+  });
+
+  test('later copies of those items come enhanced; others do not', () => {
+    const { state, a } = pick();
+    const mine = a.enhancedItems![0];
+    const other = EQUIPMENT.find((e) => !a.enhancedItems!.includes(e))!;
+    a.items.push({ uid: state.nextUid++, id: mine, tier: 1, holder: null }, { uid: state.nextUid++, id: other, tier: 1, holder: null });
+    syncPlayer(state, a);
+    expect(a.items.filter((i) => baseItemOf(i.id) === mine).every((i) => i.id === enhancedId(mine))).toBe(true);
+    expect(a.items.some((i) => i.id === other)).toBe(true);
+  });
+});
+
+describe('Copycat: no copying enhanced equipment', () => {
+  test('the duplicator refuses an enhanced item, takes its base', () => {
+    expect(canDuplicate('waraxe')).toBe(true);
+    expect(canDuplicate('waraxe+')).toBe(false);
+    const state = createGame(29, SEEDS);
+    const [a] = state.players;
+    a.duplicators = 1;
+    a.items = [{ uid: 900, id: 'waraxe+', tier: 1, holder: null }];
+    expect(duplicateBlock(a, 900)).toContain("can't be copied");
+    expect(POWER_CARDS.copycat.desc('gold')).toContain('not enhanced');
   });
 });

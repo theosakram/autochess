@@ -71,12 +71,31 @@ export interface LowHpFury {
   seconds: number;
 }
 
+// A named unique passive: stats a unit gets once, however many of its items carry it (two items with Swift: one
+// Swift). Enhanced items add these (see PASSIVES).
+export interface NamedPassive {
+  id: string;
+  name: string;
+  mods: StatMod[];
+  text: string; // what it does, for item descriptions
+}
+
+// What an item's enhanced version changes from its base: any of its fields (name, desc, values, mods, passives...).
+// Anything not given stays as the base has it.
+export type EnhancedOverrides = Partial<Omit<ItemDef, 'id' | 'enhanced' | 'enhancedFrom'>>;
+
 // An item is data plus hooks, like a trait. Tiers start at 1.
 export interface ItemDef {
   id: string;
   name: string;
   icon: string;
   kind: ItemKind;
+  // Enhanced items: an item that can be enhanced gives what changes here. Its enhanced version is registered as
+  // an item of its own (id `<id>+`, see items/enhanced in index.ts), so it works everywhere a base item does.
+  // Without this, the item can't be enhanced.
+  enhanced?: EnhancedOverrides;
+  enhancedFrom?: string; // set on an enhanced version only: its base item's id
+  passives?: NamedPassive[]; // named unique passives (each counts once per unit, across all its items)
   group?: EquipmentGroup; // equipment only (see EQUIPMENT_GROUPS)
   // Works only while this trait is active for the holder's side. None: equipment, which always works
   // (dropped by monster rounds, see equipment.ts).
@@ -112,7 +131,7 @@ export interface ItemDef {
   // Unique, once per fight: when the holder drops below `below` of its max hp, or takes a hit that would
   // kill it (it's left at 1 hp instead), it freezes for `seconds`: it can't act, takes no damage, enemies
   // can't target it, and it heals `heal` of its max hp over that time.
-  freeze?: { below: number; seconds: number; heal: number };
+  freeze?: { below: number; seconds: number; heal: number; mana?: number }; // mana: share of max mana, when it freezes
   // Unique aura: while the holder lives, enemies within `radius` cells lose `attackSpeed` (a timed buff, kept
   // refreshed; it lasts `linger` seconds after they leave). Several holders on one side don't stack.
   chill?: { effect: string; radius: number; attackSpeed: number; linger: number };
@@ -127,7 +146,7 @@ export interface ItemDef {
   thunder?: { effect: string; every: number; share: number; radius: number };
   // Unique: when a fight starts, every other ally in the holder's row gets `mods` for the whole fight. Several
   // holders in one row don't stack (one buff per effect).
-  rowBuff?: { effect: string; mods: { stat: StatKey; add: number }[] };
+  rowBuff?: { effect: string; mods: { stat: StatKey; add: number }[]; hpPct?: number }; // hpPct: + share of max hp (and hp) at the start
   // Unique: when a fight starts, enemies within `radius` cells are taunted for `seconds`. All fight long, the
   // holder has +`perTargeter` armor and magic resist for every living enemy whose target it is.
   provoke?: { effect: string; radius: number; seconds: number; perTargeter: number };
@@ -154,7 +173,15 @@ export interface ItemDef {
   // Unique: polymorph. When a fight starts, the enemy with the highest star (ties: higher cost) is turned into a
   // sheep for `opening` seconds (like a stun: no moving, attacking or casting). Its basic attacks that deal damage
   // turn their target into a sheep for `onHit` seconds, at most once every `cooldown` seconds.
-  sheep?: { opening: number; onHit: number; cooldown: number };
+  // Great Dragon Spear: each basic attack has `chance` to be followed by `hits` extra attacks.
+  flurry?: { chance: number; hits: number };
+  // Supreme Blade's Gift: the holder executes adjacent enemies under `below` of their max hp (adds to the item's counter).
+  gift?: { below: number };
+  // Plunderer's Claw: at the start, hooks the nearest enemy (stun `stun` seconds) for gold = its cost, up to `goldCap` in all (the item's counter).
+  plunder?: { stun: number; goldCap: number };
+  // Bonuses from the owned item's counter (Item.count), e.g. Supreme Blade's damage per execution.
+  counted?: (count: number) => StatMod[];
+  sheep?: { opening: number; onHit: number; cooldown: number; vulnerable?: number }; // vulnerable: + damage a sheep takes, while a sheep
   // Item slots it takes on its holder (default 1); it also counts as that many items wherever item count
   // matters (e.g. who leads a trait, Angela's halo).
   slots?: number;

@@ -8,7 +8,7 @@ import { cultOfFire } from './cultOfFire';
 import { dauntless } from './dauntless';
 import { deadeye } from './deadeye';
 import { defender } from './defender';
-import { ITEMS } from '../items';
+import { baseItemOf, isEnhanced, ITEMS } from '../items';
 import { dragonAltar } from './dragonAltar';
 import { fighter } from './fighter';
 import { gustiwana } from './gustiwana';
@@ -91,11 +91,22 @@ export interface Field {
   cell: number;
   chosen: Record<string, string>; // trait id -> unit def id it picked for the game (GameState.chosen)
   stacks: Record<string, number>; // the owner's counters
-  items: { id: string; tier: number }[]; // the unit's active items and their working tiers
+  items: { id: string; tier: number; count?: number }[]; // the unit's active items and their working tiers (count: its counter)
   honorary: string[]; // traits it gets member bonuses for without being (or counting as) a member
   extra: StatMod[]; // flat player-wide bonuses (e.g. Mist Shop Blades), on top of traits and items
   leads: string[]; // traits it's the leader of (see traitLeaders)
   scale: number; // hp/atk multiplier, for the balance tool
+}
+
+// One entry per item type held (an item and its enhanced version are one type; the enhanced one, else the highest tier).
+function uniqueItems(items: { id: string; tier: number }[]): { id: string; tier: number }[] {
+  const best = new Map<string, { id: string; tier: number }>();
+  for (const it of items) {
+    const key = baseItemOf(it.id);
+    const had = best.get(key);
+    if (!had || (isEnhanced(it.id) && !isEnhanced(had.id)) || (isEnhanced(it.id) === isEnhanced(had.id) && it.tier > had.tier)) best.set(key, it);
+  }
+  return [...best.values()];
 }
 
 // Everything the active traits do to one unit.
@@ -113,8 +124,12 @@ export function unitMods(def: UnitDef, field: Partial<Field> = {}): StatMod[] {
       }),
     ),
     ...items.flatMap((it) => ITEMS[it.id].mods(it.tier)),
-    // Unique attributes count once per item type.
-    ...[...new Map(items.map((it) => [it.id, it.tier])).entries()].flatMap(([id, tier]) => ITEMS[id].unique?.(tier) ?? []),
+    // An item's counter (Supreme Blade's executions).
+    ...items.flatMap((it) => ITEMS[it.id].counted?.(it.count ?? 0) ?? []),
+    // Unique attributes count once per item type (an item and its enhanced version are one type: the enhanced counts).
+    ...uniqueItems(items).flatMap(({ id, tier }) => ITEMS[id].unique?.(tier) ?? []),
+    // Named passives (Swift, Longevity...) count once, whichever items carry them.
+    ...[...new Map(items.flatMap((it) => (ITEMS[it.id].passives ?? []).map((ps) => [ps.id, ps] as const))).values()].flatMap((ps) => ps.mods),
     ...extra,
   ];
 }

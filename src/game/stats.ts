@@ -24,6 +24,7 @@ export interface Stats {
   manaRegen: number; // per second
   armorShred: number; // armor and mr a basic attack removes from its target; doesn't stack
   magicPen: number; // share of the target's magic resist its magic damage ignores (0..1)
+  armorPen: number; // share of the target's armor its physical damage ignores (0..1)
   burnOnHit: number; // basic attacks burn the target: this share of its max hp per second, magic, for BURN_SECONDS
   damageAmp: number; // all damage this unit deals is multiplied by 1 + damageAmp
   damageTaken: number; // all damage this unit takes is multiplied by 1 + damageTaken (e.g. Weak)
@@ -69,6 +70,7 @@ export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
     manaRegen: 0,
     armorShred: 0,
     magicPen: 0,
+    armorPen: 0,
     burnOnHit: 0,
     damageAmp: 0,
     damageTaken: 0,

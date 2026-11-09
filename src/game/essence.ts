@@ -1,6 +1,6 @@
 import { draw } from './altar';
 import { powersOf } from './commanders';
-import { ESSENCE_CORE, ITEMS } from './items';
+import { baseItemOf, ESSENCE_CORE, ITEMS } from './items';
 import { mergeUnits } from './merge';
 import { baseStats, type StatMod } from './stats';
 import type { Trigger } from './traits/types';
@@ -34,7 +34,7 @@ export const ESSENCE_ROLES: Record<string, { text: string; mods?: StatMod[]; tri
 };
 
 const all = (p: Player) => [...p.board, ...p.bench];
-export const essenceCore = (p: Player) => p.items.find((i) => i.id === ESSENCE_CORE) ?? null;
+export const essenceCore = (p: Player) => p.items.find((i) => baseItemOf(i.id) === ESSENCE_CORE) ?? null; // enhanced too
 // The hero holding the core, if it's fielded (only then does the core work).
 export const coreHolder = (p: Player): Unit | null => {
   const core = essenceCore(p);
@@ -88,7 +88,7 @@ export function essenceOut(p: Player): string | null {
   const free = p.bench.indexOf(null);
   if (free < 0) return 'Your bench is full';
   p.bench[free] = hero;
-  p.items = p.items.filter((i) => i.id !== ESSENCE_CORE);
+  p.items = p.items.filter((i) => baseItemOf(i.id) !== ESSENCE_CORE);
   p.items.push(...p.essence!.items);
   p.essence = { hero: null, items: [] };
   // Copies picked up while it was on the altar combine with it now.
@@ -106,7 +106,7 @@ export function essenceMods(p: Player): StatMod[] {
   const mods: StatMod[] = (['hp', 'atk', 'ap', 'armor', 'mr'] as const).map((stat) => ({ stat, add: s[stat] * share }));
   for (const it of p.essence!.items) {
     const def = ITEMS[it.id];
-    for (const m of [...def.mods(it.tier), ...(def.unique?.(it.tier) ?? [])]) {
+    for (const m of [...def.mods(it.tier), ...(def.unique?.(it.tier) ?? []), ...(def.passives ?? []).flatMap((ps) => ps.mods)]) {
       mods.push({ stat: m.stat, ...(m.add !== undefined ? { add: m.add * share } : {}), ...(m.pct !== undefined ? { pct: m.pct * share } : {}) });
     }
   }

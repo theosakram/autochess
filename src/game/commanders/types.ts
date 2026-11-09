@@ -1,4 +1,4 @@
-import type { StatKey } from '../stats';
+import type { StatKey, StatMod } from '../stats';
 // Commanders: each player picks one at the start of the game. The commander is the player: it holds
 // their hp, and its innate power works for them all game. On round COMMANDER_CARD_ROUND every player
 // picks one commander card; a card does one thing for its own commander (an upgrade) and another for
@@ -54,6 +54,9 @@ export interface CommanderPower {
   startChests?: number; // Equipment Chests handed over once, when this power first works (Guiness)
   freeHeroChance?: number; // Guiness: chance the after-fight shop has a free hero
   pickMirrors?: number; // Mirror Devices handed over once, when this card is picked (Amon's card on another commander)
+  itemBoost?: { item: string; mods: StatMod[] }; // Katarina's card: the holder of this item (or its enhanced version) gets these too
+  startEnhancers?: number; // Minos: Enhancement Charges handed over once, when this power first works (see enhancer.ts)
+  pickEquipment?: number; // Minos's card: this many random equipment, straight to the inventory, on the pick
   // Nana: lethal hits survived (left at 1 HP), in all. A card's count replaces the innate one, it doesn't add.
   deathSaves?: number;
   hurtGold?: HurtGoldPower;

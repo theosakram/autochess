@@ -5,7 +5,7 @@ import { EQUIPMENT } from './items';
 import { openChest } from './inventory';
 import { killsBy, type CombatResult } from './combat';
 import { earnChests, payBounty } from './game';
-import { ALICE, AMON, CYCLOPS, FREYA, GUINESS, JOHNSON, LUNOX, MIYA } from './commanders';
+import { ALICE, AMON, CYCLOPS, FREYA, GUINESS, JOHNSON, KATARINA, LUNOX, MIYA } from './commanders';
 import { refreshShop, rollFreeHero, shopPrice } from './shop';
 import { claimable } from './freya';
 import { checkRally, heroValue, payHeirs } from './cyclops';
@@ -18,6 +18,7 @@ import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, DYROTH, hurtPlayer, K
 import { ITEMS } from './items';
 import { fieldStats } from './inventory';
 import { syncPlayer } from './sync';
+import { ENHANCER } from './enhancer';
 import { playerTraits, TRAITS, unitStats } from './traits';
 import { simulateCombat, defenseMult } from './combat';
 import { BOARD_COLS, COMMANDER_CARD_ROUND, roundAt, WIN_GOLD } from './config';
@@ -91,9 +92,9 @@ describe('Kenzo', () => {
     expect(powersOf(p).roundGold).toEqual(KENZO.gold);
   });
 
-  test('the sash is +40% attack and magic attack, and never drops', () => {
+  test('the sash is +50% attack and magic attack, and never drops', () => {
     expect(EQUIPMENT).not.toContain('blacksash');
-    expect(ITEMS.blacksash.mods(1)).toEqual([{ stat: 'atk', pct: 0.4 }, { stat: 'ap', pct: 0.4 }]);
+    expect(ITEMS.blacksash.mods(1)).toEqual([{ stat: 'atk', pct: 0.5 }, { stat: 'ap', pct: 0.5 }]);
   });
 
   test('only kills by the holder or its summons count, once per target', () => {
@@ -1589,5 +1590,106 @@ describe('Guiness', () => {
     expect(powersOf(o).freeHeroChance).toBe(GUINESS.freeHeroChance);
     expect(o.freeHeroes ?? 0).toBe(0);
     expect(o.offerFrom).toBe('chest');
+  });
+});
+
+describe('Minos', () => {
+  function minosGame(): { state: GameState; p: Player } {
+    const state = createGame(6, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'minos' }).ok).toBe(true);
+    return { state, p: state.players[0] };
+  }
+
+  test('starts with an Equipment Chest (opened at once) and 3 Enhancement Charges', () => {
+    const { p } = minosGame();
+    expect(p.offerFrom).toBe('chest');
+    expect(p.enhancers).toBe(3);
+  });
+
+  test('a charge enhances an item of your choice and pays 3 gold and 3 XP', () => {
+    const { state, p } = minosGame();
+    p.items.push({ uid: 990, id: 'waraxe', tier: 1, holder: null });
+    const gold = p.gold;
+    const xp = p.xp;
+    const level = p.level;
+    expect(applyAction(state, p.id, { type: 'useEnhancer', item: 990 }).ok).toBe(true);
+    expect(p.items.find((i) => i.uid === 990)!.id).toBe('waraxe+');
+    expect(p.enhancers).toBe(2);
+    expect(p.gold).toBe(gold + ENHANCER.gold);
+    expect(p.level > level || p.xp === xp + ENHANCER.xp).toBe(true);
+  });
+
+  test("can't go on an item that's already enhanced; out of charges, nothing to use", () => {
+    const { state, p } = minosGame();
+    p.items.push({ uid: 991, id: 'waraxe+', tier: 1, holder: null }, { uid: 992, id: 'oracle', tier: 1, holder: null });
+    expect(applyAction(state, p.id, { type: 'useEnhancer', item: 991 }).ok).toBe(false);
+    p.enhancers = 1;
+    expect(applyAction(state, p.id, { type: 'useEnhancer', item: 992 }).ok).toBe(true);
+    expect(p.enhancers).toBeUndefined();
+    p.items.push({ uid: 993, id: 'bladearmor', tier: 1, holder: null });
+    expect(applyAction(state, p.id, { type: 'useEnhancer', item: 993 }).ok).toBe(false);
+  });
+
+  test('card (Labyrinth Forge): 2 random equipment straight to the inventory, and 2 more charges on top', () => {
+    const { state, p } = minosGame();
+    const before = p.items.length;
+    payCard(state, p, 'minos');
+    const added = p.items.slice(before);
+    expect(added).toHaveLength(2);
+    for (const it of added) expect(EQUIPMENT).toContain(it.id);
+    expect(p.enhancers).toBe(5);
+  });
+
+  test("on another commander, the card is Minos's innate: a chest and 3 charges", () => {
+    const state = createGame(6, SEEDS);
+    const p = state.players[0];
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'nana' }).ok).toBe(true);
+    payCard(state, p, 'minos');
+    expect(p.enhancers).toBe(3);
+    expect(p.offerFrom === 'chest' || (p.chests?.waiting ?? 0) > 0).toBe(true); // the chest: open, or waiting its turn
+  });
+});
+
+describe('Katarina', () => {
+  function kataGame(): { state: GameState; p: Player } {
+    const state = createGame(6, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'katarina' }).ok).toBe(true);
+    return { state, p: state.players[0] };
+  }
+
+  test('starts with the Supreme Blade', () => {
+    const { p } = kataGame();
+    expect(p.items.filter((i) => i.id === 'supremeblade')).toHaveLength(1);
+  });
+
+  test("her card: 6 gold, and the Supreme Blade's holder (enhanced blade too) gains +40% attack speed", () => {
+    const { state, p } = kataGame();
+    p.board.fill(null);
+    p.board[3] = { uid: 700, defId: 'minos', star: 1 };
+    p.board[4] = { uid: 701, defId: 'minos', star: 1 };
+    p.items.find((i) => i.id === 'supremeblade')!.holder = 700;
+    const speed = (uid: number) => fieldStats(p, playerTraits(p)).get(uid)!.attackSpeed;
+    const before = speed(700);
+    const other = speed(701);
+    const gold = p.gold;
+    payCard(state, p, 'katarina');
+    p.commanderCard = 'katarina';
+    expect(p.gold).toBe(gold + KATARINA.card.gold);
+    expect(speed(700)).toBeCloseTo(before + KATARINA.card.attackSpeed, 5);
+    expect(speed(701)).toBeCloseTo(other, 5); // only the blade's holder
+    p.items.find((i) => i.id === 'supremeblade')!.id = 'supremeblade+';
+    expect(speed(700)).toBeCloseTo(before + KATARINA.card.attackSpeed, 5);
+  });
+
+  test('on another commander, her card gives the Supreme Blade (no gold, no speed)', () => {
+    const state = createGame(6, SEEDS);
+    const p = state.players[0];
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'nana' }).ok).toBe(true);
+    const gold = p.gold;
+    payCard(state, p, 'katarina');
+    p.commanderCard = 'katarina';
+    expect(p.items.some((i) => i.id === 'supremeblade')).toBe(true);
+    expect(p.gold).toBe(gold);
+    expect(powersOf(p).itemBoost).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Equipment. Tune with `bun run balance`.
@@ -23,3 +24,5 @@ export const berserkerFury: ItemDef = {
     { stat: 'critDamage', add: BERSERKER_FURY.critDamage },
   ],
 };
+berserkerFury.enhanced = withPassives(berserkerFury, PASSIVES.valiant);
+

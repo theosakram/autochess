@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Basic item. Tune with `bun run balance`.
@@ -21,3 +22,5 @@ export const aegis: ItemDef = {
   mods: () => [],
   sideShield: { effect: 'aegis', share: AEGIS.share, seconds: AEGIS.seconds },
 };
+aegis.enhanced = withPassives(aegis, PASSIVES.longevity);
+

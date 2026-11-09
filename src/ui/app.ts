@@ -20,6 +20,7 @@ import {
   mistChoiceHtml,
   mirrorPickHtml,
   duplicatorPickHtml,
+  enhancerPickHtml,
   johnnieOfferHtml,
   altarPickHtml,
   blessPickHtml,
@@ -77,6 +78,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   // The Mirror Device picker (Kaela's dice prizes) is open.
   let mirrorOpen = false;
   let duplicatorOpen = false;
+  let enhancerOpen = false;
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
   let blessOpen = false; // Lunox's blessing picker
@@ -287,6 +289,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       mistPick !== null && p.mistShop ? mistChoiceHtml(p, mistPick) : '',
       mirrorOpen && p.mirrors ? mirrorPickHtml(p) : '',
       duplicatorOpen && p.duplicators ? duplicatorPickHtml(p) : '',
+      enhancerOpen && p.enhancers ? enhancerPickHtml(p) : '',
       altarOpen ? altarPickHtml(p, altarOpen) : '',
       blessOpen && p.twilight?.holder === null ? blessPickHtml(p) : '',
       essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
@@ -484,6 +487,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'useDuplicator') {
         duplicatorOpen = false;
         dispatch({ type: 'useDuplicator', item: Number(btn.dataset.item) });
+      } else if (a === 'openEnhancer' || a === 'closeEnhancer') {
+        enhancerOpen = a === 'openEnhancer';
+        render();
+      } else if (a === 'useEnhancer') {
+        enhancerOpen = false;
+        dispatch({ type: 'useEnhancer', item: Number(btn.dataset.item) });
       } else if (a === 'toggleSkill') {
         skillOpen = !skillOpen;
         skillFor = selectedUid;

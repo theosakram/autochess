@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Basic item. Tune with `bun run balance`.
@@ -23,3 +24,5 @@ export const revitalize: ItemDef = {
   mods: () => [],
   spring: { effect: 'revitalize', ...REVITALIZE },
 };
+revitalize.enhanced = withPassives(revitalize, PASSIVES.longevity);
+

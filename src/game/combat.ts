@@ -30,7 +30,7 @@ export interface Fighter {
   onTile: boolean; // started on a trait's special tile
   chosen: string | null; // id of the trait whose chosen unit this is (and that's active for its side)
   leads: string[]; // traits it leads on its side (see TraitDef.leader)
-  items: { id: string; tier: number }[]; // active items and the tier each works at
+  items: { id: string; tier: number; uid?: number; count?: number }[]; // active items and the tier each works at (uid, count: items with a counter)
   orb: string | null; // trait its player's Magic Orb boosts through this unit type
   mistOrbs: string[]; // traits of the Mist orbs it holds
   copies?: number; // Alice's Blood Pact hero: copies piled in (its red stars)
@@ -158,12 +158,13 @@ interface SimFighter extends Fighter {
   killer: number | null; // the fighter whose hit first left it at 0 hp
   lastDealer: number | null; // the enemy that last damaged it (Divine Execution)
   huntNext: number; // tick its next Hunt strike is ready
-  vengeance: number; // Blade Armor: share of basic-attack damage sent back to the attacker
+  vengeance: number; // Blade Armor: share of any damage from an enemy sent back to it
   thunder: { effect: string; every: number; share: number; radius: number } | null; // Thunder Belt
   thunderReady: number; // tick its next charge is ready
   provoke: { effect: string; radius: number; seconds: number; perTargeter: number } | null; // Ancient Wrath
   provoked: number; // enemies targeting it, as its Provocation bonus last counted
-  sheep: { opening: number; onHit: number; cooldown: number } | null; // Sheep Stick
+  flurry: { chance: number; hits: number } | null; // Great Dragon Spear
+  sheep: { opening: number; onHit: number; cooldown: number; vulnerable?: number } | null; // Sheep Stick
   sheepReady: number; // tick its next on-hit sheep is ready
   ccImmuneUntil: number; // no stuns, taunts or enemy displacement before this tick (Purify)
   spring: HealingSpring | null; // Revitalize, until it's used up (see checkSpring)
@@ -173,7 +174,7 @@ interface SimFighter extends Fighter {
   antiHeal: { cut: number; until: number }; // healing it receives is cut by this, until then
   hexes: { effect: string; mods: { stat: StatKey; add: number }[]; seconds: number }[]; // its skill damage puts these on targets
   scorch: { effect: string; share: number; min: number; seconds: number; cut: number } | null; // Glowing Wand
-  freeze: { below: number; seconds: number; heal: number } | null; // Winter Crown, until it's used
+  freeze: { below: number; seconds: number; heal: number; mana?: number } | null; // Winter Crown, until it's used
   frozen: { until: number; healPerTick: number }; // frozen now: no acting, no damage, untargetable
   // Item passives that stack as it deals damage (see ItemDef.stacking), one per effect.
   stacking: { def: StackingPassive; n: number; until: number }[];
@@ -183,6 +184,8 @@ interface SimFighter extends Fighter {
   rooted: boolean; // never walks (see SkillApi.stance)
   anchored: boolean; // can't be moved by anything (Turret)
   execute: number; // Divine Execution: its damage finishes enemies under this share of max hp
+  gift: number; // Supreme Blade: executes adjacent enemies under this share of max hp (0 = none)
+  plunder: number; // Plunderer's Claw: stun seconds of its opening hook (0 = none)
   noBasic: boolean; // never basic-attacks, only casts when its mana is full (see SkillApi.stance)
   guardUntil: number; // takes less damage before this tick
   guardReduction: number;
@@ -306,7 +309,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       ),
       antiHeal: { cut: 0, until: 0 },
       scorch: items.map(({ id }) => ITEMS[id].scorch).find((s) => s) ?? null,
-      freeze: items.map(({ id }) => ITEMS[id].freeze).find((s) => s) ?? null,
+      freeze: items.flatMap(({ id }) => (ITEMS[id].freeze ? [ITEMS[id].freeze!] : [])).sort((x, y) => y.heal - x.heal)[0] ?? null, // enhanced wins
       frozen: { until: 0, healPerTick: 0 },
       hexes: [...new Map(items.flatMap(({ id }) => (ITEMS[id].skillHex ? [[ITEMS[id].skillHex!.effect, ITEMS[id].skillHex!] as const] : []))).values()],
       ccImmuneUntil: Math.round(Math.max(0, ...items.map(({ id }) => ITEMS[id].ccImmune ?? 0)) * TICKS_PER_SECOND),
@@ -381,9 +384,10 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       vengeance: Math.max(0, ...items.map(({ id }) => ITEMS[id].vengeance ?? 0)),
       thunder: items.map(({ id }) => ITEMS[id].thunder).find((s) => s) ?? null,
       thunderReady: 0,
-      provoke: items.map(({ id }) => ITEMS[id].provoke).find((s) => s) ?? null,
+      provoke: items.flatMap(({ id }) => (ITEMS[id].provoke ? [ITEMS[id].provoke!] : [])).sort((x, y) => y.perTargeter - x.perTargeter)[0] ?? null, // enhanced wins
       provoked: 0,
-      sheep: items.map(({ id }) => ITEMS[id].sheep).find((s) => s) ?? null,
+      flurry: items.map(({ id }) => ITEMS[id].flurry).find((s) => s) ?? null,
+      sheep: items.flatMap(({ id }) => (ITEMS[id].sheep ? [ITEMS[id].sheep!] : [])).sort((x, y) => (y.vulnerable ?? 0) - (x.vulnerable ?? 0))[0] ?? null, // enhanced wins
       sheepReady: 0,
       taunt: null,
       buffs: [],
@@ -391,6 +395,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       rooted: !!def.rooted,
       anchored: !!def.rooted,
       execute,
+      gift: Math.max(0, ...items.map(({ id }) => ITEMS[id].gift?.below ?? 0)),
+      plunder: Math.max(0, ...items.map(({ id }) => ITEMS[id].plunder?.stun ?? 0)),
       noBasic: false,
       guardUntil: 0,
       guardReduction: 0,
@@ -443,6 +449,15 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   deploy(withCopies(rng, home), 0, traits[0], scale[0], chosen, fighters, stage);
   deploy(withCopies(rng, away), 1, traits[1], scale[1], chosen, fighters, stage);
   const disco = [discoOf(home), discoOf(away)]; // Disco Fever, per side
+  // Enhanced Oracle: its row starts with more max hp, before the snapshot so the replay's bars show it.
+  // Once per hero, however many enhanced Oracles share the row.
+  for (const ally of fighters) {
+    const pct = Math.max(0, ...fighters.filter((f) => f.side === ally.side && f.y === ally.y).flatMap((f) => f.items.map(({ id }) => ITEMS[id].rowBuff?.hpPct ?? 0)));
+    if (!pct) continue;
+    const hp = Math.round(ally.maxHp * pct);
+    ally.maxHp += hp;
+    ally.hp += hp;
+  }
   const start = fighters.map(snapshot);
 
   const occupied = new Int16Array(GRID_W * GRID_H).fill(-1);
@@ -469,8 +484,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const stat = type === 'physical' ? 'armor' : 'mr';
     const lowered = target.debuffs.reduce((n, d) => n + (t < d.until ? d[stat] : 0), 0);
     const raw0 = type === 'pure' ? 0 : target.stats[stat] - target.shred - lowered;
-    // Magic penetration ignores a share of what magic resist is left.
-    const defense = type === 'magic' && dealer && raw0 > 0 ? raw0 * (1 - Math.min(1, dealer.stats.magicPen)) : raw0;
+    // Penetration ignores a share of what defense is left: magic pen of magic resist, armor pen of armor.
+    const pen = !dealer || raw0 <= 0 ? 0 : type === 'magic' ? dealer.stats.magicPen : type === 'physical' ? dealer.stats.armorPen : 0;
+    const defense = raw0 * (1 - Math.min(1, pen));
     const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
     // Dimensional Shoot: tiles between dealer and target (none when next to each other).
     const range = dealer?.sharpshooter ? 1 + dealer.sharpshooter * Math.max(0, dist(dealer, target) - 1) : 1;
@@ -494,6 +510,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const lethal = target.freeze !== null && dealt - absorbed >= target.hp;
     target.hp = lethal ? 1 : Math.max(0, target.hp - (dealt - absorbed));
     if (dealer && dealer.side !== target.side) target.lastDealer = dealer.id;
+    // Blade Armor: queued, sent back once this hit is done (a reflection never reflects again).
+    if (target.vengeance && dealer && dealer.side !== target.side && dealt > 0 && !reflecting) pendingVengeance.push({ holder: target, attacker: dealer, taken: dealt });
     if (target.hp <= 0 && dealer && target.killer === null) target.killer = dealer.id;
     if (lethal) freezeNow(target);
     if (dealer) dealer.dealt += dealt;
@@ -514,6 +532,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   function afterDamage(target: SimFighter, t: number): void {
     reactToDamage(target, t);
     flushShares();
+    flushVengeance(t);
   }
 
   function reactToDamage(target: SimFighter, t: number): void {
@@ -683,7 +702,14 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   // Sheep Stick: a basic attack that dealt damage sheeps its target, off cooldown.
   function sheepOnHit(f: SimFighter, target: SimFighter): void {
     if (!f.sheep || t < f.sheepReady || target.hp <= 0) return;
-    if (disable(target, f.sheep.onHit, f, 'sheep')) f.sheepReady = t + Math.round(f.sheep.cooldown * TICKS_PER_SECOND);
+    if (sheepify(target, f.sheep.onHit, f)) f.sheepReady = t + Math.round(f.sheep.cooldown * TICKS_PER_SECOND);
+  }
+  // A sheep; from an enhanced stick it also takes more damage for as long as it's one.
+  function sheepify(target: SimFighter, seconds: number, by: SimFighter): boolean {
+    if (!disable(target, seconds, by, 'sheep')) return false;
+    // Weak while a sheep, like Eudora's Gale Shot: a timed damage-taken buff.
+    if (by.sheep?.vulnerable) api.buff(target, [{ stat: 'damageTaken', add: by.sheep.vulnerable }], seconds, 'sheepweak', by);
+    return true;
   }
 
   // Sheep Stick at the start: the enemy with the highest star (ties: higher cost, then first found).
@@ -693,7 +719,20 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0);
       const rank = (e: SimFighter) => e.star * 100 + UNIT_BY_ID[e.defId].tier;
       const best = foes.reduce<SimFighter | null>((b, e) => (!b || rank(e) > rank(b) ? e : b), null);
-      if (best) disable(best, f.sheep.opening, f, 'sheep');
+      if (best) sheepify(best, f.sheep.opening, f);
+    }
+  }
+
+  // Plunderer's Claw at the start: hooks the nearest enemy, stunning it. The gold (its cost) is paid after the
+  // fight (see countPlunder in game.ts), from these 'plunder' events.
+  function firePlunder(): void {
+    for (const f of fighters) {
+      if (!f.plunder) continue;
+      const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      if (!foes.length) continue;
+      const prey = nearest(f, foes);
+      events.push({ t, type: 'effect', effect: 'plunder', by: f.id, target: prey.id, damage: 0, hp: prey.hp });
+      disable(prey, f.plunder, f, 'plunder');
     }
   }
 
@@ -836,12 +875,20 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const e of hit) afterDamage(e, t);
   }
 
-  // Blade Armor: a basic attack on the holder sends a share of its damage back, physical.
-  function vengeance(holder: SimFighter, attacker: SimFighter, taken: number): void {
-    if (!holder.vengeance || taken <= 0 || attacker.hp <= 0) return;
-    const dealt = damage(attacker, taken * holder.vengeance, 'physical', holder);
-    events.push({ t, type: 'effect', effect: 'vengeance', by: holder.id, target: attacker.id, damage: dealt, hp: attacker.hp });
-    afterDamage(attacker, t);
+  // Blade Armor: any damage an enemy deals the holder sends a share of it back, physical. Queued by damage() and
+  // sent once the hit is done; the reflected damage itself is never reflected (two Blade Armors don't ping-pong).
+  const pendingVengeance: { holder: SimFighter; attacker: SimFighter; taken: number }[] = [];
+  let reflecting = false;
+  function flushVengeance(t: number): void {
+    while (pendingVengeance.length && !reflecting) {
+      const { holder, attacker, taken } = pendingVengeance.shift()!;
+      if (attacker.hp <= 0) continue;
+      reflecting = true;
+      const dealt = damage(attacker, taken * holder.vengeance, 'physical', holder);
+      reflecting = false;
+      events.push({ t, type: 'effect', effect: 'vengeance', by: holder.id, target: attacker.id, damage: dealt, hp: attacker.hp });
+      afterDamage(attacker, t);
+    }
   }
 
   // Item passives that build up with every damaging hit (e.g. War Axe's Fighting Spirit): one more
@@ -884,6 +931,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     f.freeze = null;
     const ticks = Math.max(1, Math.round(s.seconds * TICKS_PER_SECOND));
     f.frozen = { until: t + ticks, healPerTick: (f.maxHp * s.heal) / ticks };
+    if (s.mana) gainMana(f, f.maxMana * s.mana); // enhanced Winter Crown
     for (const e of fighters) if (e.target === f) e.target = null;
     events.push({ t, type: 'buff', id: f.id, by: f.id, effect: 'freeze', until: f.frozen.until });
   }
@@ -1005,6 +1053,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const skill = UNIT_BY_ID[f.defId].skill;
     return skill && SKILLS[skill].executeBelow;
   });
+  const gifted = fighters.filter((f) => f.gift > 0); // Supreme Blade holders: the same, from the item
   function execute(by: SimFighter, target: SimFighter, effect: string, t: number): void {
     const dealt = target.hp;
     target.hp = 0;
@@ -1019,6 +1068,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       const below = SKILLS[UNIT_BY_ID[ex.defId].skill!].executeBelow![ex.star - 1];
       if (target.hp >= target.maxHp * below) continue;
       return execute(ex, target, 'execute', t);
+    }
+    for (const ex of gifted) {
+      if (ex.hp <= 0 || ex.side === target.side || dist(ex, target) > 1 || target.hp >= target.maxHp * ex.gift) continue;
+      return execute(ex, target, 'gift', t);
     }
     // Divine Execution (never through Winter Crown's freeze): the executed one's neighbours take true damage.
     const by = target.lastDealer === null ? null : fighters[target.lastDealer];
@@ -1264,6 +1317,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         thunderReady: 0,
         provoke: null,
         provoked: 0,
+        flurry: null,
         sheep: null,
         sheepReady: 0,
         ccImmuneUntil: 0,
@@ -1283,6 +1337,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         rooted: false,
         anchored: false,
         execute: 0,
+        gift: 0,
+        plunder: 0,
         noBasic: false,
         guardUntil: 0,
         guardReduction: 0,
@@ -1446,6 +1502,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     once(false);
     // Only roll when there's a chance, so fights without it replay exactly as before.
     if (target.hp > 0 && f.hp > 0 && f.stats.hitAgain > 0 && nextFloat(rng) < f.stats.hitAgain) once(true);
+    // Great Dragon Spear: a chance of more attacks right after (only rolled when held).
+    if (f.flurry && target.hp > 0 && f.hp > 0 && nextFloat(rng) < f.flurry.chance) {
+      for (let n = 0; n < f.flurry.hits && target.hp > 0 && f.hp > 0; n++) once(true);
+    }
     if (skill && f.hp > 0) SKILLS[skill].afterAttack?.(api, f, target);
   }
 
@@ -1469,7 +1529,6 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     rage(f, target);
     thunderStrike(f, target);
     iceVolley(f, target);
-    vengeance(target, f, dealt);
     ignite(f, target);
     if (dealt > 0) sheepOnHit(f, target);
     // Cutthroat: when ready, this attack adds adaptive damage, then it recharges.
@@ -1654,24 +1713,29 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     }
   }
 
-  // Oracle: when the fight starts, every other ally in the holder's row is buffed for the whole fight.
+  // Oracle: when the fight starts, every ally in the holder's row (the holder too) is buffed for the whole fight.
+  // (Enhanced Oracle's max hp is given at deploy, above.)
   function fireRowBuffs(): void {
     for (const f of fighters) {
       const held = new Map(f.items.flatMap(({ id }) => (ITEMS[id].rowBuff ? [[ITEMS[id].rowBuff!.effect, ITEMS[id].rowBuff!] as const] : [])));
       for (const b of held.values()) {
         for (const ally of fighters) {
-          if (ally === f || ally.side !== f.side || ally.hp <= 0 || ally.y !== f.y || api.hasBuff(ally, b.effect)) continue;
+          if (ally.side !== f.side || ally.hp <= 0 || ally.y !== f.y || api.hasBuff(ally, b.effect)) continue;
           api.buff(ally, b.mods, Infinity, b.effect, f);
         }
       }
     }
   }
 
-  // Ancient Wrath: when the fight starts, the holder taunts the enemies around it.
+  // Ancient Wrath: when the fight starts, the holder taunts the enemy in front of it (the nearest) and those around that one.
   const provokers = fighters.filter((f) => f.provoke);
   function fireProvoke(): void {
     for (const f of provokers) {
-      for (const e of fighters) if (e.side !== f.side && e.hp > 0 && dist(e, f) <= f.provoke!.radius) api.taunt(e, f, f.provoke!.seconds);
+      const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0);
+      if (!foes.length) continue;
+      // In front: the nearest; ties go to the one most straight ahead (same column), then the lower id.
+      const front = foes.reduce((x, y) => (dist(f, y) - dist(f, x) || Math.abs(y.x - f.x) - Math.abs(x.x - f.x) || y.id - x.id) < 0 ? y : x);
+      for (const e of foes) if (dist(e, front) <= f.provoke!.radius) api.taunt(e, f, f.provoke!.seconds);
     }
     updateProvoked(t);
   }
@@ -1779,6 +1843,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireProvoke();
     fireBeasts();
     fireSheep();
+    firePlunder();
     // Skill passives, from the starting positions; ones that move the unit last.
     for (const late of [false, true]) {
       for (const f of fighters) {
@@ -1818,6 +1883,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireOvertime(t);
     fireHunts(t);
     updateProvoked(t);
+    flushVengeance(t); // any reflection whose hit wasn't followed by afterDamage
     expireBuffs(t);
     expireShields(t);
 

@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Equipment (defense). Tune with `bun run balance`.
@@ -19,3 +20,4 @@ export const guardianHelmet: ItemDef = {
   mods: () => [{ stat: 'hp', pct: GUARDIAN_HELMET.hp }],
   regen: GUARDIAN_HELMET.regen,
 };
+guardianHelmet.enhanced = withPassives(guardianHelmet, PASSIVES.titan);

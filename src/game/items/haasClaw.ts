@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Equipment. Tune with `bun run balance`.
@@ -25,3 +26,5 @@ export const haasClaw: ItemDef = {
   ],
   unique: () => [{ stat: 'lifesteal', add: HAAS_CLAW.lifesteal }],
 };
+haasClaw.enhanced = withPassives(haasClaw, PASSIVES.frenzy);
+

@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Basic item. Per stage (tier), index 0 = stage I. Tune with `bun run balance`.
@@ -19,3 +20,5 @@ export const inspire: ItemDef = {
   mods: () => [],
   unique: (tier) => [{ stat: 'attackSpeed', add: INSPIRE.attackSpeed[tier - 1] }],
 };
+inspire.enhanced = withPassives(inspire, PASSIVES.swift);
+

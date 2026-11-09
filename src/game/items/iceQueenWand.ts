@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { PASSIVES, withPassives } from './passives';
 import type { ItemDef } from './types';
 
 // Equipment (magic). Tune with `bun run balance`.
@@ -17,7 +18,7 @@ export const iceQueenWand: ItemDef = {
   group: 'magic',
   maxTier: 1,
   desc:
-    `+${pct(ICE_QUEEN_WAND.ap)} magic attack, +${pct(ICE_QUEEN_WAND.spellVamp)} spell vamp. ` +
+    `+${pct(ICE_QUEEN_WAND.ap)} magic attack, +${pct(ICE_QUEEN_WAND.spellVamp)} spell lifesteal. ` +
     `Ice Bound (unique): skill damage cuts the target's attack speed by ${pct(ICE_QUEEN_WAND.slow)} for ${ICE_QUEEN_WAND.seconds}s.`,
   values: () => ({}),
   mods: () => [
@@ -26,3 +27,4 @@ export const iceQueenWand: ItemDef = {
   ],
   skillHex: { effect: 'icebound', mods: [{ stat: 'attackSpeed', add: -ICE_QUEEN_WAND.slow }], seconds: ICE_QUEEN_WAND.seconds },
 };
+iceQueenWand.enhanced = withPassives(iceQueenWand, PASSIVES.extract);

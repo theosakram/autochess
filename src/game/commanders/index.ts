@@ -1,4 +1,4 @@
-import { ITEMS } from '../items';
+import { EQUIPMENT, ITEMS } from '../items';
 import { BOARD_COLS, BOARD_ROWS, CARD_OFFER_SIZE } from '../config';
 import { nextInt, shuffle } from '../rng';
 import type { GameState, Loc, Player } from '../types';
@@ -23,6 +23,8 @@ import { luoyi } from './luoyi';
 import { miya } from './miya';
 import { nana } from './nana';
 import { ruby } from './ruby';
+import { minos } from './minos';
+import { katarina } from './katarina';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 
 export type { AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
@@ -43,8 +45,10 @@ export { LUO_YI } from './luoyi';
 export { MIYA } from './miya';
 export { NANA } from './nana';
 export { RUBY } from './ruby';
+export { MINOS } from './minos';
+export { KATARINA } from './katarina';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina].map((c) => [c.id, c]));
 
 // The board piece a beast power puts on the board (see UnitDef.piece).
 export const BEAST_PIECE = 'divinebeast';
@@ -73,8 +77,8 @@ export function commanderPowers(p: Player): CommanderPower[] {
 
 // Everything working for this player, merged (later powers override earlier ones, field by field).
 // `pickGold`, `pickItem`, `pickChest` and `startItems` are left out: they're paid once, on the pick.
-export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp' | 'pickMirrors' | 'pickFreeHeroes' | 'startChests'> {
-  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, pickMirrors: _mirrors, pickFreeHeroes: _free, startChests: _startChests, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
+export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp' | 'pickMirrors' | 'pickFreeHeroes' | 'startChests' | 'startEnhancers' | 'pickEquipment'> {
+  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, pickMirrors: _mirrors, pickFreeHeroes: _free, startChests: _startChests, startEnhancers: _enh, pickEquipment: _eq, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
   return merged;
 }
 
@@ -153,7 +157,10 @@ export function syncMarks(p: Player): void {
 
 // Pays out what picking card `cardId` gives right away: its gold and its item.
 export function payCard(state: GameState, p: Player, cardId: string): void {
-  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0, pickMirrors = 0, pickFreeHeroes = 0, startChests = 0 } = cardFace(p, cardId).power;
+  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0, pickMirrors = 0, pickFreeHeroes = 0, startChests = 0, startEnhancers = 0, pickEquipment = 0 } = cardFace(p, cardId).power;
+  // Minos: Enhancement Charges (added to any held), and random equipment.
+  if (startEnhancers) p.enhancers = (p.enhancers ?? 0) + startEnhancers;
+  for (let k = 0; k < pickEquipment; k++) p.items.push({ uid: state.nextUid++, id: EQUIPMENT[nextInt(state, EQUIPMENT.length)], tier: 1, holder: null });
   p.gold += pickGold;
   if (pickFreeHeroes) p.freeHeroes = (p.freeHeroes ?? 0) + pickFreeHeroes;
   if (startChests) addChests(p, startChests);
@@ -172,6 +179,7 @@ export function payCommander(state: GameState, p: Player): void {
   const innate = COMMANDERS[p.commander!].innate;
   for (const id of innate.startItems ?? []) p.items.push({ uid: state.nextUid++, id, tier: 1, holder: null });
   if (innate.startChests) addChests(p, innate.startChests);
+  if (innate.startEnhancers) p.enhancers = (p.enhancers ?? 0) + innate.startEnhancers;
   // Lunox: the Twilight Blessing is his innate power, there from the start.
   grantTwilight(p);
 }
