@@ -8,7 +8,6 @@ import {
   BENCH_SIZE,
   BOARD_COLS,
   BOARD_ROWS,
-  BASIC_ITEM_OFFER,
   BASIC_ITEM_ROUND,
   COMMANDER_CARD_ROUND,
   EQUIPMENT_DROPS,
@@ -25,7 +24,7 @@ import {
   POWER_TIERS,
 } from './config';
 import { copiesOf, mergeUnits, pooledOf } from './merge';
-import { openChest, stageItems, takeOfferedItem } from './inventory';
+import { openChest, stageItems } from './inventory';
 import { cardRolls } from './luckyDice';
 import { addXp, recordFight, roundIncome, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
@@ -34,10 +33,10 @@ import { applyAction, claimShopSlot, canClaim, trimBoard } from './actions';
 import { checkRally, payHeirs } from './cyclops';
 import { syncPlayer } from './sync';
 import { grantOrbs } from './orb';
-import { ageTurrets, cashFortunes, gloriousClaim, checkChestTriggers, freeBuyOf, traitGoldOf, lendArms, returnArms, cycleChests, cycleRefreshes, transmute, hurtExtraOf, offerPowerCards, pickFactionOrb, pickPowerCard, roundHealOf } from './powerCards';
-import { hurtPlayer, offerCards, payCard, powersOf } from './commanders';
+import { ageTurrets, cashFortunes, gloriousClaim, checkChestTriggers, freeBuyOf, traitGoldOf, lendArms, returnArms, cycleChests, cycleRefreshes, transmute, hurtExtraOf, offerPowerCards, roundHealOf } from './powerCards';
+import { hurtPlayer, offerCards, powersOf } from './commanders';
 import type { Side } from './grid';
-import { BASIC_ITEMS, isItemCard, ITEMS, baseItemOf } from './items';
+import { isItemCard, ITEMS, baseItemOf } from './items';
 import { MONSTER_ID, monsterSide } from './monsters';
 import { gainStacks, roundStacks, roundStartEffects, rollChosen, type RoundStart } from './traits';
 import { UNIT_BY_ID } from './units';
@@ -156,9 +155,10 @@ export function startRound(state: GameState): RoundBonus[] {
     ageTurrets(state, p); // Turret of Guardians
   }
   // The basic item round: a few random basic items, pick one.
+  // Behind any item offer still waiting (see openChest).
   if (state.round === BASIC_ITEM_ROUND) for (const p of alive) {
-    p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
-    p.offerFrom = 'basic';
+    p.basicPending = true;
+    openChest(state, p);
   }
   // Alice: a Blood Pact on its rounds.
   for (const p of alive) grantBlood(state, p);
@@ -215,19 +215,9 @@ function loot(state: GameState, p: Player, rule: 'cheapest' | 'random'): string 
 
 // Pair everyone up, fight, apply damage, knock out anyone at 0 hp.
 export function resolveCombat(state: GameState): Fight[] {
-  // A commander card left unpicked defaults to the first on offer (the player's own commander's).
+  // Nothing is ever picked for the player: commander card, power card, orb and item offers all wait, with no time
+  // limit, until picked (or the game ends).
   for (const p of state.players.filter(isAlive)) {
-    if (p.cardOffer?.length) {
-      p.commanderCard = p.cardOffer[0];
-      p.cardOffer = p.cardRerolled = undefined;
-      payCard(state, p, p.commanderCard);
-      openChest(state, p);
-      cardRolls(state, p);
-    }
-    if (p.powerOffer) pickPowerCard(state, p, p.powerOffer.cards[0]);
-    if (p.factionOrbOffer) pickFactionOrb(state, p, p.factionOrbOffer[0]);
-    // Likewise unpicked items: the first on offer, chest after chest.
-    while (p.itemOffer?.length) takeOfferedItem(state, p, p.itemOffer[0]);
     trimBoard(state, p); // past the level limit: the weakest to the bench, or sold
     syncPlayer(state, p);
   }

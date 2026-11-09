@@ -117,7 +117,7 @@ describe('Kenzo', () => {
     expect(p.chests!.waiting).toBe(4);
   });
 
-  test('a chest offers 3 equipment to pick from; the next opens after the pick; the fight picks for you', () => {
+  test('a chest offers 3 equipment to pick from; the next opens after the pick; the fight never picks for you', () => {
     const state = kenzoGame();
     const p = state.players[0];
     p.chests = { kills: 0, earned: 3, waiting: 3 };
@@ -130,10 +130,11 @@ describe('Kenzo', () => {
     expect(p.items).toHaveLength(before + 1);
     expect(p.itemOffer).toHaveLength(3);
     expect(p.chests.waiting).toBe(1);
+    const waiting = p.itemOffer;
     state.round = 3;
     resolveCombat(state);
-    expect(p.items).toHaveLength(before + 3);
-    expect(p.itemOffer).toBeUndefined();
+    expect(p.items).toHaveLength(before + 1);
+    expect(p.itemOffer).toBe(waiting);
   });
 
   test('real fights count: a strong sash holder earns kills and chests', () => {
@@ -211,14 +212,22 @@ describe('commanders', () => {
     expect(applyAction(state, p.id, { type: 'move', from, to: { area: 'board', index: 3 } }).ok).toBe(true);
   });
 
-  test('an unpicked card defaults to the own one when the fight starts', () => {
+  test('an unpicked card is never picked for the player: the offer waits through fights', () => {
     const state = game();
+    const p = state.players[0];
     while (state.round < COMMANDER_CARD_ROUND) {
       resolveCombat(state);
       startRound(state);
     }
-    resolveCombat(state);
-    expect(state.players[0].commanderCard).toBe('lukas');
+    const offer = p.cardOffer;
+    for (let i = 0; i < 3; i++) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    expect(p.commanderCard).toBeUndefined();
+    expect(p.cardOffer).toBe(offer);
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'lukas' }).ok).toBe(true);
+    expect(p.commanderCard).toBe('lukas');
   });
 
   test("on another commander, Lukas's card grants the plain beast, not the upgrade", () => {

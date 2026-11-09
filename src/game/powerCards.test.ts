@@ -50,7 +50,7 @@ describe('Magic Immersion', () => {
     expect(firstAttackMana(false, 'gold')).toBe(firstAttackMana(false, null));
   });
 
-  test('offered on the power card rounds at the rolled tier; unpicked defaults to the first', () => {
+  test('offered on the power card rounds at the rolled tier; no time limit, and a missed round queues behind', () => {
     const state = createGame(7, SEEDS);
     const [a] = state.players;
     while (state.round < POWER_CARD_ROUNDS[0]) {
@@ -59,10 +59,24 @@ describe('Magic Immersion', () => {
     }
     expect(a.powerOffer?.tier).toBe(state.powerTiers![0]);
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'nope' }).ok).toBe(false);
-    const first = a.powerOffer!.cards[0];
-    resolveCombat(state);
+    const offer = a.powerOffer;
+    // Fights come and go: nothing is picked for the player, the offer just waits.
+    while (state.round < POWER_CARD_ROUNDS[1]) {
+      resolveCombat(state);
+      startRound(state);
+      expect(a.powerCards ?? []).toEqual([]);
+    }
+    expect(a.powerOffer).toBe(offer);
+    expect(a.powerQueue).toEqual([state.powerTiers![1]]);
+    const first = offer!.cards[1];
+    expect(applyAction(state, a.id, { type: 'pickPower', card: first }).ok).toBe(true);
     expect(a.powerCards).toEqual([{ id: first, tier: state.powerTiers![0] }]);
-    expect(a.powerOffer).toBeUndefined();
+    // The queued round's offer comes up next, never with the card just taken.
+    expect(a.powerOffer?.tier).toBe(state.powerTiers![1]);
+    expect(a.powerOffer?.cards).not.toContain(first);
+    expect(a.powerQueue).toBeUndefined();
+    resolveCombat(state);
+    expect(a.powerCards).toHaveLength(1);
   });
 });
 
@@ -2227,11 +2241,12 @@ describe('Prime Selection', () => {
     expect([...kinds].sort()).toEqual(['faction', 'role']);
   });
 
-  test('left unpicked: the first on offer when the fight starts', () => {
+  test('left unpicked: never picked for the player, the offer waits', () => {
     const { state, a } = pick('blue');
-    const first = a.factionOrbOffer![0];
+    const offer = a.factionOrbOffer;
     resolveCombat(state);
-    expect(a.mistOrbs!.map((o) => o.trait)).toEqual([first]);
+    expect(a.mistOrbs ?? []).toEqual([]);
+    expect(a.factionOrbOffer).toBe(offer);
   });
 });
 

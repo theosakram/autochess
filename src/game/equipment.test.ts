@@ -1,3 +1,4 @@
+import type { Player } from './types';
 import { describe, expect, test } from 'bun:test';
 import { defenseMult, simulateCombat } from './combat';
 import { EQUIPMENT_DROPS, isEquipmentRound, isMonsterRound, roundAt } from './config';
@@ -7,7 +8,7 @@ import { AEGIS, baseItemOf, BASIC_ITEMS, BERSERKER_FURY, DIVINE_GLAIVE, GLOWING_
 import { stageItems } from './inventory';
 import { applyAction } from './actions';
 import { LUKAS } from './commanders';
-import { BASIC_ITEM_ROUND, TICKS_PER_SECOND } from './config';
+import { BASIC_ITEM_OFFER, BASIC_ITEM_ROUND, TICKS_PER_SECOND } from './config';
 import { MONSTER_ID } from './monsters';
 import { CULT_OF_FIRE, playerTraits, unitStats } from './traits';
 import { UNIT_BY_ID } from './units';
@@ -164,7 +165,7 @@ describe('basic items', () => {
     expect(p.itemOffer).toBeUndefined();
   });
 
-  test('an unpicked basic item is taken when the fight starts', () => {
+  test('an unpicked basic item is never taken for the player: the offer waits', () => {
     const state = createGame(4, [{ id: 'you', name: 'You', isBot: false }, ...SEEDS]);
     const p = state.players[0];
     applyAction(state, p.id, { type: 'pickCommander', commander: 'lukas' });
@@ -172,10 +173,29 @@ describe('basic items', () => {
       resolveCombat(state);
       startRound(state);
     }
-    const offered = p.itemOffer![0];
+    const offer = p.itemOffer;
+    const items = p.items.length;
     resolveCombat(state);
-    expect(p.items.some((i) => i.id === offered)).toBe(true);
-    expect(p.itemOffer).toBeUndefined();
+    expect(p.items.length).toBe(items);
+    expect(p.itemOffer).toBe(offer);
+  });
+
+  test('the basic item pick queues behind an item offer still waiting', () => {
+    const state = createGame(4, [{ id: 'you', name: 'You', isBot: false }, ...SEEDS]);
+    const p = state.players[0];
+    applyAction(state, p.id, { type: 'pickCommander', commander: 'lukas' });
+    while (state.round < BASIC_ITEM_ROUND - 1) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    p.itemOffer = ['waraxe'];
+    p.offerFrom = 'chest' as Player['offerFrom'];
+    resolveCombat(state);
+    startRound(state);
+    expect(p.itemOffer).toEqual(['waraxe']);
+    expect(applyAction(state, p.id, { type: 'pickItem', item: 'waraxe' }).ok).toBe(true);
+    expect(p.offerFrom).toBe('basic');
+    expect(p.itemOffer).toHaveLength(BASIC_ITEM_OFFER);
   });
 });
 

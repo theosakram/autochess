@@ -3,8 +3,8 @@ import { coreHolder, essenceMods } from './essence';
 import { johnnieMods } from './johnnie';
 import { enhanceMods } from './freya';
 import { markedUid, powersOf, protectedUids } from './commanders';
-import { CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
-import { baseItemOf, EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
+import { BASIC_ITEM_OFFER, CHEST_OFFER, MAX_ITEMS_PER_UNIT, stageOf } from './config';
+import { BASIC_ITEMS, baseItemOf, EQUIPMENT, ITEMS, type EquipmentGroup } from './items';
 import { nextInt, shuffle } from './rng';
 import { applyMods, type StatKey, type StatMod, type Stats } from './stats';
 import { constellationOf, DISCO_FEVER, discoStarsOf, enhanceOwned, extraOfferingsOf, offeringShareOf, powerMods, ROGUE_MERCENARY, SIGNATURE, TEAMWORK_COUNT } from './powerCards';
@@ -97,10 +97,16 @@ export function lootOffer(state: GameState): string[] {
   });
 }
 
-// Opens the next waiting offer, unless one is already up: monster loot first, then an Equipment Chest
-// (pick 1 of a few random equipment).
+// Opens the next waiting offer, unless one is already up: the basic item pick first, then monster loot, then an
+// Equipment Chest (pick 1 of a few random equipment).
 export function openChest(state: GameState, p: Player): void {
   if (p.itemOffer?.length) return;
+  if (p.basicPending) {
+    p.basicPending = undefined;
+    p.itemOffer = shuffle(state, [...BASIC_ITEMS]).slice(0, BASIC_ITEM_OFFER);
+    p.offerFrom = 'basic';
+    return;
+  }
   if (p.loot) {
     p.loot--;
     p.itemOffer = lootOffer(state);

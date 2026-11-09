@@ -119,9 +119,11 @@ export interface Player {
   shield?: number; // commander shield (Rock Solid): soaks hp damage first
   factionOrbOffer?: string[]; // Prime Selection: faction orbs to choose one from (faction trait ids)
   freeRerolls?: number; // banked free shop refreshes (Premium Client), used before gold
-  powerOffer?: { tier: PowerTier; cards: string[]; rerolled: boolean[] }; // waiting for a pick
+  powerOffer?: { tier: PowerTier; cards: string[]; rerolled: boolean[] }; // waiting for a pick (no time limit)
+  powerQueue?: PowerTier[]; // later power card rounds' tiers, offered one by one once powerOffer is picked
   itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
   offerFrom?: 'basic' | 'loot' | 'chest'; // where the current itemOffer comes from
+  basicPending?: boolean; // the basic item pick, waiting behind another item offer
   loot?: number; // monster loot picks not opened yet (each opens as the one before is picked)
   chests?: { kills: number; earned: number; waiting: number }; // Equipment Chests: kills toward the next, earned so far, not opened yet
   deathsSaved?: number; // lethal hits survived so far (Nana)

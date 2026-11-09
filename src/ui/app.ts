@@ -354,10 +354,13 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (meter) meter.live = false;
     combat = null;
     hpBefore = null;
-    cardsHidden = false; // a new round's pick opens up again
     denHidden = false;
     const orbsBefore = me().orbs.length;
+    const picks = (p: Player) => [p.cardOffer, p.powerOffer, p.factionOrbOffer];
+    const picksBefore = picks(me());
     const bonuses = isAlive(me()) && !isGameOver(state) ? startRound(state) : [];
+    // A new pick opens up again; picks still waiting from before stay as the player left them.
+    if (picks(me()).some((o, i) => o && o !== picksBefore[i])) cardsHidden = false;
     render();
     if (me().orbs.length > orbsBefore) toast('🔮 You got a Magic Orb! Open 🎒 Equipment to use it.', 'info');
     if (loot) toast(`👹 Monster loot: pick ${loot} equipment, one at a time.`, 'info');

@@ -1061,9 +1061,17 @@ export const powerPool = (tier: PowerTier, p?: Player): string[] =>
       (!p || ((POWER_CARDS[id].offerIf?.(p) ?? true) && !(p.powerCards ?? []).some((c) => c.id === id))),
   );
 
+// A power card round's offer. No time limit: it waits until picked, even rounds later, and a game that ends first
+// gives nothing. One still waiting when the next round comes queues that round's tier behind it; its cards are
+// drawn once the earlier pick is made (so never one already held).
 export function offerPowerCards(state: GameState, p: Player): void {
   const tier = powerTierAt(state, state.round);
   if (!tier) return;
+  if (p.powerOffer) (p.powerQueue ??= []).push(tier);
+  else dealPowerOffer(state, p, tier);
+}
+
+function dealPowerOffer(state: GameState, p: Player, tier: PowerTier): void {
   p.powerOffer = { tier, cards: shuffle(state, powerPool(tier, p)).slice(0, CARD_OFFER_SIZE), rerolled: [] };
 }
 
@@ -1084,6 +1092,9 @@ export function pickPowerCard(state: GameState, p: Player, id: string): string |
   const tier = p.powerOffer.tier;
   p.powerOffer = undefined;
   gainPowerCard(state, p, id, tier);
+  const next = p.powerQueue?.shift();
+  if (!p.powerQueue?.length) p.powerQueue = undefined;
+  if (next) dealPowerOffer(state, p, next);
   return null;
 }
 

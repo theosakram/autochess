@@ -1455,7 +1455,7 @@ export function cardOfferHtml(p: Player): string {
   });
   return pickDialogHtml(
     'Choose a commander card',
-    "Your own commander's card upgrades its power; another's lends you that power. Unpicked when the fight starts: the first one.",
+    "Your own commander's card upgrades its power; another's lends you that power.  No time limit: it waits until you pick.",
     cards,
   );
 }
@@ -1478,7 +1478,7 @@ export function powerOfferHtml(p: Player): string {
       rerollWhy: others ? 'Already rerolled' : 'No other power cards yet',
     };
   });
-  return pickDialogHtml('Choose a power card', 'Yours for the rest of the game. Unpicked when the fight starts: the first one.', cards);
+  return pickDialogHtml('Choose a power card', 'Yours for the rest of the game. No time limit: it waits until you pick, but nothing comes if the game ends first.', cards);
 }
 
 // Prime Selection: choose a faction or role orb. Each option shows how many of the player's heroes are in it.
@@ -1498,7 +1498,7 @@ export function factionOrbOfferHtml(p: Player): string {
       rerollWhy: '',
     };
   });
-  return pickDialogHtml('Choose an orb', 'Prime Selection. Unpicked when the fight starts: the first one.', cards);
+  return pickDialogHtml('Choose an orb', 'Prime Selection. No time limit: it waits until you pick.', cards);
 }
 
 // Johnson's Den: pick one of the Johnnies on offer (each a different faction and role).
@@ -1545,7 +1545,7 @@ export function itemOfferHtml(p: Player): string {
     .join('');
   return `<div class="overlay"><div class="dialog modal commander-pick">
     <h2 class="trait-title">${p.offerFrom === 'basic' || ITEMS[p.itemOffer?.[0] ?? '']?.basic ? 'Choose a basic item' : p.offerFrom === 'loot' ? `Monster loot: choose one${p.loot ? ` (${p.loot} more after this)` : ''}` : 'Equipment Chest: choose one'}</h2>
-    <p class="meta">It goes to your items: equip it on any hero. Unpicked when the fight starts: the first one.</p>
+    <p class="meta">It goes to your items: equip it on any hero.</p>
     <div class="commander-options">${cards}</div>
   </div></div>`;
 }
@@ -1580,8 +1580,9 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
       return `<button class="card-slot filled tier-${have.tier}${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" data-card-slot="${i}" title="${powerCardName(have.id, have.tier)}">
         <span>${POWER_CARDS[have.id].icon}</span><small>${powerCardName(have.id, have.tier)}</small></button>`;
     }
-    if (p.powerOffer && (p.powerCards?.length ?? 0) === i - 1) {
-      return `<button class="card-slot waiting tier-${p.powerOffer.tier}" data-action="showCards" data-card-slot="${i}" title="Pick your power card"><span>★</span><small>Pick</small></button>`;
+    const waiting = p.powerOffer ? [p.powerOffer.tier, ...(p.powerQueue ?? [])][i - 1 - (p.powerCards?.length ?? 0)] : undefined;
+    if (waiting) {
+      return `<button class="card-slot waiting tier-${waiting}" data-action="showCards" data-card-slot="${i}" title="Pick your power card"><span>★</span><small>Pick</small></button>`;
     }
     const t = tiers?.[i - 1];
     return `<div class="card-slot${t ? ` tier-${t}` : ''}" data-card-slot="${i}" title="Power card on ${roundLabel(r)}${powerTitle(r, tiers)}"><span>★</span><small>${roundLabel(r)}</small></div>`;
