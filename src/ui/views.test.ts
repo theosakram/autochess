@@ -5,7 +5,9 @@ import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
 import { traitBadgeHtml } from './traitBadges';
-import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, homeGalleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, homeGalleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, poolHtml, roundTimerHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { UNITS } from '../game/units';
+import { POOL_SIZE } from '../game/config';
 import { SKILLS } from '../game/skills';
 
 describe('orb choice popup', () => {
@@ -379,4 +381,28 @@ test("item gallery: Pacquiao's four gloves have their own section", () => {
   const html = homeGalleryHtml(p, 'items');
   expect(html).toContain("Pacquiao's gloves");
   for (const name of ['Tier-3 Boxing Glove', 'Tier-4 Boxing Glove', 'Tier-5 Boxing Glove', 'Glory Glove']) expect(html).toContain(name);
+});
+
+test('shop pool modal: every shop hero by cost, copies left of the full set, yours marked, your odds', () => {
+  const state = createGame(0, [{ id: 'v', name: '', isBot: false }]);
+  const p = state.players[0];
+  const hero = UNITS.find((u) => u.tier === 1 && u.shop !== false && !u.piece)!;
+  state.pool[hero.id] = 7;
+  p.bench[0] = { uid: 999, defId: hero.id, star: 2 };
+  const html = poolHtml(p, state.pool);
+  expect(html).toContain('Shop pool');
+  expect(html).toContain(`${hero.name}: 7 of ${POOL_SIZE[1]} left, you have 3`);
+  expect(html).toContain(`% of your shop slots at level ${p.level}`);
+  for (const u of UNITS.filter((x) => x.shop !== false && !x.piece && x.id in state.pool)) expect(html).toContain(`data-unit-info="${u.id}"`);
+  expect(shopDockHtml(p, state.round, false, {})).toContain('data-action="openPool"');
+});
+
+test('round timer: none while shopping; a fight counts down from 40s, red in the last 10s', () => {
+  expect(roundTimerHtml(null)).toContain('0:00');
+  expect(roundTimerHtml(0)).toContain('0:40');
+  expect(roundTimerHtml(0)).not.toContain('round-timer overtime');
+  expect(roundTimerHtml(25 * 10)).toContain('0:15');
+  expect(roundTimerHtml(32 * 10)).toContain('round-timer overtime');
+  expect(roundTimerHtml(32 * 10)).toContain('0:08');
+  expect(roundTimerHtml(99999)).toContain('0:00');
 });

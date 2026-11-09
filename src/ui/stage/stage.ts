@@ -236,7 +236,7 @@ export class Stage {
 
   // Replays a fight's event log, viewer's side at the bottom. `onEvent` sees each event as it's
   // shown. Calls onDone once the result banner has shown (or right away when skipped twice).
-  playFight(fight: Fight, viewerId: string, onEvent: (e: CombatEvent) => void, onDone: () => void): Playback {
+  playFight(fight: Fight, viewerId: string, onEvent: (e: CombatEvent) => void, onDone: () => void, onTick: (tick: number) => void = () => {}): Playback {
     this.fighting = true;
     this.clear();
     const { result } = fight;
@@ -563,6 +563,7 @@ export class Stage {
     const timer = window.setInterval(() => {
       while (next < result.events.length && result.events[next].t <= tick) apply(result.events[next++]);
       wakeUp(false);
+      onTick(tick); // the round timer
       if (++tick > result.ticks) finish();
     }, TICK_MS);
 
@@ -590,6 +591,7 @@ export class Stage {
           return;
         }
         while (next < result.events.length) apply(result.events[next++]);
+        onTick(result.ticks);
         finish();
       },
     };

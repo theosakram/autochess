@@ -9,8 +9,8 @@ import { rewardText } from '../game/traits/format';
 import { claimable } from '../game/freya';
 import { shopPrice } from '../game/shop';
 import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUid, markKinds, PACQUIAO, powersOf, type MarkKind } from '../game/commanders';
-import { cardTiers, DEATH_ORACLE, TURRET_OF_GUARDIANS, interestCapOf, offeringShareOf, POWER_CARDS, powerCardName, powerPool, ROGUE_MERCENARY, SIGNATURE } from '../game/powerCards';
-import { COMMANDER_CARD_ROUND, POWER_CARD_ROUNDS, POWER_TIERS, BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
+import { cardTiers, DEATH_ORACLE, TURRET_OF_GUARDIANS, interestCapOf, offeringShareOf, POWER_CARDS, powerCardName, powerPool, ROGUE_MERCENARY, shopOdds, SIGNATURE } from '../game/powerCards';
+import { COMMANDER_CARD_ROUND, POWER_CARD_ROUNDS, POWER_TIERS, BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND, MAX_COMBAT_TICKS, OVERTIME_TICKS } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, EQUIPMENT_GROUPS, giftDamage, isItemCard, ITEMS, plunderDamage, type ItemDef } from '../game/items';
 import { MIRROR } from '../game/mirror';
@@ -683,6 +683,7 @@ const DOCK_ICONS = {
   reroll: '<path d="M19.5 11A7.5 7.5 0 0 0 6.2 6.8M4.5 13a7.5 7.5 0 0 0 13.3 4.2"/><path d="M5 2.8v4.4h4.4M19 21.2v-4.4h-4.4"/>',
   locked: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/>',
   unlocked: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8.5 11V8a3.5 3.5 0 0 1 6.7-1.4"/>',
+  pool: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
 };
 const dockIcon = (name: keyof typeof DOCK_ICONS) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DOCK_ICONS[name]}</svg>`;
@@ -711,6 +712,7 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
         ${levelBtn}
         <button class="dock-icon reroll${p.freeRerolls ? ' free' : ''}" data-action="reroll" title="${p.freeRerolls ? `Reroll: free (${p.freeRerolls} banked)` : bloodRoll ? `Reroll: ${DEATH_ORACLE.hp} HP (Death Oracle, ${p.bloodRefreshes} left)` : `Reroll: ${REROLL_COST}g`} (D)" ${locked ? 'disabled' : ''}>${dockIcon('reroll')}<small>${p.freeRerolls ? `Free×${p.freeRerolls}` : bloodRoll ? `${DEATH_ORACLE.hp}HP×${p.bloodRefreshes}` : `${REROLL_COST}g`}</small><kbd>D</kbd></button>
         <button class="dock-icon lock${p.shopLocked ? ' on' : ''}" data-action="toggleLock" title="${lockTitle}">${dockIcon(p.shopLocked ? 'locked' : 'unlocked')}<small>${p.shopLocked ? 'Locked' : 'Lock'}</small></button>
+        <button class="dock-icon pool" data-action="openPool" title="Shop pool: how many copies of every hero are left">${dockIcon('pool')}<small>Pool</small></button>
       </div>
     </div>
     <div class="shop-cards${p.shopLocked ? ' locked' : ''}">${shopCardsHtml(p, locked, chosen, pool)}</div>
@@ -720,6 +722,46 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
         : `<button data-action="endTurn" class="fight-btn">⚔️ Fight! <kbd>Space</kbd></button>`
     }
   </section>`;
+}
+
+// The shop pool: every shop hero by cost, the copies left of the full set, the ones you own marked, and your
+// shop's odds for each cost at your level.
+export function poolHtml(p: Player, pool: Record<string, number>): string {
+  const owned = new Map<string, number>();
+  for (const u of [...p.board, ...p.bench]) if (u) owned.set(u.defId, (owned.get(u.defId) ?? 0) + copiesOf(u));
+  const shopUnits = UNITS.filter((u) => u.shop !== false && !u.piece && u.id in pool);
+  const tiers = [...new Set(shopUnits.map((u) => u.tier))].sort((a, b) => a - b);
+  const odds = shopOdds(p.level, p);
+  const sections = tiers
+    .map((tier) => {
+      const units = shopUnits.filter((u) => u.tier === tier).sort((a, b) => a.name.localeCompare(b.name));
+      const full = POOL_SIZE[tier];
+      const left = units.reduce((n, u) => n + pool[u.id], 0);
+      const chance = odds[tier - 1]; // a percentage; none for costs the shop odds don't roll (7)
+      const rows = units
+        .map((u) => {
+          const n = pool[u.id];
+          const mine = owned.get(u.id) ?? 0;
+          return `<button class="pool-row${n === 0 ? ' empty' : ''}${mine ? ' owned' : ''}" data-unit-info="${u.id}" title="${u.name}: ${n} of ${full} left${mine ? `, you have ${mine}` : ''}">
+            ${portraitHtml(u.id, 'tiny')}<span class="pool-name">${u.name}</span>
+            <span class="pool-bar"><i style="width:${Math.round((n / full) * 100)}%"></i></span>
+            <b class="pool-count">${n}<small>/${full}</small></b>${mine ? `<span class="pool-mine" title="Yours">✋${mine}</span>` : ''}
+          </button>`;
+        })
+        .join('');
+      return `<section class="pool-tier tier-${tier}">
+        <h3><span class="pool-cost">${tier}g</span> ${left} left${chance === undefined ? '' : ` <small>· ${Math.round(chance)}% of your shop slots at level ${p.level}</small>`}</h3>
+        <div class="pool-grid">${rows}</div>
+      </section>`;
+    })
+    .join('');
+  return modalHtml(
+    'closePool',
+    'pool-popup',
+    `<h2 class="trait-title">Shop pool</h2>
+    <p class="meta">Every player shops from this one pool. Copies come back when someone sells. ✋ = copies you have (board and bench).</p>
+    ${sections}`,
+  );
 }
 
 // What buying one more copy of `id` would do: the star it makes (if any) and the 1★ copies held toward it.
@@ -975,7 +1017,15 @@ function stageLegendHtml(round: number, streak: number, tiers?: PowerTier[]): st
   return `<div class="stage-legend"><div class="legend-round-label" title="${title}"><small>Round</small><b>${roundLabel(round)}</b></div><div class="legend-icons">${icons}</div>${streakHtml(streak)}</div>`;
 }
 
-export function hudHtml(state: GameState, p: Player, opponentName: string | null): string {
+// The round timer: a fight's time left (its last OVERTIME seconds in red, as everyone speeds up); shopping has no limit.
+export function roundTimerHtml(fightTick: number | null): string {
+  if (fightTick === null) return `<div class="hud-stat round-timer" id="round-timer" title="Shopping has no time limit"><small>Timer</small><span><b>0:00</b></span></div>`;
+  const left = Math.max(0, Math.ceil((MAX_COMBAT_TICKS - fightTick) / TICKS_PER_SECOND));
+  const over = fightTick >= OVERTIME_TICKS;
+  return `<div class="hud-stat round-timer${over ? ' overtime' : ''}" id="round-timer" title="${over ? 'Overtime: everyone attacks faster and hits harder' : `Fight time left (overtime in the last ${(MAX_COMBAT_TICKS - OVERTIME_TICKS) / TICKS_PER_SECOND}s)`}"><small>${over ? 'Overtime' : 'Fight'}</small><span><b>0:${String(left).padStart(2, '0')}</b></span></div>`;
+}
+
+export function hudHtml(state: GameState, p: Player, opponentName: string | null, fightTick: number | null = null): string {
   const need = xpToNext(p);
   const cap = heroCapOf(p);
   const free = cap - boardCount(p);
@@ -994,6 +1044,7 @@ export function hudHtml(state: GameState, p: Player, opponentName: string | null
     </div>
     ${stageLegendHtml(state.round, p.streak ?? 0, state.powerTiers)}
     <div class="hud-side hud-right">
+      ${roundTimerHtml(fightTick)}
       ${opponentName ? `<div class="hud-stat vs" title="Fighting"><small>Fighting</small><span><b>${opponentName}</b></span></div>` : ''}
       <button class="hud-book" data-action="openGallery" title="All factions and roles">📖 Synergies</button>
     </div>

@@ -22,6 +22,7 @@ import {
   duplicatorPickHtml,
   enhancerPickHtml,
   glovePickHtml,
+  poolHtml,
   johnnieOfferHtml,
   altarPickHtml,
   blessPickHtml,
@@ -30,6 +31,7 @@ import {
   bloodPickHtml,
   sideShopsHtml,
   hudHtml,
+  roundTimerHtml,
   orbChoiceHtml,
   playersHtml,
   shopDockHtml,
@@ -81,6 +83,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let duplicatorOpen = false;
   let enhancerOpen = false;
   let gloveOpen: string | null = null;
+  let poolOpen = false; // the shop pool modal
+  let fightTick: number | null = null; // the fight replay's clock, for the round timer (null: shopping)
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
   let blessOpen = false; // Lunox's blessing picker
@@ -262,7 +266,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (skillFor !== selectedUid) skillOpen = false;
     if (picked?.kind === 'item' && !p.items.some((i) => i.uid === (picked as { uid: number }).uid)) picked = null;
 
-    slot('hud').innerHTML = hudHtml(state, p, opponent?.name ?? null);
+    slot('hud').innerHTML = hudHtml(state, p, opponent?.name ?? null, combat ? fightTick ?? 0 : null);
     slot('rail').innerHTML = railHtml(railPanel, p);
     renderPanel();
     slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool);
@@ -284,6 +288,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     slot('overlays').innerHTML = [
       galleryOpen ? galleryHtml(p, state.chosen, galleryTab, state.powerTiers, cardTier) : '',
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
+      poolOpen ? poolHtml(p, state.pool) : '', // under a hero's info opened from it
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
       openItem !== null && p.items.some((i) => i.uid === openItem) ? itemDetailHtml(p, openItem, !combat, state.chosen) : '',
@@ -333,7 +338,15 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       recordEvent(live, e);
       if (railPanel === 'damage') renderPanel();
     };
-    combat.playback = stage.playFight(fight, playerId, onEvent, nextRound);
+    fightTick = 0;
+    // The round timer ticks on its own, without redrawing the rest.
+    const onTick = (tick: number) => {
+      fightTick = tick;
+      const el = document.getElementById('round-timer');
+      const html = roundTimerHtml(tick);
+      if (el && el.outerHTML !== html) el.outerHTML = html; // only when the second (or overtime) changes
+    };
+    combat.playback = stage.playFight(fight, playerId, onEvent, nextRound, onTick);
   }
 
   function nextRound(): void {
@@ -493,6 +506,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         dispatch({ type: 'useDuplicator', item: Number(btn.dataset.item) });
       } else if (a === 'openEnhancer' || a === 'closeEnhancer') {
         enhancerOpen = a === 'openEnhancer';
+        render();
+      } else if (a === 'openPool' || a === 'closePool') {
+        poolOpen = a === 'openPool';
         render();
       } else if (a === 'openGlove' || a === 'closeGlove') {
         gloveOpen = a === 'openGlove' ? (btn.dataset.glove ?? null) : null;

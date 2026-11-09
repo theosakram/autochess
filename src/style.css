@@ -261,7 +261,7 @@ main { min-width: 0; min-height: 0; }
 .dock-gold b { color: #ffc93c; font-size: 20px; line-height: 1.1; }
 .dock-gold small { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
 
-.dock-icons { display: grid; flex: 1; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.dock-icons { display: grid; flex: 1; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 /* Level up / reroll / lock: a tinted icon over its cost, key hint in the corner. */
 .dock-icon {
   --tint: #9aa0b2;
@@ -1232,6 +1232,28 @@ button.commander-tab:hover { border-color: var(--accent); }
 .glove.tier-5 .item-icon, .glove.tier-5 .trait-icon { filter: hue-rotate(45deg) saturate(1.4) brightness(1.15); }
 .usable-chip.glove-glory, .gallery-card.glove-glory { border: 1px solid transparent; background: linear-gradient(var(--cell), var(--cell)) padding-box, linear-gradient(90deg, #3a84d6, #a457d6, #e0a63a, #3fae5a) border-box; }
 .glove-glory b { color: #fff; }
+/* The shop pool modal: heroes by cost, copies left as a bar. */
+.dock-icon.pool { --tint: #7fb3ff; }
+/* The round timer in the HUD: red, pulsing, in overtime. */
+.round-timer b { font-variant-numeric: tabular-nums; }
+.round-timer.overtime { color: #ff5a5a; }
+.round-timer.overtime b { animation: timer-pulse 1s ease-in-out infinite; }
+@keyframes timer-pulse { 50% { opacity: 0.55; } }
+.pool-popup { max-width: 860px; }
+.pool-tier { margin: 10px 0; }
+.pool-tier h3 { margin: 0 0 6px; font-size: 14px; }
+.pool-tier h3 small { color: var(--muted); font-weight: normal; }
+.pool-cost { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--tier-color); color: #14161c; }
+.pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; }
+.pool-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; border: 1px solid #3a3f4d; background: var(--cell); color: var(--text); font-size: 12px; cursor: pointer; text-align: left; }
+.pool-row.owned { border-color: var(--tier-color); }
+.pool-row.empty { opacity: 0.45; }
+.pool-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-bar { width: 44px; height: 5px; border-radius: 3px; background: #2a2e38; overflow: hidden; }
+.pool-bar i { display: block; height: 100%; background: var(--tier-color); }
+.pool-count { min-width: 34px; text-align: right; }
+.pool-count small { color: var(--muted); font-weight: normal; }
+.pool-mine { font-size: 11px; }
 .item-chip .item-count { font-size: 11px; color: #ffc93c; } /* an item counter (Supreme Blade) */
 /* Item gallery: Base / Enhanced pills on items that have an enhanced version. */
 .enh-pills { display: flex; gap: 6px; margin: 0 0 8px; }
