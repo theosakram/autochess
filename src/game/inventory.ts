@@ -220,6 +220,12 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     if (ice) mods.push({ stat: 'attackSpeed', add: ice.attackSpeed });
     // Angela: protected heroes hit harder with their skills.
     if (protect && blessed.has(u.uid)) mods.push({ stat: 'skillAmp', add: protect.skillAmp });
+    // Lung: the hero in the Dueling Ring, faster, and stronger for each duel won.
+    const duel = powersOf(p).duel;
+    if (duel && cell === duel.cell) {
+      const won = Math.min(p.duelWins ?? 0, duel.maxWins) * duel.perWin;
+      mods.push({ stat: 'attackSpeed', add: duel.attackSpeed }, ...(won ? [{ stat: 'atk' as const, pct: won }, { stat: 'ap' as const, pct: won }] : []));
+    }
     // Katarina's card: the Supreme Blade's holder.
     const itemBoost = powersOf(p).itemBoost;
     if (itemBoost && items.some((i) => baseItemOf(i.id) === itemBoost.item)) mods.push(...itemBoost.mods);

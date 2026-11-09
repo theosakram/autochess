@@ -131,6 +131,9 @@ export interface Player {
   promoteNext?: number; // Fast Promotion: heroes still to come 2★ when bought
   mirrors?: number; // Mirror Devices won, waiting for a unit to copy
   duplicators?: number; // Equipment Duplicators (Copycat), waiting for an item to copy
+  gloves?: string[]; // Pacquiao's boxing gloves waiting to be used (ids, see gloves.ts)
+  glovesGiven?: number[]; // the glove rounds already paid out
+  duelWins?: number; // Lung: duels the Dueling Ring's hero has won (each a bonus, up to the cap)
   enhancers?: number; // Minos's Enhancement Charges, waiting for an item to enhance (see enhancer.ts)
   enhancedItems?: string[]; // Novel Equipment: equipment kept enhanced for this player (base ids), owned and future copies
   bloodRefreshes?: number; // Death Oracle: shop refreshes left that cost 1 hp instead of gold

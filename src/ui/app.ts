@@ -21,6 +21,7 @@ import {
   mirrorPickHtml,
   duplicatorPickHtml,
   enhancerPickHtml,
+  glovePickHtml,
   johnnieOfferHtml,
   altarPickHtml,
   blessPickHtml,
@@ -79,6 +80,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let mirrorOpen = false;
   let duplicatorOpen = false;
   let enhancerOpen = false;
+  let gloveOpen: string | null = null;
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
   let blessOpen = false; // Lunox's blessing picker
@@ -290,6 +292,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       mirrorOpen && p.mirrors ? mirrorPickHtml(p) : '',
       duplicatorOpen && p.duplicators ? duplicatorPickHtml(p) : '',
       enhancerOpen && p.enhancers ? enhancerPickHtml(p) : '',
+      gloveOpen && p.gloves?.includes(gloveOpen) ? glovePickHtml(p, gloveOpen) : '',
       altarOpen ? altarPickHtml(p, altarOpen) : '',
       blessOpen && p.twilight?.holder === null ? blessPickHtml(p) : '',
       essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
@@ -490,6 +493,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'openEnhancer' || a === 'closeEnhancer') {
         enhancerOpen = a === 'openEnhancer';
         render();
+      } else if (a === 'openGlove' || a === 'closeGlove') {
+        gloveOpen = a === 'openGlove' ? (btn.dataset.glove ?? null) : null;
+        render();
+      } else if (a === 'useGlove') {
+        gloveOpen = null;
+        dispatch({ type: 'useGlove', glove: btn.dataset.glove!, unit: Number(btn.dataset.unit) });
       } else if (a === 'useEnhancer') {
         enhancerOpen = false;
         dispatch({ type: 'useEnhancer', item: Number(btn.dataset.item) });

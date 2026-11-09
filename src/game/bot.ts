@@ -1,4 +1,5 @@
 import { canUseEnhancer } from './enhancer';
+import { gloveBlock } from './gloves';
 import { interestCapOf } from './powerCards';
 import { bloodBlock } from './blood';
 import { claimable } from './freya';
@@ -155,6 +156,11 @@ export function playTrove(state: GameState, p: Player): void {
   while (p.mirrors) {
     const unit = p.board.filter((u) => u !== null && UNIT_BY_ID[u.defId].shop !== false && state.pool[u.defId] > 0).sort((a, b) => b!.star - a!.star)[0];
     if (!unit || !applyAction(state, p.id, { type: 'useMirror', unit: unit.uid }).ok) break;
+  }
+  // Pacquiao's gloves: on the highest-star hero each fits.
+  for (const id of [...(p.gloves ?? [])]) {
+    const unit = [...p.board, ...p.bench].filter((u) => u !== null && !gloveBlock(p, id, u.uid)).sort((a, b) => b!.star - a!.star)[0];
+    if (unit) applyAction(state, p.id, { type: 'useGlove', glove: id, unit: unit.uid });
   }
   // Minos's Enhancement Charges: on held items first (they work now), then any.
   while (p.enhancers) {

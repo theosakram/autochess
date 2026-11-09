@@ -12,6 +12,7 @@ import { useMirror } from './mirror';
 import { DEATH_ORACLE, refreshXp, pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
 import { useDuplicator } from './duplicator';
 import { useEnhancer } from './enhancer';
+import { useGlove } from './gloves';
 import { offer, type AltarKey } from './altar';
 import { syncPlayer } from './sync';
 import { baseItemOf, cardItem, isItemCard, ITEMS } from './items';
@@ -51,6 +52,7 @@ export type Action =
   | { type: 'openTrove' } // Kaela: cash in the Trove's points
   | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device from the inventory
   | { type: 'useDuplicator'; item: number } // item uid: copy it with an Equipment Duplicator from the inventory
+  | { type: 'useGlove'; glove: string; unit: number } // Pacquiao: a boxing glove on one of your heroes
   | { type: 'useEnhancer'; item: number } // item uid: enhance it with one of Minos's Enhancement Charges
   | { type: 'offer'; altar: AltarKey; unit: number } // Dyroth: offer a hero (uid) on one of his altars
   | { type: 'bless'; unit: number } // Lunox: place the Twilight Blessing on a hero (uid)
@@ -362,6 +364,8 @@ function perform(state: GameState, p: Player, action: Action): Result {
 
     case 'useDuplicator':
       return result(useDuplicator(state, p, action.item));
+    case 'useGlove':
+      return result(useGlove(state, p, action.glove, action.unit));
     case 'useEnhancer':
       return result(useEnhancer(p, action.item));
 

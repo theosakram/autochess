@@ -1,4 +1,4 @@
-import { markIcons } from '../../game/commanders';
+import { markIcons, powersOf } from '../../game/commanders';
 import type { Fighter } from '../../game/combat';
 import { leadsOf } from '../../game/inventory';
 import { Application, Container, Graphics, Text, type FederatedPointerEvent } from 'pixi.js';
@@ -150,6 +150,9 @@ export class Stage {
 
     const tiles = new Map<number, string>();
     for (const [cell, trait] of traitTiles(playerTraits(p))) tiles.set(gridIndex(boardToGrid(0, cell)), trait);
+    // Lung's Dueling Ring.
+    const ring = powersOf(p).duel;
+    if (ring) tiles.set(gridIndex(boardToGrid(0, ring.cell)), 'duelring');
     const targets = new Set<string>();
     if (view.selectedUid !== null) {
       p.board.forEach((u, index) => !u && targets.add(key({ area: 'board', index })));

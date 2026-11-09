@@ -4,14 +4,15 @@ import { applyAction } from './actions';
 import { EQUIPMENT } from './items';
 import { openChest } from './inventory';
 import { killsBy, type CombatResult } from './combat';
-import { earnChests, payBounty } from './game';
-import { ALICE, AMON, CYCLOPS, FREYA, GUINESS, JOHNSON, KATARINA, LUNOX, MIYA } from './commanders';
+import { countDuels, earnChests, payBounty } from './game';
+import { ALICE, AMON, CYCLOPS, FREYA, GUINESS, JOHNSON, KATARINA, LUNG, LUNOX, MIYA } from './commanders';
 import { refreshShop, rollFreeHero, shopPrice } from './shop';
 import { claimable } from './freya';
 import { checkRally, heroValue, payHeirs } from './cyclops';
 import { bloodStars } from './blood';
 import { copiesOf, mergeUnits } from './merge';
-import { SHOP_ODDS, STAR_MULT } from './config';
+import { SHOP_ODDS, STAR_MULT, TICKS_PER_SECOND } from './config';
+import { giveGloves, gloveBlock } from './gloves';
 import { ICE_LONGBOW } from './items';
 import { playerTraitCounts } from './traits';
 import { ANGELA, autoHalo, BEAST_PIECE, beastOf, cardFace, DYROTH, hurtPlayer, KAELA, KAGURA, KENZO, LUKAS, NANA, payCard, RUBY, markedUid, markKinds, powersOf, protectedUids } from './commanders';
@@ -1691,5 +1692,170 @@ describe('Katarina', () => {
     expect(p.items.some((i) => i.id === 'supremeblade')).toBe(true);
     expect(p.gold).toBe(gold);
     expect(powersOf(p).itemBoost).toBeUndefined();
+  });
+});
+
+describe('Lung', () => {
+  const RING = LUNG.duel.cell;
+  function lungGame(): { state: GameState; p: Player; foe: Player } {
+    const state = createGame(6, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'lung' }).ok).toBe(true);
+    const [p, foe] = state.players;
+    for (const x of [p, foe]) { x.board.fill(null); x.bench.fill(null); x.items = []; }
+    foe.commander = 'nana'; // no ring on the other side
+    return { state, p, foe };
+  }
+
+  test("the ring is the back row's leftmost tile; its hero gets +100% attack speed, and +6% attack per duel won (up to 11)", () => {
+    const { p } = lungGame();
+    expect(RING).toBe(14);
+    p.board[RING] = { uid: 800, defId: 'minos', star: 1 };
+    p.board[3] = { uid: 801, defId: 'minos', star: 1 };
+    const stats = () => fieldStats(p, playerTraits(p));
+    expect(stats().get(800)!.attackSpeed - stats().get(801)!.attackSpeed).toBeCloseTo(LUNG.duel.attackSpeed, 5);
+    const atk = stats().get(800)!.atk;
+    p.duelWins = 5;
+    expect(stats().get(800)!.atk / atk).toBeCloseTo(1 + 5 * LUNG.duel.perWin, 2);
+    p.duelWins = 40;
+    expect(stats().get(800)!.atk / atk).toBeCloseTo(1 + 11 * LUNG.duel.perWin, 2);
+  });
+
+  test('the duel: the farthest enemy is dragged next to the ring hero; basic attacks only, and nobody else touches them', () => {
+    const { state, p, foe } = lungGame();
+    p.board[RING] = { uid: 800, defId: 'knight', star: 2 };
+    p.board[3] = { uid: 801, defId: 'cici', star: 2 };
+    foe.board[3] = { uid: 900, defId: 'footman', star: 1 };
+    foe.board[20] = { uid: 901, defId: 'zhuxin', star: 1 }; // far corner: the farthest from the ring
+    foe.board[16] = { uid: 902, defId: 'footman', star: 1 };
+    const r = simulateCombat(state, p, foe, { traits: [false, false] });
+    const duelist = r.fighters.find((f) => f.side === 0 && f.defId === 'knight')!;
+    const start = r.events.find((e) => e.type === 'effect' && e.effect === 'duel')!;
+    if (start.type !== 'effect') throw new Error();
+    expect(start.t).toBe(0);
+    expect(start.by).toBe(duelist.id);
+    const prey = start.target;
+    const farthest = r.fighters.filter((f) => f.side === 1).sort((a, b) => Math.max(Math.abs(b.x - duelist.x), Math.abs(b.y - duelist.y)) - Math.max(Math.abs(a.x - duelist.x), Math.abs(a.y - duelist.y)))[0];
+    expect(prey).toBe(farthest.id);
+    const drag = r.events.find((e) => e.type === 'dash' && e.id === prey && e.t === 0);
+    if (drag?.type === 'dash') expect(Math.max(Math.abs(drag.x - duelist.x), Math.abs(drag.y - duelist.y))).toBe(1);
+    // While it lasts: no skills from either, and every hit on either comes from the other.
+    const end = r.events.find((e) => e.type === 'death' && (e.id === prey || e.id === duelist.id))?.t ?? Infinity;
+    const until = Math.min(end, LUNG.duel.seconds * TICKS_PER_SECOND);
+    const during = r.events.filter((e) => e.t < until);
+    expect(during.some((e) => e.type === 'skill' && (e.id === prey || e.id === duelist.id))).toBe(false);
+    for (const e of during) {
+      if ((e.type === 'attack' || e.type === 'effect') && e.damage > 0 && (e.target === prey || e.target === duelist.id)) {
+        expect([prey, duelist.id]).toContain(e.type === 'effect' ? (e.by ?? -1) : e.id);
+      }
+    }
+  });
+
+  test('a duel won adds to the bonus; the enemy winning, or time running out, adds nothing', () => {
+    const { p } = lungGame();
+    const won = { events: [{ t: 5, type: 'effect', effect: 'duelWin', by: 1, target: 2, damage: 0, hp: 0 }], fighters: [{ id: 1, side: 0 }, { id: 2, side: 1 }] } as unknown as CombatResult;
+    countDuels(p, won, 0);
+    expect(p.duelWins).toBe(1);
+    countDuels(p, won, 1); // the other side's view: not theirs
+    expect(p.duelWins).toBe(1);
+    p.duelWins = 11;
+    countDuels(p, won, 0);
+    expect(p.duelWins).toBe(11);
+  });
+
+  test('a real duel against a weak enemy ends in a logged win', () => {
+    const { state, p, foe } = lungGame();
+    p.board[RING] = { uid: 800, defId: 'knight', star: 3 };
+    foe.board[3] = { uid: 900, defId: 'footman', star: 1 };
+    const r = simulateCombat(state, p, foe, { traits: [false, false] });
+    expect(r.events.filter((e) => e.type === 'effect' && e.effect === 'duelWin')).toHaveLength(1);
+  });
+
+  test('card (Hidden Disciple): the same random 4-cost hero at levels 4, 5 and 7', () => {
+    const { state, p } = lungGame();
+    p.level = 3;
+    payCard(state, p, 'lung');
+    const triggers = p.chestTriggers!.filter((tr) => tr.unit);
+    expect(triggers.map((tr) => tr.level)).toEqual([4, 5, 7]);
+    expect(new Set(triggers.map((tr) => tr.unit)).size).toBe(1);
+    expect(UNIT_BY_ID[triggers[0].unit!].tier).toBe(4);
+  });
+});
+
+describe("Lung's card on another commander", () => {
+  test('the same random 4-cost hero at levels 4, 5 and 7 (not the ring)', () => {
+    const state = createGame(6, SEEDS);
+    const p = state.players[0];
+    expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'nana' }).ok).toBe(true);
+    p.level = 3;
+    payCard(state, p, 'lung');
+    p.commanderCard = 'lung';
+    const triggers = p.chestTriggers!.filter((tr) => tr.unit);
+    expect(triggers.map((tr) => tr.level)).toEqual([4, 5, 7]);
+    expect(UNIT_BY_ID[triggers[0].unit!].tier).toBe(4);
+    expect(powersOf(p).duel).toBeUndefined();
+  });
+});
+
+describe('Pacquiao', () => {
+  function pacGame(): { state: GameState; p: Player } {
+    const state = createGame(6, SEEDS);
+    for (const p of state.players) expect(applyAction(state, p.id, { type: 'pickCommander', commander: 'pacquiao' }).ok).toBe(true);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.bench.fill(null);
+    return { state, p };
+  }
+  const hero = (tier: number) => UNITS.find((u) => u.tier === tier && u.shop !== false && !u.piece)!;
+
+  test('gloves on II-1, III-1 and IV-1: tier 3, 4 and 5', () => {
+    const { state, p } = pacGame();
+    state.round = roundAt(2, 1) - 1;
+    giveGloves(state, p);
+    expect(p.gloves).toBeUndefined();
+    state.round = roundAt(2, 1);
+    giveGloves(state, p);
+    giveGloves(state, p); // once
+    expect(p.gloves).toEqual(['glove3']);
+    state.round = roundAt(4, 1); // a late check pays what's due
+    giveGloves(state, p);
+    expect(p.gloves).toEqual(['glove3', 'glove4', 'glove5']);
+  });
+
+  test("a glove fits only its cost; it gives 2 1★ copies, made up: the pool doesn't drop, and selling gives none back", () => {
+    const { state, p } = pacGame();
+    const three = hero(3);
+    p.bench[0] = { uid: 600, defId: three.id, star: 1 };
+    p.bench[1] = { uid: 601, defId: hero(4).id, star: 1 };
+    p.gloves = ['glove3'];
+    expect(gloveBlock(p, 'glove3', 601)).toContain('only works on 3-cost');
+    const pool = state.pool[three.id];
+    expect(applyAction(state, p.id, { type: 'useGlove', glove: 'glove3', unit: 600 }).ok).toBe(true);
+    expect(p.gloves).toBeUndefined();
+    const unit = [...p.board, ...p.bench].find((u) => u?.defId === three.id)!;
+    expect(copiesOf(unit)).toBe(3); // 1 + 2: a 2★ now
+    expect(state.pool[three.id]).toBe(pool);
+    const area = p.bench.includes(unit) ? 'bench' : 'board';
+    expect(applyAction(state, p.id, { type: 'sell', from: { area, index: (area === 'bench' ? p.bench : p.board).indexOf(unit) } }).ok).toBe(true);
+    expect(state.pool[three.id]).toBe(pool + 1); // only the copy that came from the pool
+  });
+
+  test("works even when the shop pool has none left", () => {
+    const { state, p } = pacGame();
+    const five = hero(5);
+    p.bench[0] = { uid: 600, defId: five.id, star: 1 };
+    state.pool[five.id] = 0;
+    p.gloves = ['glove5'];
+    expect(applyAction(state, p.id, { type: 'useGlove', glove: 'glove5', unit: 600 }).ok).toBe(true);
+    expect(copiesOf([...p.board, ...p.bench].find((u) => u?.defId === five.id)!)).toBe(3);
+  });
+
+  test('card: the Glory Glove, for heroes costing 3 or less', () => {
+    const { state, p } = pacGame();
+    payCard(state, p, 'pacquiao');
+    expect(p.gloves).toEqual(['glory']);
+    p.bench[0] = { uid: 600, defId: hero(1).id, star: 1 };
+    p.bench[1] = { uid: 601, defId: hero(4).id, star: 1 };
+    expect(gloveBlock(p, 'glory', 601)).not.toBeNull();
+    expect(gloveBlock(p, 'glory', 600)).toBeNull();
   });
 });

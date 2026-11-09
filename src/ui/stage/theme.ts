@@ -154,7 +154,7 @@ export const EFFECT_COLORS: Record<string, number> = {
 };
 
 // Special board tiles per trait.
-export const TILE_COLORS: Record<string, number> = { dragonaltar: 0xe0a63a };
+export const TILE_COLORS: Record<string, number> = { dragonaltar: 0xe0a63a, duelring: 0xff5a5a }; // duelring: Lung's Dueling Ring
 
 export function mix(a: number, b: number, t: number): number {
   const ch = (c: number, s: number) => (c >> s) & 0xff;

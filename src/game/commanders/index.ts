@@ -4,7 +4,7 @@ import { nextInt, shuffle } from '../rng';
 import type { GameState, Loc, Player } from '../types';
 import { UNIT_BY_ID } from '../units';
 import { addXp } from '../player';
-import { spendFortunes } from '../powerCards';
+import { checkChestTriggers, spendFortunes } from '../powerCards';
 import { payEcho } from '../essence';
 import { alice } from './alice';
 import { amon } from './amon';
@@ -25,9 +25,11 @@ import { nana } from './nana';
 import { ruby } from './ruby';
 import { minos } from './minos';
 import { katarina } from './katarina';
+import { lung } from './lung';
+import { pacquiao } from './pacquiao';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 
-export type { AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
+export type { DuelPower, AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
 export { ALICE } from './alice';
 export { AMON } from './amon';
 export { ANGELA } from './angela';
@@ -47,8 +49,10 @@ export { NANA } from './nana';
 export { RUBY } from './ruby';
 export { MINOS } from './minos';
 export { KATARINA } from './katarina';
+export { LUNG } from './lung';
+export { PACQUIAO } from './pacquiao';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao].map((c) => [c.id, c]));
 
 // The board piece a beast power puts on the board (see UnitDef.piece).
 export const BEAST_PIECE = 'divinebeast';
@@ -77,8 +81,8 @@ export function commanderPowers(p: Player): CommanderPower[] {
 
 // Everything working for this player, merged (later powers override earlier ones, field by field).
 // `pickGold`, `pickItem`, `pickChest` and `startItems` are left out: they're paid once, on the pick.
-export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp' | 'pickMirrors' | 'pickFreeHeroes' | 'startChests' | 'startEnhancers' | 'pickEquipment'> {
-  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, pickMirrors: _mirrors, pickFreeHeroes: _free, startChests: _startChests, startEnhancers: _enh, pickEquipment: _eq, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
+export function powersOf(p: Player): Omit<CommanderPower, 'pickGold' | 'pickItem' | 'pickChest' | 'startItems' | 'pickXp' | 'pickMirrors' | 'pickFreeHeroes' | 'startChests' | 'startEnhancers' | 'pickEquipment' | 'levelHero' | 'pickGloves'> {
+  const { pickGold: _gold, pickItem: _item, pickChest: _chest, startItems: _start, pickXp: _xp, pickMirrors: _mirrors, pickFreeHeroes: _free, startChests: _startChests, startEnhancers: _enh, pickEquipment: _eq, levelHero: _lh, pickGloves: _gl, ...merged } = Object.assign({}, ...commanderPowers(p)) as CommanderPower;
   return merged;
 }
 
@@ -157,7 +161,15 @@ export function syncMarks(p: Player): void {
 
 // Pays out what picking card `cardId` gives right away: its gold and its item.
 export function payCard(state: GameState, p: Player, cardId: string): void {
-  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0, pickMirrors = 0, pickFreeHeroes = 0, startChests = 0, startEnhancers = 0, pickEquipment = 0 } = cardFace(p, cardId).power;
+  const { pickGold = 0, pickItem, pickChest = 0, startItems = [], pickXp = 0, pickMirrors = 0, pickFreeHeroes = 0, startChests = 0, startEnhancers = 0, pickEquipment = 0, levelHero, pickGloves = [] } = cardFace(p, cardId).power;
+  if (pickGloves.length) (p.gloves ??= []).push(...pickGloves); // Pacquiao's card
+  // Lung's card: one random hero of the cost, handed over at each level (as Neon Zenith's are).
+  if (levelHero) {
+    const pool = Object.values(UNIT_BY_ID).filter((u) => u.tier === levelHero.tier && u.shop !== false && !u.piece);
+    const unit = pool[nextInt(state, pool.length)].id;
+    (p.chestTriggers ??= []).push(...levelHero.levels.map((level) => ({ level, unit })));
+    checkChestTriggers(state, p);
+  }
   // Minos: Enhancement Charges (added to any held), and random equipment.
   if (startEnhancers) p.enhancers = (p.enhancers ?? 0) + startEnhancers;
   for (let k = 0; k < pickEquipment; k++) p.items.push({ uid: state.nextUid++, id: EQUIPMENT[nextInt(state, EQUIPMENT.length)], tier: 1, holder: null });

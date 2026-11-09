@@ -373,3 +373,10 @@ test('item gallery: an item with an enhanced version shows both behind Base / En
   expect(html.split('Enhanced War Axe').length - 1).toBe(1); // once, inside the War Axe card
   expect(html).not.toContain('enh-waraxe+'); // enhanced versions get no cards (or pills) of their own
 });
+
+test("item gallery: Pacquiao's four gloves have their own section", () => {
+  const p = createGame(0, [{ id: 'v', name: '', isBot: false }]).players[0];
+  const html = homeGalleryHtml(p, 'items');
+  expect(html).toContain("Pacquiao's gloves");
+  for (const name of ['Tier-3 Boxing Glove', 'Tier-4 Boxing Glove', 'Tier-5 Boxing Glove', 'Glory Glove']) expect(html).toContain(name);
+});

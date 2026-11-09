@@ -8,7 +8,7 @@ import { blessBlock, blessedUnit } from '../game/twilight';
 import { rewardText } from '../game/traits/format';
 import { claimable } from '../game/freya';
 import { shopPrice } from '../game/shop';
-import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUid, markKinds, powersOf, type MarkKind } from '../game/commanders';
+import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, MARKS, markedUid, markKinds, PACQUIAO, powersOf, type MarkKind } from '../game/commanders';
 import { cardTiers, DEATH_ORACLE, TURRET_OF_GUARDIANS, interestCapOf, offeringShareOf, POWER_CARDS, powerCardName, powerPool, ROGUE_MERCENARY, SIGNATURE } from '../game/powerCards';
 import { COMMANDER_CARD_ROUND, POWER_CARD_ROUNDS, POWER_TIERS, BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
@@ -16,6 +16,7 @@ import { cardItem, EQUIPMENT_GROUPS, giftDamage, isItemCard, ITEMS, plunderDamag
 import { MIRROR } from '../game/mirror';
 import { canDuplicate, DUPLICATOR } from '../game/duplicator';
 import { canUseEnhancer, ENHANCER } from '../game/enhancer';
+import { gloveBlock, gloveClass, GLOVES, gloveText } from '../game/gloves';
 import { MIST_WARES, mistCoins } from '../game/mistShop';
 import { ALTAR_KEYS, altarOf, altarStatus, nextTier, offerBlock, type AltarKey } from '../game/altar';
 import { orbOptions } from '../game/orb';
@@ -584,6 +585,16 @@ function itemGalleryHtml(): string {
       section(`${g.name} equipment`, all.filter((it) => !it.trait && !it.basic && !it.exclusive && it.group === g.id), i === 0 ? 'Dropped by the monsters on round 3 of every stage from II; anyone can hold them.' : ''),
     ).join('') +
     section('Commander items', all.filter((i) => i.exclusive)) +
+    // Pacquiao's gloves: used from the inventory, not held by a hero.
+    `<h3 class="gallery-section">Pacquiao's gloves</h3><p class="meta">Used from the inventory on one of your heroes; never held.</p><div class="gallery-grid">${Object.values(GLOVES)
+      .map(
+        (g) => `<article class="gallery-card item-entry ${gloveClass(g)}">
+      <h3 class="trait-title"><span class="trait-icon">${g.icon}</span> ${g.name} <small>usable</small></h3>
+      <p class="trait-desc">${gloveText(g)}</p>
+      <p class="meta">${g.id === 'glory' ? "From Pacquiao's card." : `From Pacquiao, on ${roundLabel(PACQUIAO.gloveRounds.find((r) => r.glove === g.id)!.round)}.`}</p>
+    </article>`,
+      )
+      .join('')}</div>` +
     traitIds.map((t) => section(`${TRAITS[t].name} items`, all.filter((i) => i.trait === t))).join('')
   );
 }
@@ -796,7 +807,7 @@ const RAIL: { id: RailPanel; icon: string; name: string }[] = [
 // The sidebar's icons. Equipment counts what's waiting for a hero, so new loot isn't missed while
 // another panel is open.
 export function railHtml(open: RailPanel | null, p: Player): string {
-  const loose = p.items.filter((it) => it.holder === null).length + p.orbs.length + (p.mistOrbs ?? []).filter((o) => o.holder === null).length + (p.mirrors ?? 0) + (p.duplicators ?? 0) + (p.enhancers ?? 0);
+  const loose = p.items.filter((it) => it.holder === null).length + p.orbs.length + (p.mistOrbs ?? []).filter((o) => o.holder === null).length + (p.mirrors ?? 0) + (p.duplicators ?? 0) + (p.enhancers ?? 0) + (p.gloves?.length ?? 0);
   const buttons = RAIL.map(({ id, icon, name }) => {
     const badge = id === 'equipment' && loose ? `<b class="rail-badge">${loose}</b>` : '';
     return `<button class="rail-btn${id === open ? ' on' : ''}" data-action="rail" data-panel="${id}" title="${name}" aria-label="${name}">${icon}${badge}</button>`;
@@ -868,7 +879,15 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
         <span class="item-icon">${ENHANCER.icon}</span>${p.enhancers > 1 ? `<b>×${p.enhancers}</b>` : ''}
       </button>`
     : '';
-  const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, dupChip, enhChip, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
+  // Pacquiao's boxing gloves: one chip per kind, click to pick a hero.
+  const gloveChips = [...new Set(p.gloves ?? [])].map((id) => {
+    const g = GLOVES[id];
+    const n = p.gloves!.filter((x) => x === id).length;
+    return `<button class="usable-chip ${gloveClass(g)}" data-action="openGlove" data-glove="${id}" title="${g.name}: ${gloveText(g)} Click to use.">
+        <span class="item-icon">${g.icon}</span><b>${g.orLower ? `≤${g.cost}` : g.cost}</b>${n > 1 ? `<b>×${n}</b>` : ''}
+      </button>`;
+  });
+  const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, dupChip, enhChip, ...gloveChips, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
 
   const heroes = p.board
     .flatMap((u) => (u && !UNIT_BY_ID[u.defId].piece ? [u] : []))
@@ -1672,6 +1691,21 @@ export function enhancerPickHtml(p: Player): string {
     `<h2 class="trait-title">${ENHANCER.icon} ${ENHANCER.name}${p.enhancers! > 1 ? ` ×${p.enhancers}` : ''}</h2>
     <p class="trait-desc">${ENHANCER.desc}</p>
     <div class="orb-options">${options.join('') || '<p class="meta">No item to enhance.</p>'}</div>`,
+  );
+}
+
+// Pacquiao's boxing glove (from the inventory): pick one of your heroes of the right cost.
+export function glovePickHtml(p: Player, id: string): string {
+  const g = GLOVES[id];
+  const options = [...p.board, ...p.bench]
+    .flatMap((u) => (u && !gloveBlock(p, id, u.uid) ? [u] : []))
+    .map((u) => `<button class="chip" data-action="useGlove" data-glove="${id}" data-unit="${u.uid}">${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</button>`);
+  return modalHtml(
+    'closeGlove',
+    'trait-popup',
+    `<h2 class="trait-title ${gloveClass(g)}"><span class="trait-icon">${g.icon}</span> ${g.name}</h2>
+    <p class="trait-desc">${gloveText(g)}</p>
+    <div class="orb-options">${options.join('') || '<p class="meta">No hero it can go on.</p>'}</div>`,
   );
 }
 

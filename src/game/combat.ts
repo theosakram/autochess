@@ -1,4 +1,4 @@
-import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type IceArrowPower, type WardPower } from './commanders';
+import { beastOf, BEAST_PIECE, markedUid, powersOf, protectedUids, type BeastPower, type DuelPower, type IceArrowPower, type WardPower } from './commanders';
 import { DISCO_FEVER, discoOf, DIVINE_EXECUTION, executeOf, sharpArmoryOf } from './powerCards';
 import { AFTERSHOCK, BLAZING_VALOR, CRITICAL_SPELLCRAFT, CUTTHROAT, HAIL_OF_SHOTS, KO_PUNCH, PERKS, perksOf, STAR_CHORUS, WHIRL_OF_CARNAGE, antiHealOf, ASTRAL_JUDGEMENT, attackManaOf, CRUSHING_CLAW, crushingClawOf, judgementOf, DARK_BLADE_SECONDS, dragonShieldOf, fortifyOf, BERSERK_SECONDS, berserkOf, kamikazeOf, backManaOf, castRefundOf, sharpshooterOf } from './powerCards';
 import { essenceTriggers } from './essence';
@@ -121,6 +121,8 @@ interface SimFighter extends Fighter {
   openers: { source: string; width: number; depth: number; stunTicks: number; columnAttackSpeed: number }[];
   stunnedUntil: number;
   ward: WardPower | null; // Kagura's umbrella, until it opens (see checkWard)
+  duelRing: DuelPower | null; // Lung: it started in the Dueling Ring
+  duel: { with: number; until: number } | null; // in a duel with this enemy, until this tick (see fireDuels)
   refund: number; // Angela's protection: share of max mana regained after each cast
   loveBeam: { every: number; heal: number; damage: number } | null; // Angela's card: every `every` ticks
   castMana: number; // flat mana regained after each cast (Purple Buff)
@@ -340,6 +342,8 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       })),
       stunnedUntil: 0,
       ward: u.uid === markedUid(p, 'ward') ? (powersOf(p).ward ?? null) : null,
+      duelRing: powersOf(p).duel?.cell === cell ? powersOf(p).duel! : null,
+      duel: null,
       refund: (protectedUids(p).has(u.uid) ? (powersOf(p).protect?.refund ?? 0) : 0) + blessing,
       loveBeam:
         beam && beaming.has(u.uid)
@@ -467,7 +471,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   const alive = (side: Side) => fighters.some((f) => f.side === side && f.hp > 0);
   // No mana while a skill keeps the unit busy, so a long skill can't chain straight into the next.
   const gainMana = (f: SimFighter, n: number) => {
-    if (t < f.busyUntil) return;
+    if (t < f.busyUntil || dueling(f)) return;
     f.mana = Math.min(f.maxMana, f.mana + n);
   };
 
@@ -476,6 +480,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Adaptive: physical or magic by the dealer's higher stat, right now (physical without a dealer).
     const type = given === 'adaptive' ? (dealer ? adaptiveType(dealer.stats) : 'physical') : given;
     if (t < target.frozen.until) return 0;
+    // Lung's duel: the duelists only hurt, and are only hurt by, each other.
+    if (cutOff(dealer, target)) return 0;
     // Blade of Despair: a low target fuels the dealer before this hit is worked out.
     if (dealer?.fury && target.hp < target.maxHp * dealer.fury.below) {
       api.buff(dealer, [{ stat: 'damageAmp', add: dealer.fury.amp }], dealer.fury.seconds, dealer.fury.effect, dealer);
@@ -692,6 +698,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // Stuns and stun-likes (a sheep): no moving, attacking or casting. Purify blocks it. Returns whether it landed.
   function disable(f: SimFighter, seconds: number, by: SimFighter, effect?: string): boolean {
+    if (cutOff(by, f)) return false; // a duelist: only its opponent
     const until = t + Math.round(seconds * TICKS_PER_SECOND);
     if (f.hp <= 0 || until <= f.stunnedUntil || t < f.ccImmuneUntil) return false;
     f.stunnedUntil = until;
@@ -710,6 +717,61 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Weak while a sheep, like Eudora's Gale Shot: a timed damage-taken buff.
     if (by.sheep?.vulnerable) api.buff(target, [{ stat: 'damageTaken', add: by.sheep.vulnerable }], seconds, 'sheepweak', by);
     return true;
+  }
+
+  // Lung's Dueling Ring. When the fight starts, the hero in the ring drags the farthest enemy next to it and the
+  // two duel: basic attacks only (no mana, so no skills), and nothing else can hurt or stun either of them, nor
+  // they anyone else, until one falls or the time runs out. A win is logged ('duelWin') for the player's bonus.
+  function dueling(f: SimFighter): boolean {
+    return !!f.duel && t < f.duel.until && f.hp > 0 && fighters[f.duel.with].hp > 0;
+  }
+  function cutOff(by: SimFighter | null, target: SimFighter): boolean {
+    if (dueling(target)) return by?.id !== target.duel!.with;
+    return !!by && dueling(by);
+  }
+  function fireDuelStart(): void {
+    for (const f of fighters) {
+      const ring = f.duelRing;
+      if (!ring || f.hp <= 0 || f.duel) continue;
+      const foes = fighters.filter((e) => e.side !== f.side && e.hp > 0 && !e.duel);
+      if (!foes.length) continue;
+      const prey = foes.reduce((x, y) => (dist(f, y) > dist(f, x) || (dist(f, y) === dist(f, x) && y.id < x.id) ? y : x));
+      // Dragged to a free tile next to the duelist (a Turret stays put).
+      if (!prey.anchored && dist(f, prey) > 1) {
+        const spots: Point[] = [];
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const c = { x: f.x + dx, y: f.y + dy };
+          if ((dx || dy) && c.x >= 0 && c.x < GRID_W && c.y >= 0 && c.y < GRID_H && occupied[gridIndex(c)] === -1) spots.push(c);
+        }
+        const to = spots.sort((a, b) => dist(a, prey) - dist(b, prey))[0];
+        if (to) {
+          occupied[gridIndex(prey)] = -1;
+          prey.x = to.x;
+          prey.y = to.y;
+          occupied[gridIndex(prey)] = prey.id;
+          events.push({ t, type: 'dash', id: prey.id, x: prey.x, y: prey.y });
+        }
+      }
+      const until = t + Math.round(ring.seconds * TICKS_PER_SECOND);
+      f.duel = { with: prey.id, until };
+      prey.duel = { with: f.id, until };
+      f.target = prey;
+      prey.target = f;
+      events.push({ t, type: 'effect', effect: 'duel', by: f.id, target: prey.id, damage: 0, hp: prey.hp });
+    }
+  }
+  // Ends duels: a fallen opponent is a win for the ring's hero; at the time limit, nobody wins.
+  function fireDuels(t: number): void {
+    for (const f of fighters) {
+      if (!f.duelRing || !f.duel) continue;
+      const foe = fighters[f.duel.with];
+      if (f.hp > 0 && foe.hp > 0 && t < f.duel.until) continue;
+      if (f.hp > 0 && foe.hp <= 0) events.push({ t, type: 'effect', effect: 'duelWin', by: f.id, target: foe.id, damage: 0, hp: 0 });
+      f.duel = null; // over (and fought only once a fight)
+      foe.duel = null;
+      if (f.target === foe && foe.hp > 0) f.target = null;
+      if (foe.target === f && f.hp > 0) foe.target = null;
+    }
   }
 
   // Sheep Stick at the start: the enemy with the highest star (ties: higher cost, then first found).
@@ -1286,6 +1348,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
         openers: [],
         stunnedUntil: 0,
         ward: null,
+        duelRing: null,
+        duel: null,
         refund: 0,
         loveBeam: null,
         castMana: 0,
@@ -1834,6 +1898,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   let t = 0;
   for (const f of fighters) if (f.shields.length) shieldEvent(f);
   if (alive(0) && alive(1)) {
+    fireDuelStart();
     fireOpeners();
     fireSideShields();
     fireFortify();
@@ -1882,6 +1947,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     if (t > 0) fireDisco(t);
     fireOvertime(t);
     fireHunts(t);
+    fireDuels(t);
     updateProvoked(t);
     flushVengeance(t); // any reflection whose hit wasn't followed by afterDamage
     expireBuffs(t);
@@ -1891,17 +1957,28 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     for (const f of shuffle(rng, fighters.filter((f) => f.hp > 0))) {
       if (f.hp <= 0 || t < f.stunnedUntil || t < f.busyUntil || frozen(f)) continue;
       // Frozen enemies (Winter Crown) can't be targeted.
-      const enemies = fighters.filter((e) => e.side !== f.side && e.hp > 0 && !frozen(e));
+      // A duelist sees only its opponent; nobody else sees a duelist.
+      const enemies = dueling(f)
+        ? [fighters[f.duel!.with]]
+        : fighters.filter((e) => e.side !== f.side && e.hp > 0 && !frozen(e) && !dueling(e));
       if (enemies.length === 0) continue;
 
       // A taunted unit goes after its taunter; otherwise it sticks with its target while alive and in range.
       const taunter = f.taunt && t < f.taunt.until ? fighters[f.taunt.by] : null;
-      if (taunter && taunter.hp > 0 && !frozen(taunter)) f.target = taunter;
-      else if (!f.target || f.target.hp <= 0 || frozen(f.target) || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
+      if (dueling(f)) f.target = enemies[0];
+      else if (taunter && taunter.hp > 0 && !frozen(taunter) && !dueling(taunter)) f.target = taunter;
+      else if (!f.target || f.target.hp <= 0 || frozen(f.target) || dueling(f.target) || dist(f, f.target) > f.stats.range) f.target = nearest(f, enemies);
       const target = f.target;
 
-      // No basic attacks: it only casts, at any range, once its mana is full.
-      if (f.noBasic) {
+      // A duelist: basic attacks only, whatever it is.
+      if (dueling(f)) {
+        if (dist(f, target) <= f.stats.range) {
+          if (t >= f.nextAttack) {
+            fullBasicAttack(f, target, t);
+            f.nextAttack = t + attackInterval(f.stats);
+          }
+        } else if (!f.rooted && t >= f.nextMove) advance(f, target, t);
+      } else if (f.noBasic) {
         if (t >= f.nextAttack && f.mana >= f.maxMana) strike(f, target, t);
       } else if (dist(f, target) <= f.stats.range) {
         if (t >= f.nextAttack) strike(f, target, t);
@@ -1910,6 +1987,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       }
     }
   }
+
+  fireDuels(t); // a duel decided by the fight's last blow
 
   const a0 = alive(0);
   const a1 = alive(1);

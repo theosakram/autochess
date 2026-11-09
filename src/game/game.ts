@@ -1,4 +1,5 @@
 import { grantBlood } from './blood';
+import { giveGloves } from './gloves';
 import { essenceRound, payEcho, releaseEssence } from './essence';
 import { runBot } from './bot';
 import { enemyDeaths, killsBy, memberSkills, simulateCombat, type CombatResult } from './combat';
@@ -161,6 +162,8 @@ export function startRound(state: GameState): RoundBonus[] {
   }
   // Alice: a Blood Pact on its rounds.
   for (const p of alive) grantBlood(state, p);
+  // Pacquiao: his gloves due by this round.
+  for (const p of alive) giveGloves(state, p);
   // Kaela's card: its Lucky Dice rolls due this round.
   for (const p of alive) cardRolls(state, p);
   // Cyclical Support's chests due this round.
@@ -283,6 +286,15 @@ function afterFight(p: Player, result: CombatResult, side: Side): void {
   earnChests(p, result, side);
   countGifts(p, result, side);
   countPlunder(p, result, side);
+  countDuels(p, result, side);
+}
+
+// Lung: each duel the Dueling Ring's hero won adds to the bonus, up to the cap.
+export function countDuels(p: Player, result: CombatResult, side: Side): void {
+  const duel = powersOf(p).duel;
+  if (!duel) return;
+  const won = result.events.filter((e) => e.type === 'effect' && e.effect === 'duelWin' && result.fighters.find((f) => f.id === e.by)?.side === side).length;
+  if (won) p.duelWins = Math.min(duel.maxWins, (p.duelWins ?? 0) + won);
 }
 
 // Plunderer's Claw: gold for each enemy its holder hooked (its cost), until the claw's counter reaches the cap.

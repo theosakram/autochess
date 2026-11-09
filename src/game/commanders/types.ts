@@ -54,6 +54,10 @@ export interface CommanderPower {
   startChests?: number; // Equipment Chests handed over once, when this power first works (Guiness)
   freeHeroChance?: number; // Guiness: chance the after-fight shop has a free hero
   pickMirrors?: number; // Mirror Devices handed over once, when this card is picked (Amon's card on another commander)
+  gloveRounds?: { round: number; glove: string }[]; // Pacquiao: a boxing glove from each round on (see gloves.ts)
+  pickGloves?: string[]; // Pacquiao's card: gloves handed over on the pick
+  duel?: DuelPower; // Lung: the Dueling Ring
+  levelHero?: { levels: number[]; tier: number }; // Lung's card: the same random hero of this cost at each of these levels
   itemBoost?: { item: string; mods: StatMod[] }; // Katarina's card: the holder of this item (or its enhanced version) gets these too
   startEnhancers?: number; // Minos: Enhancement Charges handed over once, when this power first works (see enhancer.ts)
   pickEquipment?: number; // Minos's card: this many random equipment, straight to the inventory, on the pick
@@ -163,6 +167,17 @@ export interface AltarPower {
 
 // Miya's Ice Arrow Blessing on one hero: +`attackSpeed`, and every `every`th basic attack also shoots the
 // `targets` nearest enemies for `share` of each one's max hp, physical.
+// Lung's Dueling Ring: a board cell. The hero on it gets more attack speed and, when the fight starts, drags the
+// farthest enemy into a 1v1 of basic attacks for up to `seconds`. Each duel won: +perWin attack and magic attack
+// for the ring's hero, kept all game (Player.duelWins), up to maxWins.
+export interface DuelPower {
+  cell: number;
+  seconds: number;
+  attackSpeed: number;
+  perWin: number;
+  maxWins: number;
+}
+
 export interface IceArrowPower {
   every: number;
   targets: number;
