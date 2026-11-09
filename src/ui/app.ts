@@ -435,7 +435,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       openUnitInfo = info.dataset.unitInfo!;
       return render();
     }
-    const trait = target.closest<HTMLElement>('[data-trait]');
+    // A button that carries a trait (Prime Selection's Take) does its action instead.
+    const trait = target.closest<HTMLElement>('[data-trait]:not([data-action])');
     if (trait) {
       // A trait opened from a unit's info replaces it, so it isn't hidden underneath.
       openUnitInfo = null;
