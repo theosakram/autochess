@@ -68,6 +68,15 @@ describe('Astral', () => {
     expect(fieldLeaders(p, activeTraits(p.board))).toEqual({});
   });
 
+  test('a non-Astral with an Astral orb can be the Sovereign', () => {
+    const state = newGame();
+    const p = state.players[0];
+    const [, , footman] = field(p, [['minos', 1, 0], ['martin', 1, 1], ['footman', 1, 2]]);
+    p.orb = { defId: 'footman', trait: 'astral' };
+    give(p, footman, 3);
+    expect(fieldLeaders(p, activeTraits(p.board, p.orb)).astral).toEqual([footman]);
+  });
+
   test('at the 10 breakpoint the top two Astrals are both Sovereigns', () => {
     const state = newGame();
     const p = state.players[0];

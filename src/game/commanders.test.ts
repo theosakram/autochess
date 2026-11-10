@@ -11,7 +11,7 @@ import { claimable } from './freya';
 import { checkRally, heroValue, payHeirs } from './cyclops';
 import { bloodStars } from './blood';
 import { copiesOf, mergeUnits } from './merge';
-import { SHOP_ODDS, STAR_MULT, TICKS_PER_SECOND } from './config';
+import { SHOP_ODDS, TICKS_PER_SECOND } from './config';
 import { giveGloves, gloveBlock } from './gloves';
 import { ICE_LONGBOW } from './items';
 import { playerTraitCounts } from './traits';
@@ -1132,25 +1132,30 @@ describe('Alice', () => {
     expect(p.blood!.uses).toBe(2);
   });
 
-  test('the Pact gives a copy at once; a 2-star (3 copies) becomes 4 copies: 2 stars and a part', () => {
+  test('the Pact gives no free copy; a 2-star counts as 3 copies', () => {
     const { state, p } = aliceGame();
     p.board[0] = { uid: 1002, defId: hero.id, star: 2 };
+    const pool = state.pool[hero.id];
     expect(applyAction(state, p.id, { type: 'bloodPact', unit: 1002 }).ok).toBe(true);
     const u = p.board[0]!;
-    expect(u.copies).toBe(4);
+    expect(u.copies).toBe(3);
     expect(u.star).toBe(2);
+    expect(state.pool[hero.id]).toBe(pool);
     expect(bloodStars(4)).toEqual({ full: 2, frac: 1 / 6 });
-    expect(copiesOf(u)).toBe(4);
+    expect(copiesOf(u)).toBe(3);
   });
 
   test('copies pile into one hero: 3 = 2 stars, 9 = 3 stars, 13 = 4 red stars and the cap', () => {
     const { state, p } = aliceGame();
     p.board[0] = { uid: 1003, defId: hero.id, star: 1 };
-    applyAction(state, p.id, { type: 'bloodPact', unit: 1003 }); // 2 copies
+    applyAction(state, p.id, { type: 'bloodPact', unit: 1003 });
     const u = p.board[0]!;
-    expect(u.copies).toBe(2);
+    expect(u.copies).toBe(1);
     expect(u.star).toBe(1);
     let uid = 1100;
+    buy(state, p, uid++);
+    expect(u.copies).toBe(2);
+    expect(u.star).toBe(1); // no 3-of-a-kind merge
     buy(state, p, uid++);
     expect(u.copies).toBe(3);
     expect(u.star).toBe(2);
@@ -1174,31 +1179,40 @@ describe('Alice', () => {
     p.gold = 10;
     state.pool[hero.id]--;
     expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
-    expect(p.board[0]!.copies).toBe(3);
-    expect(p.board[0]!.star).toBe(2);
+    expect(p.board[0]!.copies).toBe(2);
+    expect(p.board[0]!.star).toBe(1);
   });
 
-  test('stats: every copy counts; past 3 stars +10% attack, magic attack and hp each; the card adds +40% attack', () => {
+  test('stats: 1★ copy = halfway to 2★; 2★ copy = +8% of 3★, kept at 3★; 3★ copy = +10%; the card adds +35% attack', () => {
     const { state, p } = aliceGame();
     p.board[0] = { uid: 1004, defId: hero.id, star: 1 };
     applyAction(state, p.id, { type: 'bloodPact', unit: 1004 });
     const u = p.board[0]!;
     const levels = playerTraits(p);
     const base1 = unitStats(hero, 1, { levels });
+    const base2 = unitStats(hero, 2, { levels });
+    const base3 = unitStats(hero, 3, { levels });
     // 2 copies: halfway from 1 star to 2 stars.
+    u.copies = 2;
     const s2 = fieldStats(p, playerTraits(p), {}).get(1004)!;
-    expect(s2.hp / base1.hp).toBeCloseTo(1 + (STAR_MULT[1] / STAR_MULT[0] - 1) * 0.5, 1);
+    expect(s2.hp / base1.hp).toBeCloseTo((base1.hp + base2.hp) / 2 / base1.hp, 2);
+    expect(s2.atk / base1.atk).toBeCloseTo((base1.atk + base2.atk) / 2 / base1.atk, 2);
+    // 6 copies at 2 stars: 2★ stats + 3 × 8% of 3★ stats.
+    u.copies = 6;
+    u.star = 2;
+    const s6 = fieldStats(p, playerTraits(p), {}).get(1004)!;
+    expect(s6.hp).toBeCloseTo(base2.hp + 3 * ALICE.bloodPact.perCopy[1] * base3.hp, 0);
+    expect(s6.atk).toBeCloseTo(base2.atk + 3 * ALICE.bloodPact.perCopy[1] * base3.atk, 0);
     u.copies = 11;
     u.star = 3;
-    const base3 = unitStats(hero, 3, { levels: playerTraits(p) });
     const s11 = fieldStats(p, playerTraits(p), {}).get(1004)!;
-    expect(s11.hp / base3.hp).toBeCloseTo(1 + 2 * ALICE.bloodPact.perCopy, 1);
+    expect(s11.hp / base3.hp).toBeCloseTo(1 + 6 * ALICE.bloodPact.perCopy[1] + 2 * ALICE.bloodPact.perCopy[2], 1);
     p.commanderCard = 'alice';
     const s11c = fieldStats(p, playerTraits(p), {}).get(1004)!;
-    expect(s11c.atk / base3.atk).toBeCloseTo(1 + 2 * ALICE.bloodPact.perCopy + ALICE.card.hybridAtk, 1);
+    expect(s11c.atk / base3.atk).toBeCloseTo(1 + 6 * ALICE.bloodPact.perCopy[1] + 2 * ALICE.bloodPact.perCopy[2] + ALICE.card.hybridAtk, 1);
   });
 
-  test('her card: +10 XP on the pick', () => {
+  test('her card: +5 XP on the pick', () => {
     const { state, p } = aliceGame();
     p.level = 5;
     p.xp = 0;
@@ -2306,5 +2320,29 @@ describe('Moscow', () => {
     }
     expect(o.ladder!.given).toBe(5);
     expect(m.ladder!.given).toBe(5);
+  });
+});
+
+describe('Alice Blood Pact: stats never drop as copies grow', () => {
+  test('every hero, 1 to 13 copies: hp, attack and magic attack only go up', () => {
+    const state = createGame(5, SEEDS);
+    const p = state.players[0];
+    p.commander = 'alice';
+    p.blood = { blessed: [], uses: 0, rounds: [] };
+    p.bench.fill(null);
+    for (const def of UNITS.filter((d) => d.shop !== false && !d.piece)) {
+      p.board.fill(null);
+      p.blood.blessed = [def.id];
+      const u: Player['board'][number] & object = { uid: 9000, defId: def.id, star: 1, copies: 1 };
+      p.board[0] = u;
+      let prev = { hp: 0, atk: 0, ap: 0 };
+      for (let c = 1; c <= 13; c++) {
+        u.copies = c;
+        u.star = c >= 9 ? 3 : c >= 3 ? 2 : 1;
+        const s = fieldStats(p, playerTraits(p), {}).get(9000)!;
+        for (const k of ['hp', 'atk', 'ap'] as const) expect(s[k]).toBeGreaterThan(prev[k]);
+        prev = { hp: s.hp, atk: s.atk, ap: s.ap };
+      }
+    }
   });
 });

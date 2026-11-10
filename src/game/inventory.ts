@@ -149,7 +149,8 @@ export function honoraryTraits(items: { id: string }[]): string[] {
 }
 
 // Trait id -> uids of its leaders on this board. Every carried item counts, working or not.
-export const fieldLeaders = (p: Player, levels: TraitLevels) => traitLeaders(p.board, levels, (uid) => slotsUsed(p, uid));
+export const fieldLeaders = (p: Player, levels: TraitLevels) =>
+  traitLeaders(p.board, levels, (uid) => slotsUsed(p, uid), [...(p.orb ? [p.orb] : []), ...fieldedMistOrbs(p)]);
 
 // The traits a unit leads, by uid.
 export function leadsOf(p: Player, levels: TraitLevels, uid: number): string[] {

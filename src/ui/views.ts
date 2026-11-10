@@ -482,6 +482,7 @@ export function homeHtml(difficulty: BotLevel = 'normal'): string {
       </div>
       <button class="primary home-btn" data-action="play">▶ Play</button>
       <button class="home-btn" data-action="openGallery">📖 Gallery</button>
+      <button class="home-btn" data-action="openBuilder">🧩 Team Builder</button>
     </div>
   </div>`;
 }
@@ -720,7 +721,8 @@ const dockIcon = (name: keyof typeof DOCK_ICONS) =>
 
 // The dock along the bottom: leveling, the shop and the fight button, always in view so buying never
 // hides the board. Drop a unit anywhere on it to sell.
-export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: Record<string, string>, incomeOpen = false, pool: Record<string, number> = {}): string {
+// `wanted`: heroes in the loaded lineup (Lineups panel); their cards glow gold with a thumbs up.
+export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: Record<string, string>, incomeOpen = false, pool: Record<string, number> = {}, wanted: Set<string> = new Set()): string {
   const levelCost = levelUpCost(p);
   const bloodRoll = !!p.bloodRefreshes && p.hp > DEATH_ORACLE.hp; // Death Oracle
   const levelBtn =
@@ -747,7 +749,7 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
         <button class="dock-icon pool" data-action="openPool" title="Shop pool: how many copies of every hero are left">${dockIcon('pool')}<small>Pool</small></button>
       </div>
     </div>
-    <div class="shop-cards${p.shopLocked ? ' locked' : ''}${frozen ? ' frozen' : ''}"${frozen ? ` title="Frozen: buy no hero this round for ${powersOf(p).frost!.gain} Frost Energy"` : ''}>${shopCardsHtml(p, locked, chosen, pool)}</div>
+    <div class="shop-cards${p.shopLocked ? ' locked' : ''}${frozen ? ' frozen' : ''}"${frozen ? ` title="Frozen: buy no hero this round for ${powersOf(p).frost!.gain} Frost Energy"` : ''}>${shopCardsHtml(p, locked, chosen, pool, wanted)}</div>
     ${
       locked
         ? `<button data-action="skip" class="fight-btn skip">Skip <kbd>Space</kbd></button>`
@@ -811,7 +813,7 @@ function ownedStars(p: Player, id: string): number[] {
   return [...p.board, ...p.bench].flatMap((u) => (u?.defId === id ? [u.star] : [])).sort((a, b) => b - a);
 }
 
-function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string>, pool: Record<string, number>): string {
+function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string>, pool: Record<string, number>, wanted: Set<string>): string {
   const counts = playerTraitCounts(p);
   return p.shop
     .map((id, slot) => {
@@ -857,25 +859,27 @@ function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string
       const left = id in pool ? pool[id] + p.shop.filter((x) => x === id).length : null;
       const leftTag =
         left === null ? '' : ` <small class="shop-left${left <= 2 ? ' low' : ''}" title="Copies left to buy (the pool plus this shop) of ${POOL_SIZE[def.tier]}">(${left}/${POOL_SIZE[def.tier]})</small>`;
-      const cls = up.makes ? ' upgrade' : stars.length ? ' have' : '';
+      const cls = (up.makes ? ' upgrade' : stars.length ? ' have' : '') + (wanted.has(id) ? ' wanted' : '');
+      const thumb = wanted.has(id) ? '<span class="shop-thumb" title="In your loaded lineup">👍</span>' : '';
       return `<button class="shop-card tier-${def.tier}${cls}" data-action="buy" data-slot="${slot}" ${locked || p.gold < shopPrice(p, slot) ? 'disabled' : ''}>
         ${portraitHtml(id, 'shop-face')}
         <span class="shop-body">
           <span class="unit-name">${isChosen(chosen, id) ? '👑 ' : ''}${def.name}${leftTag}</span>
           <span class="traits">${traits || '<span class="shop-trait none">no traits</span>'}</span>
         </span>
-        <b class="cost">${shopPrice(p, slot)}g</b>${p.freeSlot === slot || p.freeBuy ? '<span class="free-tag">FREE</span>' : ''}${tag}${pips}
+        <b class="cost">${shopPrice(p, slot)}g</b>${p.freeSlot === slot || p.freeBuy ? '<span class="free-tag">FREE</span>' : ''}${tag}${pips}${thumb}
       </button>`;
     })
     .join('');
 }
 
-export type RailPanel = 'synergy' | 'damage' | 'equipment';
+export type RailPanel = 'synergy' | 'damage' | 'equipment' | 'lineup';
 
 const RAIL: { id: RailPanel; icon: string; name: string }[] = [
   { id: 'synergy', icon: '🧩', name: 'Synergies' },
   { id: 'damage', icon: '📊', name: 'Damage' },
   { id: 'equipment', icon: '🎒', name: 'Equipment' },
+  { id: 'lineup', icon: '📋', name: 'Lineups' },
 ];
 
 // The sidebar's icons. Equipment counts what's waiting for a hero, so new loot isn't missed while

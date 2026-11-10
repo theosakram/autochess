@@ -11,6 +11,7 @@ import type { Loc, Player } from '../../game/types';
 import { PAD, stageLayout, stageWidthForHeight, type StageLayout } from './layout';
 import { COLORS, EFFECT_COLORS, FONT, TILE_COLORS, mix } from './theme';
 import { makeToken, type TokenView } from './token';
+import { portraitOf } from '../portraits';
 import { lerp, Tweens } from './tween';
 
 const TICK_MS = 1000 / TICKS_PER_SECOND;
@@ -23,6 +24,9 @@ export interface PrepView {
   player: Player;
   chosen: Record<string, string>;
   selectedUid: number | null;
+  // A loaded lineup's plan (Team Builder): board cell -> the hero meant to stand there. Cells not yet holding
+  // that hero glow gold with a thumbs up and a faint picture of who goes there.
+  guide?: { cell: number; defId: string }[];
 }
 
 // The stage reports input; the app decides what it means.
@@ -135,6 +139,28 @@ export class Stage {
     }
   }
 
+  // The loaded lineup's markers, under the units: a gold glow, the planned hero faint in the middle, 👍 in the corner.
+  private drawGuide(view: PrepView): void {
+    const size = this.L.boardCell;
+    for (const { cell, defId } of view.guide ?? []) {
+      if (view.player.board[cell]?.defId === defId) continue; // already where it belongs
+      const at = this.center({ area: 'board', index: cell });
+      const glow = new Graphics()
+        .roundRect(at.x - size / 2, at.y - size / 2, size, size, 6)
+        .fill({ color: COLORS.accent, alpha: 0.16 })
+        .stroke({ width: 2.5, color: COLORS.accent, alpha: 0.9 });
+      const ghost = new Text({ text: portraitOf(defId), style: { fontFamily: FONT, fontSize: size * 0.42 } });
+      ghost.anchor.set(0.5);
+      ghost.alpha = 0.35;
+      ghost.position.set(at.x, at.y);
+      const thumb = new Text({ text: '👍', style: { fontFamily: FONT, fontSize: size * 0.24 } });
+      thumb.anchor.set(1, 0);
+      thumb.position.set(at.x + size / 2 - 3, at.y - size / 2 + 2);
+      for (const g of [glow, ghost, thumb]) g.eventMode = 'none'; // clicks still reach the cell under it
+      this.layers.cells.addChild(glow, ghost, thumb);
+    }
+  }
+
   private center(loc: Loc): Point {
     return loc.area === 'bench' ? this.L.benchCenter(loc.index) : this.L.gridCenter(boardToGrid(0, loc.index));
   }
@@ -159,6 +185,7 @@ export class Stage {
       p.bench.forEach((u, index) => !u && targets.add(key({ area: 'bench', index })));
     }
     this.drawBoard(tiles, true, targets);
+    this.drawGuide(view);
 
     const crowned = new Set(Object.values(view.chosen));
     const levels = playerTraits(p);

@@ -243,10 +243,11 @@ export interface IceArrowPower {
   attackSpeed: number;
 }
 
-// Alice's Blood Pact: a use on each of `rounds`; past 3 stars each copy is +`perCopy` hybrid attack and max hp.
+// Alice's Blood Pact: a use on each of `rounds`. Each extra copy of a blessed hero adds, by its current star:
+// 1★ `perCopy[0]` of the way to its 2★ stats; 2★ +`perCopy[1]` of its 3★ stats (kept at 3★); 3★ +`perCopy[2]` more.
 export interface BloodPower {
   rounds: number[];
-  perCopy: number;
+  perCopy: [number, number, number];
 }
 
 // Lunox's Twilight Blessing: `gold` when it's handed out, and `heroes` random heroes (costs by the shop odds) of the rolled

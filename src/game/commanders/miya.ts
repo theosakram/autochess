@@ -1,3 +1,4 @@
+import { ICE_LONGBOW } from '../items/iceLongbow';
 import { pct } from '../traits/format';
 import type { CommanderDef, IceArrowPower } from './types';
 
@@ -23,8 +24,8 @@ export const miya: CommanderDef = {
     name: 'Ice Longbow',
     icon: '🏹',
     selfDesc:
-      `Gain ${MIYA.card.gold} gold and the Ice Longbow, her own equipment: +30% attack speed, and every kill heals your lowest-HP ally ` +
-      '20% of its max HP. It stacks with the Ice Arrow Blessing on the same hero.',
+      `Gain ${MIYA.card.gold} gold and the Ice Longbow, her own equipment: +${pct(ICE_LONGBOW.attackSpeed)} attack speed, and whenever ` +
+      `its wearer kills an enemy, your lowest-HP ally heals ${pct(ICE_LONGBOW.killHeal)} of its max HP. It stacks with the Ice Arrow Blessing on the same hero.`,
     self: { pickGold: MIYA.card.gold, pickItem: MIYA.card.item },
   },
 };

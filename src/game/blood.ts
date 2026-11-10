@@ -1,14 +1,12 @@
 import { powersOf } from './commanders';
 import { BLOOD_STEPS, bloodMerge } from './merge';
-import type { StatMod } from './stats';
-import { STAR_MULT } from './config';
-import type { GameState, Player, Unit } from './types';
+import { baseStats, type StatMod } from './stats';
+import type { GameState, Player, Star, Unit } from './types';
 import { UNIT_BY_ID } from './units';
 
 // Alice's Blood Pact: a use on rounds I-1, II-1 and III-1 (unused ones wait). Used on a hero type you own, it
 // blesses that type for the rest of the game: its copies no longer merge three at a time but pile into one
-// hero (Unit.copies), up to the last of BLOOD_STEPS; it also hands over one more copy, which goes straight in.
-// Between full stars every copy raises its stats; past 3 stars each copy is a flat boost (see bloodMods).
+// hero (Unit.copies), up to the last of BLOOD_STEPS. Every copy raises its stats (see bloodMods).
 
 // Hands out this round's use, once per use round, while the power works for the player.
 export function grantBlood(state: GameState, p: Player): void {
@@ -33,17 +31,14 @@ export function bloodBlock(p: Player, uid: number): string | null {
   return null;
 }
 
-// Uses a Blood Pact on unit `uid`'s type: blessed, its copies gather into one, plus a free copy from the pool.
-export function bloodBless(state: GameState, p: Player, uid: number): string | null {
+// Uses a Blood Pact on unit `uid`'s type: blessed, its copies gather into one.
+export function bloodBless(_state: GameState, p: Player, uid: number): string | null {
   const blocked = bloodBlock(p, uid);
   if (blocked) return blocked;
   const unit = [...p.board, ...p.bench].find((u) => u?.uid === uid)!;
   p.blood!.uses--;
   p.blood!.blessed.push(unit.defId);
-  // The free copy: from the pool when there's one left.
-  const extra = (state.pool[unit.defId] ?? 0) > 0 ? 1 : 0;
-  if (extra) state.pool[unit.defId]--;
-  bloodMerge(p, unit.defId, extra);
+  bloodMerge(p, unit.defId);
   return null;
 }
 
@@ -55,19 +50,30 @@ export function bloodStars(copies: number): { full: number; frac: number } {
   return { full: i + 1, frac: next === undefined ? 0 : (copies - BLOOD_STEPS[i]) / (next - BLOOD_STEPS[i]) };
 }
 
-// Stat mods for a blessed hero's copies: toward the next star's stats between full stars; past 3 stars,
-// +perCopy hybrid attack and max hp each. Plus the card's hybrid attack on every blessed hero.
+// Stat mods for a blessed hero's copies, as a share of its current-star stats (the hero's own per-star values):
+// - 1★: each copy moves perCopy[0] of the way to its 2★ stats.
+// - 2★: each copy adds perCopy[1] of its 3★ stats.
+// - 3★: those 2★ bonuses stay (every copy keeps counting), and each copy past 3★ adds perCopy[2] more.
+// Plus the card's hybrid attack on every blessed hero.
 export function bloodMods(p: Player, u: Unit): StatMod[] {
   if (u.copies === undefined || !isBlessed(p, u.defId)) return [];
-  const pact = powersOf(p).bloodPact;
+  const per = powersOf(p).bloodPact?.perCopy ?? [0, 0, 0];
+  const star = Math.min(bloodStars(u.copies).full, 3) as Star;
+  const extra = u.copies - BLOOD_STEPS[star - 1];
+  const grow = { hp: 0, atk: 0, ap: 0 };
+  const def = UNIT_BY_ID[u.defId];
+  const s1 = baseStats(def, 1);
+  const s2 = baseStats(def, 2);
+  const s3 = baseStats(def, 3);
+  for (const k of ['hp', 'atk', 'ap'] as const) {
+    if (star === 1) grow[k] = per[0] * extra * (s2[k] / s1[k] - 1);
+    if (star === 2) grow[k] = (per[1] * extra * s3[k]) / s2[k];
+    if (star === 3) grow[k] = per[1] * (BLOOD_STEPS[2] - BLOOD_STEPS[1]) + per[2] * extra;
+  }
+  const card = powersOf(p).bloodAtk ?? 0;
+  grow.atk += card;
+  grow.ap += card;
   const mods: StatMod[] = [];
-  const { full, frac } = bloodStars(u.copies);
-  let grow = 0;
-  if (full < 3 && frac > 0) grow = (STAR_MULT[full] / STAR_MULT[full - 1] - 1) * frac;
-  if (full >= 3) grow = (pact?.perCopy ?? 0) * (u.copies - BLOOD_STEPS[2]);
-  let atk = grow;
-  if (grow) mods.push({ stat: 'hp', pct: grow });
-  atk += powersOf(p).bloodAtk ?? 0;
-  if (atk) mods.push({ stat: 'atk', pct: atk }, { stat: 'ap', pct: atk });
+  for (const k of ['hp', 'atk', 'ap'] as const) if (grow[k]) mods.push({ stat: k, pct: grow[k] });
   return mods;
 }

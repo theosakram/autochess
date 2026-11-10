@@ -55,6 +55,7 @@ import {
   unitInfoHtml,
   unitDetailHtml,
 } from './views';
+import { lineupGuide, lineupPanelHtml, loadSavedTeams, type SavedTeam } from './teamBuilder';
 
 const TOAST_MS = 1800;
 const BOX_REVEAL_MS = 700; // between Box round picks shown
@@ -113,6 +114,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let galleryOpen = false;
   // What the sidebar shows beside its icons; null when collapsed.
   let railPanel: RailPanel | null = 'synergy';
+  // The saved Team Builder lineup loaded as a guide: its heroes get a thumbs up in the shop, their cells glow.
+  let lineup: SavedTeam | null = null;
   let galleryTab: GalleryTab = 'cards';
   let cardTier: PowerTier = 'blue'; // the Cards tab's tier pill
   // Own unit shown in the right column; cleared once it's no longer owned (sold, merged away).
@@ -241,7 +244,11 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     // Repaints are rebuilds; a long panel stays where it was scrolled to.
     const scrolled = panel.firstElementChild?.scrollTop ?? 0;
     panel.innerHTML =
-      railPanel === 'synergy' ? traitsPanelHtml(p) : railPanel === 'damage' ? meterHtml(meter, meterTab) : railPanel === 'equipment' ? armoryHtml(p, picked, draggingGear) : '';
+      railPanel === 'synergy' ? traitsPanelHtml(p)
+      : railPanel === 'damage' ? meterHtml(meter, meterTab)
+      : railPanel === 'equipment' ? armoryHtml(p, picked, draggingGear)
+      : railPanel === 'lineup' ? lineupPanelHtml(loadSavedTeams(), lineup?.name ?? null, p)
+      : '';
     if (panel.firstElementChild) panel.firstElementChild.scrollTop = scrolled;
   }
 
@@ -283,7 +290,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     slot('hud').innerHTML = hudHtml(state, p, opponent?.name ?? null, combat ? fightTick ?? 0 : null);
     slot('rail').innerHTML = railHtml(railPanel, p);
     renderPanel();
-    slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool);
+    slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool, new Set(lineup ? lineupGuide(lineup).map((g) => g.defId) : []));
     slot('grave').innerHTML = `<div class="graves">${essenceAltarHtml(p)}${graveHtml(p)}${sideShopsHtml(p)}</div>`;
     // You, bottom left, right above your gold.
     slot('commander').innerHTML = `<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen, state.powerTiers, hpBefore ? shieldBefore : (p.shield ?? 0))}</div>`;
@@ -343,7 +350,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       if (at) [el.scrollTop, el.scrollLeft] = at;
     }
     // While a fight plays the stage is busy; it shows the board again when the fight ends.
-    if (!combat) stage.showPrep({ player: p, chosen: state.chosen, selectedUid });
+    if (!combat) stage.showPrep({ player: p, chosen: state.chosen, selectedUid, guide: lineup ? lineupGuide(lineup) : undefined });
   }
 
   // The Box round is on screen: after a stage's last fight, until Continue.
@@ -504,6 +511,14 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         const panel = btn.dataset.panel as RailPanel;
         railPanel = railPanel === panel ? null : panel;
         slot('panel').innerHTML = '';
+        render();
+      } else if (a === 'loadLineup') {
+        // Click the loaded one again to unload it.
+        const t = loadSavedTeams()[Number(btn.dataset.index)];
+        lineup = !t || t.name === lineup?.name ? null : t;
+        render();
+      } else if (a === 'unloadLineup') {
+        lineup = null;
         render();
       } else if (a === 'meterTab') {
         meterTab = btn.dataset.tab as MeterTab;

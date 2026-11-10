@@ -153,14 +153,19 @@ export function unitStats(def: UnitDef, star: Star, field: Partial<Field> = {}):
 
 // Trait id -> uids of the units leading it: for every active trait with a leader, the fielded
 // members carrying the most items (as many as `leader.count` allows); ties go to the higher star,
-// then higher tier, then board order.
-export function traitLeaders(board: (Unit | null)[], levels: TraitLevels, itemCount: (uid: number) => number): Record<string, number[]> {
+// then higher tier, then board order. `orbs` make the hero of their type a member of their trait too.
+export function traitLeaders(
+  board: (Unit | null)[],
+  levels: TraitLevels,
+  itemCount: (uid: number) => number,
+  orbs: Orb[] = [],
+): Record<string, number[]> {
   const leaders: Record<string, number[]> = {};
   for (const [id, level] of Object.entries(levels)) {
     const leader = TRAITS[id].leader;
     if (!leader) continue;
     const rank = (u: Unit) => [itemCount(u.uid), u.star, UNIT_BY_ID[u.defId].tier];
-    const members = board.filter((u): u is Unit => !!u && hasTrait(u, id));
+    const members = board.filter((u): u is Unit => !!u && (hasTrait(u, id) || orbs.some((o) => o.trait === id && o.defId === u.defId)));
     // Stable sort: equal ranks keep board order.
     members.sort((x, y) => {
       const [a, b] = [rank(x), rank(y)];
