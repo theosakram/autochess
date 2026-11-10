@@ -223,7 +223,7 @@ function stacksHtml(traitId: string, p: Player): string {
   const n = p.stacks[traitId] ?? 0;
   const claimed = p.rewards?.[traitId] ?? 0;
   const unit = p.rewardUnit?.[traitId];
-  const name = unit ? rewardLabel(UNIT_BY_ID[unit]) : 'rolled when it first appears';
+  const name = unit ? rewardLabel(UNIT_BY_ID[unit]) : p.rewardOffer?.[traitId] ? 'your pick (choose it at the grave)' : 'offered when it first appears';
   const rewards = (rule.rewards ?? [])
     .map((r, i) => `<li class="${i < claimed ? 'done' : ''}">${r.at}: ${rewardText(r, name)}${i < claimed ? ' ✓' : ''}</li>`)
     .join('');
@@ -342,14 +342,69 @@ export function graveHtml(p: Player): string {
       const rule = TRAITS[id].stacks!;
       const next = rule.rewards![p.rewards?.[id] ?? 0];
       const reward = p.rewardUnit?.[id] ? UNIT_BY_ID[p.rewardUnit[id]] : null;
-      return `<button class="grave" data-trait="${id}" title="${TRAITS[id].name}: ${rule.label.toLowerCase()}">
+      const grave = `<button class="grave" data-trait="${id}" title="${TRAITS[id].name}: ${rule.label.toLowerCase()}">
         <span class="grave-icon">${traitBadgeHtml(id)}</span>
         <b class="grave-count">${n}</b>
         <small>${next ? `next ${next.at}: ${'star' in next ? '★'.repeat(next.star) : rewardText(next, '')}` : 'complete'}</small>
         ${reward ? `<span class="grave-unit" data-unit-info="${reward.id}" title="Your reward unit: click to see it">${rewardLabel(reward)}</span>` : ''}
       </button>`;
+      // Still to pick (the offer): a button beside the grave opens the choice. Not inside it: the grave opens its trait.
+      const offer = p.rewardOffer?.[id];
+      return offer
+        ? `<div class="grave-wrap">${grave}<button class="grave-choose primary" data-action="openRewardPick" data-pick-trait="${id}" title="Pick your reward unit: one of ${offer.length}">🧭 Choose (${offer.length})</button></div>`
+        : grave;
     })
     .join('');
+}
+
+// The reward-unit choice (the Necromancer's Plane Wanderer): a card per option, with its role, 1★ stats and
+// skill, and a button to take it. Its full card opens from the name.
+export function rewardPickHtml(p: Player, traitId: string): string {
+  const offer = p.rewardOffer?.[traitId] ?? [];
+  const rule = TRAITS[traitId].stacks!;
+  const at = rule.rewards!.find((r) => 'star' in r)?.at ?? 0;
+  const cards = offer.map((id) => {
+    const def = UNIT_BY_ID[id];
+    const s = unitStats(def, 1);
+    const chips = def.traits.map((t) => `<span class="rp-chip">${traitBadgeHtml(t)} ${TRAITS[t].name}</span>`).join('');
+    const honorary = def.honorary ? `<span class="rp-chip muted">${def.honorary.icon} ${TRAITS[def.honorary.trait].name} bonus</span>` : '';
+    const stat = (label: string, value: string) => `<div class="rp-stat"><small>${label}</small><b>${value}</b></div>`;
+    const skill = def.skill
+      ? `<section class="rp-skill">
+          <h4>${skillIcon(def.skill)} ${SKILLS[def.skill].name}</h4>
+          <p>${descHtml(SKILLS[def.skill], 0, def.attackType)}</p>
+        </section>`
+      : '';
+    return `<article class="rp-card">
+      <header class="rp-head">
+        ${portraitHtml(id, 'rp-face')}
+        <div class="rp-id">
+          <h3>${def.name}</h3>
+          <div class="rp-chips">${chips}${honorary}</div>
+        </div>
+      </header>
+      <div class="rp-stats" aria-label="1-star stats">
+        ${stat('HP', String(Math.round(s.hp)))}
+        ${stat('Attack', String(Math.round(s.atk)))}
+        ${stat('Armor / MR', `${s.armor} / ${s.mr}`)}
+        ${stat('Range', def.range <= 1 ? 'Melee' : String(def.range))}
+      </div>
+      ${skill}
+      <footer class="rp-actions">
+        <button class="rp-more" data-unit-info="${id}">Full card</button>
+        <button class="rp-take" data-action="pickReward" data-trait="${traitId}" data-unit="${id}">Choose ${def.name}</button>
+      </footer>
+    </article>`;
+  });
+  return modalHtml(
+    'closeRewardPick',
+    'reward-pick',
+    `<header class="rp-title">
+      <h2>${traitBadgeHtml(traitId)} Choose your Plane Wanderer</h2>
+      <p>Joins you at <b>${at} ${rule.label.toLowerCase()}</b>, then rises with the grave. Takes no board slot. The choice is for the whole game.</p>
+    </header>
+    <div class="rp-cards">${cards.join('')}</div>`,
+  );
 }
 
 // Who leads a trait on the player's board right now.
@@ -1089,6 +1144,7 @@ export function hudHtml(state: GameState, p: Player, opponentName: string | null
       ${roundTimerHtml(fightTick)}
       ${opponentName ? `<div class="hud-stat vs" title="Fighting"><small>Fighting</small><span><b>${opponentName}</b></span></div>` : ''}
       <button class="hud-book" data-action="openGallery" title="All factions and roles">📖 Synergies</button>
+      <button class="hud-book" data-action="openMatch" title="Every player: standing, cards, heroes and synergies">🏆 Match</button>
     </div>
   </header>`;
 }
@@ -1391,17 +1447,6 @@ export function itemDetailHtml(p: Player, uid: number, actions: boolean, chosen:
   );
 }
 
-// A player's active synergies, strongest first: icon and the breakpoint reached. Each opens its trait.
-function synergyChipsHtml(p: Player): string {
-  const counts = playerTraitCounts(p);
-  const chips = Object.entries(playerTraits(p))
-    .map(([id, lvl]) => ({ t: TRAITS[id], lvl, n: counts[id] ?? 0 }))
-    .sort((a, b) => b.lvl - a.lvl || b.n - a.n || a.t.name.localeCompare(b.t.name))
-    .map(({ t, lvl, n }) => `<button class="opp-trait" data-trait="${t.id}" title="${t.name} ${n} (level ${t.breakpoints[lvl - 1]})">${traitBadgeHtml(t.id)}<b>${t.breakpoints[lvl - 1]}</b></button>`)
-    .join('');
-  return chips ? `<span class="opp-traits">${chips}</span>` : '';
-}
-
 // --- Commanders ---
 
 // The pick at the start of the game. It can't be dismissed: every player needs a commander.
@@ -1612,6 +1657,7 @@ export function itemOfferHtml(p: Player): string {
 // a click selects (`selected`), and Take confirms: a pick can't be undone.
 export function boxHtml(state: GameState, me: Player, shown: number, selected: number | null, fresh: number | null): string {
   const box = state.box!;
+  shown = Math.min(shown, box.picks.length); // only picks already made can be shown
   const nameOf = (id: string) => (id === me.id ? 'You' : state.players.find((x) => x.id === id)!.name);
   const turn = box.order[shown] ?? null;
   const mine = turn === me.id && shown === box.picks.length;
@@ -1668,26 +1714,29 @@ export function boxHtml(state: GameState, me: Player, shown: number, selected: n
     const left = ids.filter((i) => !takenBy(i)).length;
     return `<section class="box-group ${cls}" style="--n:${ids.length}"><h3>${title}<small>${left} of ${ids.length} left</small></h3><div class="box-grid">${ids.map(card).join('')}</div></section>`;
   };
-  // The pick order: a seat per player, filling in with what they took.
+  // The pick order: a seat per player, filling in with what they took; bonus picks (Vex) come last.
+  const firstBonus = box.order.length - (box.bonus ?? 0);
   const seats = box.order
     .map((id, k) => {
       const p = state.players.find((x) => x.id === id)!;
       const got = k < shown ? face(box.prizes[box.picks[k]]) : null;
-      const cls = ['box-seat', id === me.id ? 'me' : '', k === shown ? 'now' : '', got ? 'done' : ''].filter(Boolean).join(' ');
-      return `<li class="${cls}" title="${nameOf(id)}: ${p.hp} HP${got ? ` · took ${got.title}` : ''}">
-        <span class="box-seat-n">${k + 1}</span>
+      const bonus = k >= firstBonus;
+      const cls = ['box-seat', id === me.id ? 'me' : '', k === shown ? 'now' : '', got ? 'done' : '', bonus ? 'bonus' : ''].filter(Boolean).join(' ');
+      return `<li class="${cls}" title="${nameOf(id)}: ${p.hp} HP${bonus ? ' · bonus pick' : ''}${got ? ` · took ${got.title}` : ''}">
+        <span class="box-seat-n">${bonus ? '🎁' : k + 1}</span>
         <span class="box-seat-who"><b>${nameOf(id)}</b><small>♥ ${p.hp}</small></span>
         <span class="box-seat-got">${got ? `<span class="box-seat-icon">${got.icon}</span>` : k === shown ? '<span class="box-dots"><i></i><i></i><i></i></span>' : ''}</span>
       </li>`;
     })
     .join('');
-  const myAt = box.order.indexOf(me.id);
-  const before = myAt - shown;
+  // My next pick still to come (a bonus pick can follow my own).
+  const myAt = box.order.indexOf(me.id, shown);
+  const before = myAt < 0 ? 0 : myAt - shown;
   const banner =
     turn === null
       ? { cls: 'done', head: 'All picks are in', sub: 'What nobody took is gone; heroes go back to the pool.' }
       : mine
-        ? { cls: 'mine', head: 'Your pick', sub: 'Choose a prize, then Take it.' }
+        ? { cls: 'mine', head: shown >= firstBonus ? 'Your bonus pick' : 'Your pick', sub: 'Choose a prize, then Take it.' }
         : before > 0
           ? { cls: 'wait', head: `${nameOf(turn)} is picking`, sub: `${before} ${before === 1 ? 'pick' : 'picks'} before yours` }
           : { cls: 'wait', head: `${nameOf(turn)} is picking`, sub: 'You already picked.' };
@@ -1973,7 +2022,7 @@ export function glovePickHtml(p: Player, id: string): string {
 // Mirror Device (from the inventory): pick one of your units to copy.
 export function mirrorPickHtml(p: Player): string {
   const options = [...p.board, ...p.bench]
-    .flatMap((u) => (u && UNIT_BY_ID[u.defId].shop !== false ? [u] : []))
+    .flatMap((u) => (u ? [u] : []))
     .map((u) => `<button class="chip" data-action="useMirror" data-unit="${u.uid}">${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</button>`);
   return modalHtml(
     'closeMirror',
@@ -2226,19 +2275,110 @@ export function playersHtml(others: Player[], shownHp: (p: Player) => number, op
     .sort((a, b) => shownHp(b) - shownHp(a) || (a.place ?? 0) - (b.place ?? 0))
     .map((o) => {
       const hp = shownHp(o);
-      const cls = [hp <= 0 ? 'out' : '', o.id === opponentId ? 'current' : ''].join(' ');
-      const info = hp <= 0 ? `#${o.place}` : `${hp} HP · Lv ${o.level} · ${boardCount(o)} units`;
-      const commander = o.commander ? `<span title="${COMMANDERS[o.commander].name}">${COMMANDERS[o.commander].icon}</span> ` : '';
-      return `<li class="${cls}"><span class="opp-name">${commander}<span>${o.name}</span></span><span class="opp-info">${info}</span>${hp > 0 ? synergyChipsHtml(o) : ''}</li>`;
+      const cls = [hp <= 0 ? 'out' : '', o.id === opponentId ? 'current' : ''].filter(Boolean).join(' ');
+      const name = `<span class="opp-name" title="${o.name}">${o.name}</span>`;
+      if (hp <= 0) return `<li class="${cls}">${name}<span class="opp-place" title="Knocked out">#${o.place}</span></li>`;
+      const units = boardCount(o);
+      return `<li class="${cls}">
+        ${name}
+        <span class="opp-hp" title="${hp} HP"><i style="width:${Math.max(0, Math.min(100, (hp / START_HP) * 100))}%"></i><b>${hp}</b></span>
+        <span class="opp-lv" title="Level ${o.level}">Lv ${o.level}</span>
+        <span class="opp-units" title="${units} ${units === 1 ? 'unit' : 'units'} on the board">${units} <small>units</small></span>
+      </li>`;
     })
     .join('');
   return `<aside class="opponents"><h3>Players</h3><ul>${rows}</ul></aside>`;
 }
 
-export function gameOverHtml(p: Player, playerCount: number): string {
-  return `<div class="overlay"><div class="dialog">
-    <h2>${p.place === 1 ? 'Victory!' : 'Eliminated'}</h2>
-    <p>You finished <b>#${p.place}</b> of ${playerCount}.</p>
-    <button data-action="newGame" class="primary">New game</button>
+// Every player by standing: knocked-out ones by their place, the rest by HP (ties: board order).
+export function standings(state: GameState): Player[] {
+  const alive = state.players.filter((p) => p.hp > 0).sort((a, b) => b.hp - a.hp);
+  const out = state.players.filter((p) => p.hp <= 0).sort((a, b) => (a.place ?? 99) - (b.place ?? 99));
+  // Once it's over, the winner holds place 1 (and may still have HP): places decide.
+  return state.players.every((p) => p.place) ? [...state.players].sort((a, b) => a.place! - b.place!) : [...alive, ...out];
+}
+
+// The match table: one row per player. Rank, commander + name + level, cards (commander card, power cards),
+// deployed heroes (stars, items, orbs) and active synergies.
+function matchTableHtml(state: GameState, meId: string, animate = true): string {
+  const rows = standings(state)
+    .map((p, i) => {
+      const rank = p.place ?? i + 1;
+      const out = p.hp <= 0;
+      const commander = p.commander ? COMMANDERS[p.commander] : null;
+      const card = p.commanderCard ? COMMANDERS[p.commanderCard].card : null;
+      const cards = [
+        card ? `<span class="md-card cmd" title="${card.name} (${COMMANDERS[p.commanderCard!].name}'s card)">${card.icon}</span>` : '',
+        ...(p.powerCards ?? []).map((c) => `<span class="md-card ${c.tier}" title="${powerCardName(c.id, c.tier)}">${POWER_CARDS[c.id].icon}</span>`),
+      ].join('');
+      // Knocked out: the lineup they had when they fell (their heroes went back to the pool).
+      const L = p.finalLineup ?? p;
+      const heroes = L.board
+        .flatMap((u) => {
+          if (!u) return [];
+          const def = UNIT_BY_ID[u.defId];
+          const items = L.items.filter((it) => it.holder === u.uid).map((it) => `<span title="${ITEMS[it.id].name}">${ITEMS[it.id].icon}</span>`).join('');
+          const orbs = [...(L.orb?.defId === u.defId ? [L.orb.trait] : []), ...(L.mistOrbs ?? []).filter((o) => o.holder === u.uid).map((o) => o.trait)];
+          return [
+            `<span class="md-hero tier-${def.tier}" title="${def.name} ${u.star}★">
+              <span class="md-stars s${u.star}">${'★'.repeat(u.star)}</span>
+              ${portraitHtml(u.defId, 'md-face')}
+              ${orbs.length ? `<span class="md-orb">${orbs.map((t) => traitBadgeHtml(t)).join('')}</span>` : ''}
+              <span class="md-items">${items}</span>
+            </span>`,
+          ];
+        })
+        .join('');
+      const counts = playerTraitCounts(L);
+      const synergies = Object.entries(playerTraits(L))
+        .map(([id, lvl]) => ({ id, lvl, n: counts[id] ?? 0 }))
+        .sort((a, b) => b.lvl - a.lvl || b.n - a.n || TRAITS[a.id].name.localeCompare(TRAITS[b.id].name))
+        .map(({ id, n }) => `<button class="md-trait" data-trait="${id}" title="${TRAITS[id].name} ${n}">${traitBadgeHtml(id)}<b>${n}</b></button>`)
+        .join('');
+      const name = p.id === meId ? `${p.name} (you)` : p.name;
+      const hpBar = out ? '' : `<span class="md-hp" title="${p.hp} HP"><i style="width:${Math.max(0, Math.min(100, (p.hp / START_HP) * 100))}%"></i></span>`;
+      const cls = [p.id === meId ? 'me' : '', out ? 'out' : '', rank <= 3 ? `top r${rank}` : ''].filter(Boolean).join(' ');
+      return `<tr class="${cls}" style="--i:${i}">
+        <td><span class="md-rank r${Math.min(rank, 4)}" aria-label="Rank ${rank}">${rank}</span></td>
+        <td class="md-player">
+          <span class="md-commander" title="${commander?.name ?? 'No commander'}">${commander?.icon ?? '❔'}</span>
+          <span class="md-who">
+            <b title="${name}">${name}</b>
+            <small><span class="md-lv">Lv ${p.level}</span>${out ? '<span class="md-out">Out</span>' : `<span class="md-hpn">♥ ${p.hp}</span>`}</small>
+            ${hpBar}
+          </span>
+        </td>
+        <td><span class="md-cards">${cards}</span></td>
+        <td><span class="md-heroes">${heroes}</span></td>
+        <td><span class="md-traits">${synergies}</span></td>
+      </tr>`;
+    })
+    .join('');
+  return `<div class="md-scroll" data-keep-scroll="match-rows"><table class="md-table${animate ? ' md-anim' : ''}">
+    <colgroup><col class="c-rank"><col class="c-player"><col class="c-cards"><col class="c-heroes"><col class="c-traits"></colgroup>
+    <thead><tr><th></th><th>Player</th><th>Cards</th><th>Deployed heroes</th><th>Active synergies</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+// The match detail (the HUD's Match button): the table, closable. `animate`: rows fade in (only when it opens).
+export function matchDetailHtml(state: GameState, meId: string, animate = true): string {
+  const alive = state.players.filter((p) => p.hp > 0).length;
+  return modalHtml(
+    'closeMatch',
+    'match-detail',
+    `<header class="md-head"><h2 class="md-title">🏆 Match</h2><span class="md-meta">Round ${roundLabel(state.round)} · ${alive} of ${state.players.length} still in</span></header>${matchTableHtml(state, meId, animate)}`,
+  );
+}
+
+// The end screen: your result over the match table.
+export function gameOverHtml(p: Player, playerCount: number, state?: GameState): string {
+  return `<div class="overlay"><div class="dialog modal match-detail game-over" data-keep-scroll="gameOver">
+    <header class="md-result ${p.place === 1 ? 'won' : 'lost'}">
+      <h2>${p.place === 1 ? '🏆 Victory!' : 'Eliminated'}</h2>
+      <p>You finished <b>#${p.place}</b> of ${playerCount}.</p>
+      <button data-action="newGame" class="primary">New game</button>
+    </header>
+    ${state ? matchTableHtml(state, p.id) : ''}
   </div></div>`;
 }

@@ -142,7 +142,7 @@ describe('Plane Wanderers in the gallery', () => {
 });
 
 describe('players list', () => {
-  test("shows each live opponent's active synergies, strongest first, and none for knocked-out ones", () => {
+  test('each live player: name, HP, level and units only; knocked-out ones show their place', () => {
     const state = createGame(1, [
       { id: 'a', name: 'A', isBot: false },
       { id: 'b', name: 'B', isBot: true },
@@ -150,16 +150,19 @@ describe('players list', () => {
     ]);
     const [, b, c] = state.players;
     b.board.fill(null);
-    ['val', 'natalie', 'harley', 'tig', 'phove', 'ginger'].forEach((d, i) => (b.board[i] = { uid: 500 + i, defId: d, star: 1 }));
+    ['val', 'natalie', 'harley'].forEach((d, i) => (b.board[i] = { uid: 500 + i, defId: d, star: 1 }));
+    b.hp = 72;
+    b.level = 5;
     c.hp = 0;
     c.place = 3;
-    const html = playersHtml([b, c], (p) => p.hp, null);
+    const html = playersHtml([b, c], (p) => p.hp, 'b');
     const row = html.slice(html.indexOf('>B<'), html.indexOf('</li>', html.indexOf('>B<')));
-    expect(row.indexOf('data-trait="necromancer"')).toBeGreaterThan(-1);
-    expect(row.indexOf('data-trait="necromancer"')).toBeLessThan(row.indexOf('data-trait="spectre"'));
-    expect(row).toContain('<b>4</b>');
-    const out = html.slice(html.indexOf('>C<'));
-    expect(out).not.toContain('opp-trait');
+    expect(row).toContain('<b>72</b>');
+    expect(row).toContain('Lv 5');
+    expect(row).toContain('3 <small>units</small>');
+    expect(row).not.toContain('data-trait'); // no synergies, no commander
+    expect(html).toContain('class="current"');
+    expect(html.slice(html.indexOf('>C<'))).toContain('#3');
   });
 });
 
@@ -431,5 +434,75 @@ describe('commander glossary terms', () => {
       expect(html).toContain('closeTerm');
     }
     expect(termPopupHtml('nope')).toBe('');
+  });
+});
+
+test('Box screen: a reveal count past the picks made (a bonus pick still to come) never breaks it', async () => {
+  const { createGame } = await import('../game/game');
+  const { openBox } = await import('../game/box');
+  const { roundAt } = await import('../game/config');
+  const { boxHtml } = await import('./views');
+  const state = createGame(5, Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, isBot: i > 0 })));
+  state.players.forEach((p, i) => {
+    p.hp = 100 - i * 5; // p0 picks last, then its bonus pick
+    p.commander = i === 0 ? 'vex' : 'lukas';
+    p.commanderCard = null;
+  });
+  state.round = roundAt(1, 4);
+  openBox(state);
+  const box = state.box!;
+  expect(box.order.length).toBe(box.picks.length + 2); // p0's own pick and its bonus pick still to come
+  expect(boxHtml(state, state.players[0], box.picks.length + 1, null, null)).toContain('Your pick');
+});
+
+describe('match detail', () => {
+  test('one row per player by standing, with cards, deployed heroes and synergies; the end screen shows it too', async () => {
+    const { matchDetailHtml, standings, gameOverHtml } = await import('./views');
+    const state = createGame(3, [
+      { id: 'a', name: 'A', isBot: false },
+      { id: 'b', name: 'B', isBot: true },
+      { id: 'c', name: 'C', isBot: true },
+    ]);
+    const [a, b, c] = state.players;
+    a.hp = 40;
+    b.hp = 80;
+    c.hp = 0;
+    c.place = 3;
+    a.commander = 'vex';
+    a.commanderCard = 'vex';
+    a.board.fill(null);
+    a.board[0] = { uid: 900, defId: 'val', star: 2 };
+    a.items.push({ uid: 901, id: 'aegis', tier: 1, holder: 900 });
+    expect(standings(state).map((p) => p.id)).toEqual(['b', 'a', 'c']);
+    const html = matchDetailHtml(state, 'a');
+    expect(html.indexOf('>B<')).toBeLessThan(html.indexOf('A (you)'));
+    expect(html).toContain('Second Helping');
+    expect(html).toContain('Val 2★');
+    expect(html).toContain('data-action="closeMatch"');
+    a.place = 2;
+    expect(gameOverHtml(a, 3, state)).toContain('md-table');
+    // Knocked out: the lineup they fell with still shows (their heroes went back to the pool).
+    c.finalLineup = { board: [{ uid: 950, defId: 'val', star: 3 }, ...Array(20).fill(null)], items: [], orb: null };
+    c.board.fill(null);
+    expect(matchDetailHtml(state, 'a')).toContain('Val 3★');
+  });
+});
+
+describe('Plane Wanderer choice', () => {
+  test('the grave shows a Choose button while the pick is open; the picker has a card per option', async () => {
+    const { graveHtml, rewardPickHtml } = await import('./views');
+    const state = createGame(3, [{ id: 'a', name: 'A', isBot: false }]);
+    const p = state.players[0];
+    p.stacks = { necromancer: 40 };
+    p.rewardUnit = undefined;
+    p.rewardOffer = { necromancer: ['moscow', 'kenarok'] };
+    expect(graveHtml(p)).toContain('data-action="openRewardPick"');
+    const html = rewardPickHtml(p, 'necromancer');
+    expect(html).toContain('Choose Moscow');
+    expect(html).toContain('Choose Ken Arok');
+    expect(html).toContain('data-action="pickReward"');
+    p.rewardOffer = undefined;
+    p.rewardUnit = { necromancer: 'moscow' };
+    expect(graveHtml(p)).not.toContain('openRewardPick');
   });
 });

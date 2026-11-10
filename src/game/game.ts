@@ -388,6 +388,7 @@ function eliminate(state: GameState, aliveBefore: number): void {
   });
   // Cyclops: gold from each knockout (their heroes still on them), then they're released to the pool.
   for (const p of out) payHeirs(state, p);
+  for (const p of out) p.finalLineup = structuredClone({ board: p.board, items: p.items, orb: p.orb, mistOrbs: p.mistOrbs, twilight: p.twilight });
   for (const p of out) releaseUnits(state, p);
   const left = state.players.filter(isAlive);
   // Cyclops: the low-hp rally, for anyone still in.

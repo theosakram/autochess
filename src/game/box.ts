@@ -1,4 +1,5 @@
 import { draw } from './altar';
+import { powersOf } from './commanders';
 import { STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound } from './config';
 import { EQUIPMENT } from './items';
 import { isAlive } from './player';
@@ -42,9 +43,32 @@ export function openBox(state: GameState): void {
   const items = shuffle(state, [...EQUIPMENT]).slice(0, BOX.slots - orbCount).map((id): BoxPrize => ({ kind: 'item', id }));
   const caps = Array.from({ length: BOX.capacity }, (): BoxPrize => ({ kind: 'capacity' }));
   // Ties on hp in random order.
-  const order = shuffle(state, alive).sort((a, b) => a.hp - b.hp).map((p) => p.id);
-  state.box = { stage, prizes: [...heroes, ...caps, ...orbs, ...items], order, picks: [] };
+  const players = shuffle(state, alive).sort((a, b) => a.hp - b.hp);
+  const prizes = [...heroes, ...caps, ...orbs, ...items];
+  const order = players.map((p) => p.id);
+  // Vex: gold now; bonus picks after everyone's own, one round of them at a time in the same order, while prizes last.
+  for (const p of players) {
+    const perks = powersOf(p).boxPerks;
+    if (perks && stage <= perks.goldBoxes) p.gold += perks.gold;
+  }
+  const extra = players.map((p) => bonusPicks(p, stage));
+  let bonus = 0;
+  for (let round = 1; round <= Math.max(0, ...extra); round++) {
+    players.forEach((p, k) => {
+      if (extra[k] >= round && order.length < prizes.length) {
+        order.push(p.id);
+        bonus++;
+      }
+    });
+  }
+  state.box = { stage, prizes, order, picks: [], ...(bonus && { bonus }) };
   runBoxBots(state);
+}
+
+// Bonus picks this player gets in the box of `stage` (Vex's power and her card stack).
+export function bonusPicks(p: Player, stage: number): number {
+  const pw = powersOf(p);
+  return (pw.boxPerks && stage <= pw.boxPerks.bonusBoxes ? 1 : 0) + (pw.boxBonus && stage <= pw.boxBonus ? 1 : 0);
 }
 
 // Whose turn it is, or null once everyone has picked.
@@ -69,7 +93,15 @@ function take(state: GameState, p: Player, i: number): void {
   const prize = box.prizes[i];
   // A hero waits for bench room like any gift.
   if (prize.kind === 'hero') (p.gifts ??= []).push(prize.defId);
-  else if (prize.kind === 'item') p.items.push({ uid: state.nextUid++, id: prize.id, tier: 1, holder: null });
+  else if (prize.kind === 'item') {
+    p.items.push({ uid: state.nextUid++, id: prize.id, tier: 1, holder: null });
+    // Vex: the first item taken in one of the first boxes comes with a free copy.
+    const perks = powersOf(p).boxPerks;
+    if (perks && box.stage <= perks.copyBoxes && !box.copied?.includes(p.id)) {
+      (box.copied ??= []).push(p.id);
+      p.items.push({ uid: state.nextUid++, id: prize.id, tier: 1, holder: null });
+    }
+  }
   else if (prize.kind === 'orb') (p.mistOrbs ??= []).push({ uid: state.nextUid++, trait: prize.trait, holder: null });
   else p.boxCap = (p.boxCap ?? 0) + 1;
 }
@@ -82,6 +114,7 @@ function runBoxBots(state: GameState): void {
     const p = state.players.find((x) => x.id === id)!;
     if (!p.isBot) return;
     const free = box.prizes.map((_, i) => i).filter((i) => !box.picks.includes(i));
+    if (!free.length) return;
     const score = (prize: BoxPrize) => (prize.kind === 'capacity' ? 100 : prize.kind === 'hero' ? 10 + UNIT_BY_ID[prize.defId].tier : prize.kind === 'orb' ? 5 : 1);
     take(state, p, free.reduce((best, i) => (score(box.prizes[i]) > score(box.prizes[best]) ? i : best)));
   }
@@ -93,7 +126,9 @@ export function closeBox(state: GameState): void {
   if (!box) return;
   for (let id = boxTurn(box); id; id = boxTurn(box)) {
     const p = state.players.find((x) => x.id === id)!;
-    take(state, p, box.prizes.findIndex((_, i) => !box.picks.includes(i)));
+    const left = box.prizes.findIndex((_, i) => !box.picks.includes(i));
+    if (left < 0) break;
+    take(state, p, left);
   }
   box.prizes.forEach((prize, i) => {
     if (prize.kind === 'hero' && !box.picks.includes(i)) state.pool[prize.defId]++;

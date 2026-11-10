@@ -1,3 +1,4 @@
+import { copiesOf } from './merge';
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
 import { createGame } from './game';
@@ -84,6 +85,13 @@ describe('Mist Shop', () => {
     expect([...p.board, ...p.bench].filter((u) => u?.defId === 'uranus')).toHaveLength(2);
     expect(state.pool.uranus).toBe(pool - 1);
     expect(applyAction(state, p.id, { type: 'useMirror', unit: 9001 }).ok).toBe(false); // none left
+    // The pool ran dry: it still copies, from outside the pool (a shortfall, never handed back).
+    state.pool.uranus = 0;
+    p.mirrors = 1;
+    expect(applyAction(state, p.id, { type: 'useMirror', unit: 9001 }).ok).toBe(true);
+    const copies = [...p.board, ...p.bench].reduce((n, u) => n + (u?.defId === 'uranus' ? copiesOf(u) : 0), 0);
+    expect(copies).toBe(3); // the third merges them into a 2★
+    expect(state.pool.uranus).toBe(0);
   });
 
   test('orbs are held like items: +1 while the holder is fielded, movable, back to inventory when it leaves', async () => {

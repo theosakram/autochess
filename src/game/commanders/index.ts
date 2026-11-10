@@ -31,6 +31,7 @@ import { zhuyong } from './zhuyong';
 import { aurora } from './aurora';
 import { harley } from './harley';
 import { moscow } from './moscow';
+import { vex } from './vex';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 import type { Term } from './terms';
 
@@ -60,9 +61,10 @@ export { ZHU_YONG } from './zhuyong';
 export { AURORA } from './aurora';
 export { HARLEY } from './harley';
 export { MOSCOW } from './moscow';
+export { VEX } from './vex';
 export { term, type Term } from './terms';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow, vex].map((c) => [c.id, c]));
 
 // Every commander's glossary terms, by id (see terms.ts).
 export const TERMS: Record<string, Term> = Object.assign({}, ...Object.values(COMMANDERS).map((c) => c.terms ?? {}));

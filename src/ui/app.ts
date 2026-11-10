@@ -19,7 +19,9 @@ import {
   galleryHtml,
   type GalleryTab,
   gameOverHtml,
+  matchDetailHtml,
   graveHtml,
+  rewardPickHtml,
   mistChoiceHtml,
   mirrorPickHtml,
   duplicatorPickHtml,
@@ -86,6 +88,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let mistPick: number | null = null;
   // The Mirror Device picker (Kaela's dice prizes) is open.
   let mirrorOpen = false;
+  let rewardPick: string | null = null; // the reward-unit choice open (a trait id: the Necromancer's Plane Wanderer)
   let duplicatorOpen = false;
   let enhancerOpen = false;
   let gloveOpen: string | null = null;
@@ -112,6 +115,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let skillOpen = false; // the hero card's skill popover
   let skillFor: number | null = null; // which hero it was opened on
   let galleryOpen = false;
+  let matchOpen = false; // the HUD's Match detail
+  let matchFresh = false; // it just opened: its rows fade in on this render only
   // What the sidebar shows beside its icons; null when collapsed.
   let railPanel: RailPanel | null = 'synergy';
   // The saved Team Builder lineup loaded as a guide: its heroes get a thumbs up in the shop, their cells glow.
@@ -308,8 +313,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolled.set(el.dataset.keepScroll!, [el.scrollTop, el.scrollLeft]);
     slot('overlays').innerHTML = [
       galleryOpen ? galleryHtml(p, state.chosen, galleryTab, state.powerTiers, cardTier) : '',
+      matchOpen && !over ? matchDetailHtml(state, playerId, matchFresh) : '', // under a trait opened from it
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
       poolOpen ? poolHtml(p, state.pool) : '', // under a hero's info opened from it
+      rewardPick && p.rewardOffer?.[rewardPick] ? rewardPickHtml(p, rewardPick) : '', // under a Wanderer's card opened from it
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
       openItem !== null && p.items.some((i) => i.uid === openItem) ? itemDetailHtml(p, openItem, !combat, state.chosen) : '',
@@ -333,13 +340,15 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       p.commander && ((!p.cardOffer?.length && !p.powerOffer && !p.factionOrbOffer?.length) || cardsHidden) && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
       boxOpen() ? boxHtml(state, p, boxShown, boxSelected, boxFresh) : '',
       termOpen ? termPopupHtml(termOpen) : '', // over whatever text opened it
-      over ? gameOverHtml(p, state.players.length) : '',
+      over ? gameOverHtml(p, state.players.length, state) : '',
     ].join('');
     // Show the next Box round pick after a beat.
     if (boxOpen() && boxShown < state.box!.picks.length && !boxTimer) {
       boxTimer = window.setTimeout(() => {
         boxTimer = 0;
-        boxFresh = state.box?.picks[boxShown] ?? null;
+        // Your own pick may have been shown at once since this was set: never reveal past the picks made.
+        if (!state.box || boxShown >= state.box.picks.length) return render();
+        boxFresh = state.box.picks[boxShown];
         boxShown++;
         render();
       }, BOX_REVEAL_MS);
@@ -546,6 +555,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'previewCommander') {
         commanderPreview = btn.dataset.commander!;
         render();
+      } else if (a === 'openRewardPick' || a === 'closeRewardPick') {
+        rewardPick = a === 'openRewardPick' ? btn.dataset.pickTrait! : null;
+        render();
+      } else if (a === 'pickReward') {
+        rewardPick = null;
+        dispatch({ type: 'pickReward', trait: btn.dataset.trait!, unit: btn.dataset.unit! });
       } else if (a === 'openMirror' || a === 'closeMirror') {
         mirrorOpen = a === 'openMirror';
         render();
@@ -653,6 +668,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         orbFor = null;
         dispatch({ type: 'useOrb', unit, trait: btn.dataset.orbTrait! });
       } else if (a === 'openGallery' || a === 'closeGallery') showGallery(a === 'openGallery');
+      else if (a === 'openMatch' || a === 'closeMatch') {
+        matchOpen = a === 'openMatch';
+        matchFresh = matchOpen;
+        render();
+        matchFresh = false;
+      }
       else if (a === 'galleryTab') {
         galleryTab = btn.dataset.tab as GalleryTab;
         render();
@@ -746,12 +767,20 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     }
     if (e.key === 'Escape' && openTrait) return showTrait(null);
     if (e.key === 'Escape' && galleryOpen) return showGallery(false);
+    if (e.key === 'Escape' && matchOpen) {
+      matchOpen = false;
+      return render();
+    }
     if (e.key === 'Escape' && openItem !== null) {
       openItem = null;
       return render();
     }
     if (e.key === 'Escape' && openBearer !== null) {
       openBearer = null;
+      return render();
+    }
+    if (e.key === 'Escape' && rewardPick !== null) {
+      rewardPick = null;
       return render();
     }
     if (e.key === 'Escape' && orbFor !== null) {

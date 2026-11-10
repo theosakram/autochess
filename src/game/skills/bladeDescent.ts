@@ -5,9 +5,9 @@ import type { SkillDef } from './types';
 
 // Gatotkaca (Plane Wanderer, Fighter). Per star, index 0 = 1★.
 export const BLADE_DESCENT = {
-  stun: [1, 1.25, 1.75], // seconds, everyone around where it lands
-  bonus: [3, 3.2, 8], // its next basic attack: extra damage (400 / 420 / 900% in all)
-  heal: [0.2, 0.25, 0.45], // of its max hp, as it lands
+  stun: [1, 1.5, 2.5], // seconds, everyone around where it lands
+  bonus: [3, 4.2, 14], // its next basic attack: extra damage (400 / 520 / 1500% in all)
+  heal: [0.2, 0.3, 0.6], // of its max hp, as it lands
 };
 
 export const bladeDescent: SkillDef = {

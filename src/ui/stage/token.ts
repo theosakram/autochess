@@ -1,8 +1,9 @@
-import { Container, Graphics, GraphicsContext, Rectangle, Text } from 'pixi.js';
+import { Container, Graphics, GraphicsContext, Rectangle, Text, Ticker } from 'pixi.js';
 import { ITEMS } from '../../game/items';
 import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
 import { portraitOf } from '../portraits';
+import { HERO_SVGS } from '../icons';
 import { badgeSvg, BEARER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
 import { bloodStars } from '../../game/blood';
 import { BLOOD_STAR, COLORS, FONT, mix, STAR_COLORS, TIER_COLORS } from './theme';
@@ -38,6 +39,50 @@ const text = (value: string, size: number, fill: number, weight: '400' | '700' |
 
 // One parsed drawing per badge, shared by every token: a board rebuilds its tokens on each action.
 const ICONS = new Map<TraitBadge, GraphicsContext>();
+// A hero's face, `size` tall, centred on (0, 0): its hand-made SVG (icons/) when it has one, else its emoji.
+const FACES = new Map<string, GraphicsContext>();
+export function heroFace(defId: string, size: number): Container {
+  const icon = HERO_SVGS[defId];
+  if (!icon) {
+    const t = new Text({ text: portraitOf(defId), style: { fontFamily: FONT, fontSize: size } });
+    t.anchor.set(0.5);
+    return t;
+  }
+  const holder = new Container();
+  const layer = (key: string, svg: string) => {
+    const g = new Graphics(FACES.get(key) ?? FACES.set(key, new GraphicsContext().svg(svg)).get(key)!);
+    const b = g.getLocalBounds();
+    g.pivot.set(b.x + b.width / 2, b.y + b.height / 2);
+    g.scale.set(size / Math.max(b.width, b.height, 1));
+    return holder.addChild(g);
+  };
+  if (!icon.board) {
+    layer(defId, icon.svg);
+    return holder;
+  }
+  // Iridescent: the rim as drawn, and a white glyph whose tint cycles through the hues while it's on screen.
+  layer(`${defId}:rim`, icon.board.rim);
+  const ink = layer(`${defId}:ink`, icon.board.ink);
+  const tint = () => (ink.tint = hueColor((performance.now() / 6000) % 1));
+  // Stops itself once the face is gone (destroyed, or its token destroyed without its children).
+  const shimmer = () => (ink.destroyed || !holder.parent || holder.parent.destroyed ? Ticker.shared.remove(shimmer) : tint());
+  tint();
+  Ticker.shared.add(shimmer);
+  return holder;
+}
+
+// A bright, slightly pastel colour at `hue` (0..1 around the wheel): HSL with saturation 0.9, lightness 0.72.
+function hueColor(hue: number): number {
+  const s = 0.9;
+  const l = 0.72;
+  const a = s * Math.min(l, 1 - l);
+  const channel = (n: number) => {
+    const k = (n + hue * 12) % 12;
+    return Math.round((l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255);
+  };
+  return (channel(0) << 16) | (channel(8) << 8) | channel(4);
+}
+
 const iconOf = (b: TraitBadge) => ICONS.get(b) ?? ICONS.set(b, new GraphicsContext().svg(badgeSvg(b))).get(b)!;
 
 // A round badge, centred on (0, 0): the same one the HTML side shows.
@@ -128,8 +173,13 @@ export function makeToken(s: TokenSpec): TokenView {
   root.addChild(name);
 
   const faceTop = -half + barSpace;
-  const face = text(portraitOf(s.defId), (ribbonTop - faceTop) * 0.74, 0xffffff);
-  face.anchor.set(0.5);
+  // An SVG face fills nearly all the room (an emoji's glyph has its own margin), on its icon's plate colour.
+  const icon = HERO_SVGS[s.defId];
+  const room = ribbonTop - faceTop;
+  if (icon?.plate) {
+    root.addChild(new Graphics().circle(0, (faceTop + ribbonTop) / 2, room * 0.5).fill({ color: icon.plate }));
+  }
+  const face = heroFace(s.defId, room * (icon ? 0.94 : 0.74));
   face.position.set(0, (faceTop + ribbonTop) / 2);
   root.addChild(face);
 

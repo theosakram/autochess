@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
-import { boxTurn, closeBox, isBoxRound, openBox, takenBy } from './box';
+import { bonusPicks, boxTurn, closeBox, isBoxRound, openBox, takenBy } from './box';
+import { VEX } from './commanders';
 import { roundAt } from './config';
 import { createGame } from './game';
 import { heroCapOf } from './player';
@@ -8,7 +9,11 @@ import { UNIT_BY_ID } from './units';
 
 function game(humans = 1) {
   const state = createGame(5, Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, isBot: i >= humans })));
-  state.players.forEach((p, i) => (p.hp = 100 - i * 5)); // p7 lowest
+  state.players.forEach((p, i) => {
+    p.hp = 100 - i * 5; // p7 lowest
+    p.commander = 'lukas'; // bots roll a random commander: none with Box perks unless a test says so
+    p.commanderCard = null;
+  });
   return state;
 }
 
@@ -67,5 +72,57 @@ describe('Box round', () => {
     closeBox(state);
     expect(state.box).toBeUndefined();
     for (const id of heroes) expect(state.pool[id]).toBe(pool[id]);
+  });
+});
+
+describe('Vex', () => {
+  test('first 3 boxes: +10 gold and a bonus pick after everyone; not on the 4th', () => {
+    for (const [stage, sub, gold, bonus] of [[1, 4, true, 1], [3, 6, true, 1], [4, 6, false, 0]] as const) {
+      const state = game(0);
+      const vex = state.players[0]; // most hp: picks last, then the bonus pick
+      vex.commander = 'vex';
+      state.round = roundAt(stage, sub);
+      const before = vex.gold;
+      openBox(state);
+      const box = state.box!;
+      expect(vex.gold - before).toBe(gold ? VEX.box.gold : 0);
+      expect(box.bonus ?? 0).toBe(bonus);
+      expect(box.order.length).toBe(8 + bonus);
+      if (bonus) expect(box.order.at(-1)).toBe('p0');
+      expect(boxTurn(box)).toBeNull(); // all bots: everything picked
+    }
+  });
+
+  test('first box: the first item taken comes with a copy (once)', () => {
+    const state = game(1);
+    const vex = state.players[0];
+    vex.commander = 'vex';
+    state.round = roundAt(1, 4);
+    openBox(state);
+    const box = state.box!;
+    const items = () => box.prizes.flatMap((x, i) => (x.kind === 'item' && !box.picks.includes(i) ? [i] : []));
+    const [a, b] = items();
+    expect(applyAction(state, 'p0', { type: 'pickBox', prize: a }).ok).toBe(true);
+    expect(boxTurn(box)).toBe('p0'); // the bonus pick
+    expect(applyAction(state, 'p0', { type: 'pickBox', prize: b }).ok).toBe(true);
+    const ids = vex.items.map((i) => i.id);
+    const id = (i: number) => (box.prizes[i] as { id: string }).id;
+    expect(ids.filter((x) => x === id(a))).toHaveLength(a === b ? 3 : 2);
+    expect(ids.filter((x) => x === id(b))).toHaveLength(id(a) === id(b) ? 3 : 1);
+  });
+
+  test("her card: another bonus pick on the first 4 boxes, for anyone; stacks on Vex", () => {
+    const state = game(0);
+    const [vex, other] = state.players;
+    vex.commander = 'vex';
+    vex.commanderCard = 'vex';
+    other.commanderCard = 'vex';
+    expect([1, 3, 4, 5].map((s) => bonusPicks(vex, s))).toEqual([2, 2, 1, 0]);
+    expect([1, 4, 5].map((s) => bonusPicks(other, s))).toEqual([1, 1, 0]);
+    expect(other.gold).toBe(state.players[2].gold); // the card alone pays no gold
+    state.round = roundAt(1, 4);
+    openBox(state);
+    // Bonus picks go one round at a time, in pick order: p1 (less hp) before p0, then p0's second.
+    expect(state.box!.order.slice(8)).toEqual(['p1', 'p0', 'p0']);
   });
 });

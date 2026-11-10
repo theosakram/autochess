@@ -1,5 +1,6 @@
 import { UNIT_BY_ID } from '../game/units';
 import { TIER_COLORS } from './stage/theme';
+import { HERO_SVGS, svgImg } from './icons';
 
 // How a hero looks. Every hero has its own picture, so it's known at a glance without reading its
 // name. Real art can replace these later: this is the only place that decides what a hero shows.
@@ -67,6 +68,7 @@ export const PORTRAITS: Record<string, string> = {
   amon: '🐆',
   cyborg: '🏯',
   novaria: '🃏',
+  kenarok: '🐍',
 
   mythbeast: '🦄',
   spiritarcher: '🦋',
@@ -83,6 +85,7 @@ export const portraitOf = (defId: string) => PORTRAITS[defId] ?? (UNIT_BY_ID[def
 // An inline plate for the HTML side, in the hero's cost colour, the same as on the board. The colour
 // comes in as --plate; style.css draws the rest.
 export function portraitHtml(defId: string, className = ''): string {
-  const color = `#${TIER_COLORS[UNIT_BY_ID[defId].tier].toString(16).padStart(6, '0')}`;
-  return `<span class="portrait ${className}" style="--plate:${color}">${portraitOf(defId)}</span>`;
+  const icon = HERO_SVGS[defId];
+  const color = icon?.plate ?? `#${TIER_COLORS[UNIT_BY_ID[defId].tier].toString(16).padStart(6, '0')}`;
+  return `<span class="portrait ${className}${icon ? ' has-svg' : ''}" style="--plate:${color}">${icon ? svgImg(icon.svg, icon.className) : portraitOf(defId)}</span>`;
 }

@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Moscow (Plane Wanderer, Deadeye). Per star, index 0 = 1★.
 export const WANDERERS_VOLLEY = {
-  atk: [3.2, 3.4, 8], // of attack, physical, to each enemy in the path
+  atk: [3.2, 4.3, 15], // of attack, physical, to each enemy in the path
 };
 
 export const wanderersVolley: SkillDef = {

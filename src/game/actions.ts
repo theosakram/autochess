@@ -16,7 +16,7 @@ import { useDuplicator } from './duplicator';
 import { useEnhancer } from './enhancer';
 import { useGlove } from './gloves';
 import { offer, type AltarKey } from './altar';
-import { syncPlayer } from './sync';
+import { pickReward, syncPlayer } from './sync';
 import { baseItemOf, cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
 import { absorb, bloodMerge, bloodRoom, copiesOf, pooledOf, findCopies, mergeSize, mergeUnits, nearMerge, promote, slotsOf } from './merge';
@@ -67,6 +67,7 @@ export type Action =
   | { type: 'essenceIn'; unit: number } // Luo Yi: put a hero (uid) on the Essence Altar (swapping out any there)
   | { type: 'essenceOut' } // Luo Yi: take the altar hero back to the bench
   | { type: 'pickJohnnie'; johnnie: string }
+  | { type: 'pickReward'; trait: string; unit: string } // one of the reward units on offer (the Necromancer's Plane Wanderer)
   | { type: 'enhance'; trait: string } // Freya: bless a role (any time)
   | { type: 'claimEnhance'; level: number }; // Freya: claim the blessed role's reward at level 1-3 (its 2/4/6) // Johnson: one of the Johnnies on offer in the Den (a def id)
 
@@ -392,6 +393,8 @@ function perform(state: GameState, p: Player, action: Action): Result {
 
     case 'pickJohnnie':
       return result(pickJohnnie(p, action.johnnie, state));
+    case 'pickReward':
+      return result(pickReward(p, action.trait, action.unit));
 
     case 'mistBuy':
       return buyMistWare(state, p, action.slot, action.choice);

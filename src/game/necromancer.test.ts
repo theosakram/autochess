@@ -21,6 +21,7 @@ function newGame(): GameState {
     p.bench.fill(null);
     p.items = [];
     p.stacks = {};
+    p.rewardUnit = { necromancer: 'gatotkaca' }; // the Plane Wanderer already picked (see 'Plane Wanderer' for the pick)
   }
   return state;
 }
@@ -188,18 +189,19 @@ function fieldFoe(p: Player) {
 }
 
 describe('Plane Wanderer', () => {
-  test('five 5-gold variants, one per role: Fighter, Deadeye, Hunter, Dauntless, Stargazer', () => {
+  test('six 5-gold variants, one per role: Fighter, Deadeye, Hunter, Dauntless, Stargazer, Weapon Master', () => {
     expect(NECROMANCER.wanderers.map((id) => [UNIT_BY_ID[id].tier, ...UNIT_BY_ID[id].traits])).toEqual([
       [5, 'fighter'],
       [5, 'deadeye'],
       [5, 'hunter'],
       [5, 'dauntless'],
       [5, 'stargazer'],
+      [5, 'weaponmaster'],
     ]);
   });
 
-  test('rolled once when the grave first appears, and kept even after the Necromancers leave and come back', () => {
-    const picks = new Set<string>();
+  test('two different ones offered when the grave first appears; the pick is kept even after the Necromancers leave and come back', () => {
+    const offered = new Set<string>();
     for (let seed = 1; seed <= 12; seed++) {
       const state = createGame(seed, [{ id: 'a', name: 'A', isBot: false }]);
       const p = state.players[0];
@@ -210,20 +212,33 @@ describe('Plane Wanderer', () => {
       p.board[0] = { uid: ++uid, defId: 'val', star: 1 };
       p.board[1] = { uid: ++uid, defId: 'natalie', star: 1 };
       syncPlayer(state, p);
-      const pick = p.rewardUnit!.necromancer;
-      expect(NECROMANCER.wanderers).toContain(pick);
+      const offer = p.rewardOffer!.necromancer;
+      expect(offer).toHaveLength(NECROMANCER.choices);
+      expect(new Set(offer).size).toBe(NECROMANCER.choices);
+      for (const id of offer) expect(NECROMANCER.wanderers).toContain(id);
+      offer.forEach((id) => offered.add(id));
+      // Unpicked: the 100-soul Wanderer waits (and so do the rewards after it).
+      p.stacks.necromancer = 250;
+      syncPlayer(state, p);
+      expect(wanderers(p)).toHaveLength(0);
+      expect(applyAction(state, p.id, { type: 'pickReward', trait: 'necromancer', unit: 'nobody' }).ok).toBe(false);
+      const gold = p.gold;
+      const pick = offer[1];
+      expect(applyAction(state, p.id, { type: 'pickReward', trait: 'necromancer', unit: pick }).ok).toBe(true);
+      expect(p.rewardOffer).toBeUndefined();
+      expect(wanderers(p).map((u) => u!.defId)).toEqual([pick]);
+      expect(p.gold).toBe(gold + 10); // the 200-soul gold, held up behind it
+      expect(applyAction(state, p.id, { type: 'pickReward', trait: 'necromancer', unit: offer[0] }).ok).toBe(false);
+      // Kept when the Necromancers leave and come back.
       p.board.fill(null);
       syncPlayer(state, p);
       p.board[2] = { uid: ++uid, defId: 'harley', star: 1 };
       p.board[3] = { uid: ++uid, defId: 'tig', star: 1 };
       syncPlayer(state, p);
       expect(p.rewardUnit!.necromancer).toBe(pick);
-      p.stacks.necromancer = 100;
-      syncPlayer(state, p);
-      expect(wanderers(p).map((u) => u!.defId)).toEqual([pick]);
-      picks.add(pick);
+      expect(p.rewardOffer).toBeUndefined();
     }
-    expect(picks.size).toBeGreaterThan(1);
+    expect(offered.size).toBeGreaterThan(2);
   });
 
   test('takes no board slot: a full board still fits it', () => {

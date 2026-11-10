@@ -91,7 +91,8 @@ export interface Player {
   place: number | null; // finishing position, set once eliminated (or on winning)
   stacks: Record<string, number>; // trait id -> counter kept all game (e.g. Storyweaver stories)
   rewards?: Record<string, number>; // trait id -> how many of its stack rewards were handed out
-  rewardUnit?: Record<string, string>; // trait id -> the reward unit rolled for this player (see stacks.rewardUnits)
+  rewardUnit?: Record<string, string>; // trait id -> the reward unit this player chose (see stacks.rewardUnits)
+  rewardOffer?: Record<string, string[]>; // trait id -> the reward units on offer, waiting for a pick (rolled when its counter first appears)
   promotions?: { defId: string; star: Star }[]; // merges since the last sync, for traits that react to them
   promotionsWaiting?: { trait: string; defId: string; star: Star }[]; // merges a trait rewards only at a higher level than it had: paid once it gets there
   gifts?: string[]; // free units already taken from the pool, waiting for bench room
@@ -101,6 +102,8 @@ export interface Player {
   // Mist orbs (from the Mist Shop), held like items: +1 to `trait` while the holder is fielded. Back to
   // the inventory (holder null) when the holder leaves; movable any time. See mistShop.ts.
   mistOrbs?: MistOrb[];
+  // The lineup at the moment of knockout (before its heroes went back to the pool), for the match table.
+  finalLineup?: Pick<Player, 'board' | 'items' | 'orb' | 'mistOrbs' | 'twilight'>;
   items: Item[];
   orbs: number[]; // unused Magic Orbs (each one's seed)
   orb: Orb | null; // the one in use
@@ -198,6 +201,8 @@ export interface Box {
   prizes: BoxPrize[];
   order: string[]; // player ids, in pick order (lowest hp first)
   picks: number[]; // prize indices taken so far, in order: picks[k] was order[k]'s
+  bonus?: number; // the last this many entries of `order` are bonus picks (Vex), after everyone's own
+  copied?: string[]; // players whose first item here already came with its free copy (Vex)
 }
 
 export type PowerTier = 'blue' | 'purple' | 'gold';

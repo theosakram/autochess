@@ -454,3 +454,22 @@ describe('power card tiers', () => {
     for (const c of count) for (const tier of ['blue', 'purple', 'gold']) expect(Math.abs(c[tier] / n - 1 / 3)).toBeLessThan(0.04);
   });
 });
+
+test('a knocked-out player keeps a snapshot of their lineup for the match table', () => {
+  const state = createGame(5, [
+    { id: 'a', name: 'A', isBot: false },
+    { id: 'b', name: 'B', isBot: true },
+    { id: 'c', name: 'C', isBot: true },
+  ]);
+  for (const p of state.players) p.commander = 'lukas';
+  const a = state.players[0];
+  a.board.fill(null);
+  a.board[0] = { uid: 700, defId: 'fanny', star: 2 };
+  a.items.push({ uid: 701, id: 'aegis', tier: 1, holder: 700 });
+  a.hp = -5;
+  resolveCombat(state);
+  expect(a.place).not.toBeNull();
+  expect(a.board.every((u) => u === null)).toBe(true); // back to the pool
+  expect(a.finalLineup!.board[0]).toMatchObject({ defId: 'fanny', star: 2 });
+  expect(a.finalLineup!.items.some((i) => i.holder === 700)).toBe(true);
+});

@@ -10,8 +10,9 @@ export const NECROMANCER = {
   maxSouls: 999,
   skillAmp: 0.0003, // skill damage per soul, Necromancers only
   hp: 0.0003, // max hp per soul, Necromancers only
-  // The Plane Wanderers: one is rolled per player when their grave first appears, and stays theirs.
-  wanderers: ['gatotkaca', 'moscow', 'amon', 'cyborg', 'novaria'],
+  // The Plane Wanderers: `choices` of them are offered when the grave first appears; the one picked stays theirs.
+  choices: 2,
+  wanderers: ['gatotkaca', 'moscow', 'amon', 'cyborg', 'novaria', 'kenarok'],
   // The Plane Wanderer at 100 / 350 / 999 souls, with gold, equipment and an orb in between.
   rewards: [
     { at: 100, star: 1 },
@@ -33,7 +34,7 @@ export const necromancer: TraitDef = {
     'The grave gains {fight} souls after every fight and {deployed} per deployed unit at the start of every round ' +
     `(max ${NECROMANCER.maxSouls}). Necromancers gain +${+(NECROMANCER.skillAmp * 100).toFixed(2)}% skill damage and +${+(NECROMANCER.hp * 100).toFixed(2)}% max HP per soul. ` +
     `The grave's rewards: ${NECROMANCER.rewards.map((r) => `${r.at}: ${rewardText(r, 'your Plane Wanderer')}`).join(', ')}. ` +
-    'Your Plane Wanderer is one of five 5-gold heroes, rolled when your grave first appears. ' +
+    `Your Plane Wanderer is one of six 5-gold heroes: when your grave first appears, pick one of ${NECROMANCER.choices} offered (open the grave). ` +
     'It takes no board slot and gets the Necromancer bonus without counting as one. ' +
     `At 10, the grave fills to ${NECROMANCER.maxSouls} at once and you gain {gold} gold at the start of every round.`,
   values: () => ({
@@ -56,6 +57,7 @@ export const necromancer: TraitDef = {
     perRound: (level, deployed) => NECROMANCER.perDeployed[level - 1] * deployed,
     rewards: NECROMANCER.rewards,
     rewardUnits: NECROMANCER.wanderers,
+    rewardChoices: NECROMANCER.choices,
     fullAt: NECROMANCER.fullAt,
   },
 };

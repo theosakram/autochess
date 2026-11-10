@@ -1,4 +1,5 @@
 import type { Point } from '../grid';
+import { adaptivePower } from '../stats';
 import { pct } from '../traits/format';
 import { around, enemiesOn } from './areas';
 import { densestDrop } from './mythMadeFlesh';
@@ -7,10 +8,11 @@ import type { SkillApi, SkillDef, SkillFighter } from './types';
 // Johnnie (Johnson's own 3g hero, a random faction and role). Per star, index 0 = 1★.
 export const PARTY_CRASHER = {
   // Passive, when the fight starts: leaps where the enemies are thickest.
-  leapAp: [1.4, 1.5, 2.6], // of magic attack, magic, to each enemy in the 3x3 it lands in
-  leapHp: [0.04, 0.05, 0.07], // of Johnnie's own max hp, added to each hit
+  // Adaptive (like Alpha's): scales off the higher of attack and magic attack, lands as that type (physical on a tie).
+  leapAp: [1.4, 1.5, 2.6], // of the higher of attack and magic attack, adaptive, to each enemy in the 3x3 it lands in
+  leapHp: [0.04, 0.05, 0.07], // of Johnnie's own max hp, added to each hit (same adaptive type)
   // Active: projectiles at the thickest group of enemies.
-  ap: [2.4, 2.5, 4.4], // of magic attack, magic, to each enemy in the 3x3 around the enemy aimed at
+  ap: [2.4, 2.5, 4.4], // of the higher of attack and magic attack, adaptive, to each enemy in the 3x3 around the enemy aimed at
   stun: [0.5, 0.7, 1], // seconds
 };
 
@@ -30,10 +32,11 @@ export const partyCrasher: SkillDef = {
   name: 'Party Crasher',
   desc:
     'Passive: when combat starts, leaps where the enemies are thickest, hitting every enemy in the 3x3 it lands in (shredding them like an attack first) for ' +
-    '{leapAp} of magic attack plus {leapHp} of its own max HP as magic damage. ' +
-    'Active: throws a burst of projectiles at the thickest group of enemies: each enemy in the 3x3 takes {ap} of magic attack ' +
-    'as magic damage and is stunned for {stun}.',
-  damage: { leapAp: 'magic', leapHp: 'magic', ap: 'magic' },
+    '{leapAp} of the higher of its attack and magic attack plus {leapHp} of its own max HP. ' +
+    'Active: throws a burst of projectiles at the thickest group of enemies: each enemy in the 3x3 takes {ap} of the higher of its attack ' +
+    'and magic attack and is stunned for {stun}. ' +
+    'Adaptive damage: magic if its magic attack is the higher, else physical.',
+  damage: { leapAp: 'adaptive', leapHp: 'adaptive', ap: 'adaptive' },
   values: () => ({
     leapAp: PARTY_CRASHER.leapAp.map(pct),
     leapHp: PARTY_CRASHER.leapHp.map(pct),
@@ -46,10 +49,10 @@ export const partyCrasher: SkillDef = {
     const spot = densestDrop(api, caster);
     if (!spot) return;
     api.dashTo(caster, spot);
-    const raw = caster.stats.ap * PARTY_CRASHER.leapAp[i] + caster.maxHp * PARTY_CRASHER.leapHp[i];
+    const raw = adaptivePower(caster.stats) * PARTY_CRASHER.leapAp[i] + caster.maxHp * PARTY_CRASHER.leapHp[i];
     for (const e of enemiesOn(api, caster, around(caster))) {
       api.shred(e, caster); // the landing shreds like an attack (Hunter), before its damage
-      api.hit(caster, e, raw, 'magic', 'partycrasher');
+      api.hit(caster, e, raw, 'adaptive', 'partycrasher');
     }
   },
   cast(api, caster) {
@@ -59,7 +62,7 @@ export const partyCrasher: SkillDef = {
     const zone = [{ x: aim.x, y: aim.y }, ...around(aim)];
     api.showProjectile(caster, aim, 0.25, 'partythrow');
     for (const e of enemiesOn(api, caster, zone)) {
-      api.hit(caster, e, caster.stats.ap * PARTY_CRASHER.ap[i], 'magic', 'partythrow');
+      api.hit(caster, e, adaptivePower(caster.stats) * PARTY_CRASHER.ap[i], 'adaptive', 'partythrow');
       if (e.hp > 0) api.stun(e, PARTY_CRASHER.stun[i], caster);
     }
   },

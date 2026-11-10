@@ -99,7 +99,7 @@ kbd {
 .layout {
   display: grid;
   flex: 1;
-  grid-template-columns: auto minmax(0, 1fr) 270px;
+  grid-template-columns: auto minmax(0, 1fr) 330px;
   gap: 12px;
   min-height: 0;
 }
@@ -535,35 +535,32 @@ main { min-width: 0; min-height: 0; }
 }
 
 .opponents {
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--panel);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 15px;
 }
-.opponents h3 { margin: 4px 0 8px; font-size: 14px; }
+.opponents h3 { margin: 2px 0 8px; font-size: 16px; }
 .opponents ul { list-style: none; margin: 0; padding: 0; }
+/* One line per player: name, HP bar, level, units. */
 .opponents li {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0 8px;
-  padding: 4px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px auto 54px;
+  /* name | HP | Lv | units */
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
   border-bottom: 1px solid var(--cell);
 }
-.opponents .opp-info { color: var(--muted); font-size: 12px; }
-.opp-traits { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-.opp-trait {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 6px 1px 4px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--cell));
-  font-size: 12px;
-  line-height: 1.3;
-}
-.opp-trait b { font-size: 11px; color: var(--accent); }
+.opponents li:last-child { border-bottom: none; }
+.opp-name { min-width: 0; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opp-hp { position: relative; display: grid; place-items: center; height: 22px; border-radius: 4px; background: var(--cell); overflow: hidden; }
+.opp-hp i { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, #3fb950 70%, var(--cell)); }
+.opp-hp b { position: relative; font-size: 14px; text-shadow: 0 1px 2px #000; }
+.opp-lv { color: var(--accent); font-size: 14px; font-weight: 700; white-space: nowrap; }
+.opp-units { justify-self: end; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.opp-units small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.opp-place { grid-column: 2 / -1; justify-self: end; color: var(--muted); }
 .opponents li.out { opacity: 0.4; }
 
 aside.traits {
@@ -969,7 +966,7 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 
 /* Tighter columns give the shop cards room for full names. */
 @media (max-width: 1500px) {
-  .layout { grid-template-columns: auto minmax(0, 1fr) 250px; }
+  .layout { grid-template-columns: auto minmax(0, 1fr) 300px; }
   aside.traits, .col-left .meter, .armory { width: 262px; }
   .armory-items .item-chip, .armory-items .usable-chip { width: 30px; height: 30px; }
   .armory-items { min-width: 30px; }
@@ -1849,3 +1846,222 @@ button.commander-tab:hover { border-color: var(--accent); }
   box-shadow: 0 0 0 1px var(--accent), 0 0 16px color-mix(in srgb, var(--accent) 75%, transparent);
 }
 .shop-thumb { position: absolute; bottom: 4px; left: 4px; font-size: 18px; filter: drop-shadow(0 1px 2px #000); pointer-events: none; }
+.box-seat.bonus { border-style: dashed; border-color: var(--accent); }
+
+/* Match detail (HUD's Match button) and the end screen: one row per player, almost full screen.
+   Fixed columns so a long row scrolls inside its own cell instead of widening the table; heroes get the most room. */
+.dialog.match-detail {
+  display: flex;
+  flex-direction: column;
+  width: 98vw;
+  max-width: none;
+  height: 95vh;
+  max-height: none;
+  padding: 18px 22px 12px;
+  overflow: hidden;
+  text-align: left;
+}
+.md-head { display: flex; align-items: baseline; gap: 14px; margin: 0 40px 10px 2px; }
+.md-title { margin: 0; font-size: 22px; }
+.md-meta { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.md-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a5060 transparent; }
+
+.md-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0 6px; }
+.md-table col.c-rank { width: 64px; }
+.md-table col.c-player { width: 250px; }
+.md-table col.c-cards { width: 150px; }
+.md-table col.c-traits { width: 26%; }
+/* The column names stay in view while the rows scroll. */
+.md-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 12px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.md-table td { padding: 10px 12px; background: var(--cell); vertical-align: middle; }
+.md-table td:first-child { border-radius: 10px 0 0 10px; text-align: center; }
+.md-table td:last-child { border-radius: 0 10px 10px 0; }
+.md-anim tbody tr { animation: md-row-in 260ms ease-out both; animation-delay: calc(var(--i) * 40ms); }
+@keyframes md-row-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-anim tbody tr { animation: none; }
+}
+/* Podium rows lean toward their medal colour; yours toward the accent. */
+.md-table tr.top td { background: color-mix(in srgb, var(--medal) 7%, var(--cell)); }
+.md-table tr.r1 { --medal: #f2c94c; }
+.md-table tr.r2 { --medal: #c7ccd8; }
+.md-table tr.r3 { --medal: #c98b55; }
+.md-table tr.me td { background: color-mix(in srgb, var(--accent) 16%, var(--cell)); }
+/* Knocked out: greyed, but the text stays readable. */
+.md-table tr.out td { background: var(--panel); }
+.md-table tr.out .md-commander, .md-table tr.out .md-hero, .md-table tr.out .md-card, .md-table tr.out .md-trait { filter: grayscale(0.7); opacity: 0.55; }
+
+.md-rank {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid #4a5060;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.md-rank.r1 { border-color: #f2c94c; color: #f2c94c; box-shadow: 0 0 12px color-mix(in srgb, #f2c94c 45%, transparent); }
+.md-rank.r2 { border-color: #c7ccd8; color: #c7ccd8; }
+.md-rank.r3 { border-color: #c98b55; color: #c98b55; }
+
+.md-player { white-space: nowrap; }
+.md-commander { display: inline-grid; place-items: center; width: 46px; height: 46px; margin-right: 12px; border-radius: 50%; background: var(--panel); font-size: 26px; vertical-align: middle; }
+.md-who { display: inline-flex; flex-direction: column; gap: 3px; width: calc(100% - 60px); vertical-align: middle; }
+.md-who b { overflow: hidden; font-size: 16px; text-overflow: ellipsis; }
+.md-who small { display: flex; gap: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.md-lv { color: var(--accent); font-weight: 700; }
+.md-hpn { color: var(--text); }
+.md-out { color: var(--muted); }
+.md-hp { position: relative; width: 100%; max-width: 150px; height: 4px; border-radius: 2px; background: var(--panel); overflow: hidden; }
+.md-hp i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: #3fb950; }
+
+.md-cards { display: flex; gap: 6px; }
+.md-card { display: grid; place-items: center; width: 34px; height: 46px; border-radius: 6px; border: 2px solid #4a5060; background: var(--panel); font-size: 20px; }
+.md-card.cmd { border-color: var(--accent); }
+.md-card.blue { border-color: #3a84d6; }
+.md-card.purple { border-color: #a457d6; }
+.md-card.gold { border-color: #e0a63a; }
+
+/* Heroes and synergies each stay on one line and scroll sideways in their own cell. */
+.md-heroes, .md-traits { display: flex; flex-wrap: nowrap; gap: 8px; padding: 4px 2px 6px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #4a5060 transparent; }
+.md-hero, .md-trait { flex: none; }
+.md-hero { position: relative; display: flex; flex-direction: column; align-items: center; width: 52px; }
+.md-face.portrait { width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--tier-color); font-size: 26px; }
+.md-stars { height: 13px; color: #c7ccd8; font-size: 11px; line-height: 13px; letter-spacing: -1px; }
+.md-stars.s3 { color: #f2c94c; }
+.md-orb { position: absolute; top: 12px; left: -4px; font-size: 12px; }
+.md-items { display: flex; justify-content: center; gap: 1px; height: 14px; margin-top: -6px; font-size: 11px; }
+.md-items span { display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: var(--panel); }
+/* Just the icon (beats the dialog's button border), count as a badge at its bottom centre. */
+.dialog .md-trait { position: relative; display: grid; place-items: center; margin-bottom: 8px; padding: 0; border: none; border-radius: 50%; background: none; font-size: 32px; cursor: pointer; transition: transform 120ms ease-out, filter 120ms ease-out; }
+/* The count: plain white digits with a black outline, at the icon's bottom centre. */
+.md-trait b {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  -webkit-text-stroke: 3px #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.dialog .md-trait:hover { filter: brightness(1.2); transform: translateY(-1px); }
+.dialog .md-trait:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* End screen: the result over the table. */
+.md-result { display: flex; align-items: center; gap: 18px; margin: 0 0 10px; padding: 12px 16px; border-radius: 10px; background: var(--cell); }
+.md-result h2 { margin: 0; font-size: 26px; }
+.md-result p { flex: 1; margin: 0; color: var(--muted); font-size: 15px; }
+.md-result b { color: var(--text); }
+.md-result.won { background: color-mix(in srgb, #f2c94c 12%, var(--cell)); }
+.md-result.won h2 { color: #f2c94c; }
+
+/* The Plane Wanderer choice: a "Choose" button beside the grave, and a card per option. */
+.grave-wrap { display: flex; flex-direction: column; gap: 4px; }
+/* Matches the grave's pill, in the accent: it's the call to act. */
+.grave-choose {
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 16px;
+  background: linear-gradient(#4a3f2a, #2c2619);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  animation: grave-choose-pulse 1.6s ease-in-out infinite;
+  transition: filter 120ms ease-out;
+}
+.grave-choose:hover { filter: brightness(1.2); }
+.grave-choose:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@keyframes grave-choose-pulse {
+  50% { box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .grave-choose { animation: none; }
+}
+/* Plane Wanderer picker: two cards side by side. 8px spacing rhythm, surfaces by shade (no coloured borders),
+   labelled stat tiles, 44px-tall actions, feedback by colour only (no layout shift). */
+.dialog.reward-pick { width: min(880px, 94vw); padding: 24px; }
+.rp-title { margin: 0 40px 16px 0; }
+.rp-title h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 22px; }
+.rp-title p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.rp-title p b { color: var(--text); }
+.rp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.rp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--cell);
+  transition: background-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.rp-card:hover { background: color-mix(in srgb, var(--text) 4%, var(--cell)); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+.rp-head { display: flex; align-items: center; gap: 16px; }
+.rp-face.portrait { flex: none; width: 64px; height: 64px; border: none; border-radius: 50%; background: var(--panel); font-size: 36px; }
+.rp-id { min-width: 0; }
+.rp-id h3 { margin: 0 0 8px; font-size: 20px; line-height: 1.2; }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.rp-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: var(--panel); font-size: 13px; line-height: 20px; }
+.rp-chip.muted { color: var(--muted); }
+.rp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rp-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 8px; background: var(--panel); }
+.rp-stat small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.rp-stat b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.rp-skill { flex: 1; }
+.rp-skill h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 15px; }
+.rp-skill p { margin: 0; color: color-mix(in srgb, var(--text) 82%, var(--muted)); font-size: 14px; line-height: 1.5; }
+.rp-actions { display: flex; gap: 8px; }
+.dialog .rp-actions button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  transition: background-color 120ms ease-out, filter 120ms ease-out;
+}
+.dialog .rp-more { background: var(--panel); color: var(--text); }
+.dialog .rp-more:hover { background: color-mix(in srgb, var(--text) 8%, var(--panel)); }
+.dialog .rp-take { flex: 1; background: var(--accent); color: #14161c; }
+.dialog .rp-take:hover { filter: brightness(1.1); }
+.dialog .rp-actions button:active { filter: brightness(0.92); }
+.dialog .rp-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .rp-card, .dialog .rp-actions button { transition: none; }
+}
+
+/* Hand-made SVG icons (ui/icons) in place of an emoji: a portrait's face, a skill's icon. */
+.svg-icon { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; }
+.portrait.has-svg { padding: 3%; background: var(--plate); }
+.skill-svg { display: inline-block; width: 1.3em; height: 1.3em; vertical-align: -0.25em; }
+/* An iridescent icon's gradient slowly shifts hue (off for reduced motion). */
+.svg-icon.iridescent { animation: icon-iridescent 6s linear infinite; }
+@keyframes icon-iridescent {
+  to { filter: hue-rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .svg-icon.iridescent { animation: none; }
+}

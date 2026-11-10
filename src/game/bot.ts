@@ -39,6 +39,7 @@ function easyBot(state: GameState, p: Player): void {
   while (p.itemOffer?.length) applyAction(state, p.id, { type: 'pickItem', item: p.itemOffer[nextInt(state, p.itemOffer.length)] });
   placeMarks(state, p);
   playTrove(state, p);
+  pickRewards(state, p);
   playJohnnie(state, p);
   playAltars(state, p);
   playTwilight(state, p);
@@ -155,6 +156,17 @@ export function playFreya(state: GameState, p: Player): void {
   for (const level of claimable(p)) applyAction(state, p.id, { type: 'claimEnhance', level });
 }
 
+// Reward units on offer (the Necromancer's Plane Wanderer): the one whose traits the owned heroes share most
+// (ties: the first offered).
+export function pickRewards(state: GameState, p: Player): void {
+  for (const [trait, offer] of Object.entries(p.rewardOffer ?? {})) {
+    const owned = [...p.board, ...p.bench].filter((u) => u !== null);
+    const score = (id: string) => UNIT_BY_ID[id].traits.reduce((n, t) => n + owned.filter((u) => UNIT_BY_ID[u.defId].traits.includes(t)).length, 0);
+    const best = offer.reduce((a, b) => (score(b) > score(a) ? b : a));
+    applyAction(state, p.id, { type: 'pickReward', trait, unit: best });
+  }
+}
+
 // Johnson's Den: the Johnnie sharing the most traits with the units already owned (ties: the first).
 export function playJohnnie(state: GameState, p: Player): void {
   const offer = p.johnnie?.offer;
@@ -166,7 +178,7 @@ export function playJohnnie(state: GameState, p: Player): void {
 }
 
 // Kaela's Trove: cash in at 6+ points, else roll while it's safe-ish (from 5 up a roll may go bust).
-// Mirror Devices copy the highest-star fielded unit that can still be copied; Enhancement Charges go on held items.
+// Mirror Devices copy the highest-star fielded unit; Enhancement Charges go on held items.
 export function playTrove(state: GameState, p: Player): void {
   // Banked rolls too: open at 6+, roll below 5, until out of rolls (or the Trove is spent).
   for (;;) {
@@ -175,7 +187,7 @@ export function playTrove(state: GameState, p: Player): void {
     if (!applyAction(state, p.id, { type: 'rollDice' }).ok) break;
   }
   while (p.mirrors) {
-    const unit = p.board.filter((u) => u !== null && UNIT_BY_ID[u.defId].shop !== false && state.pool[u.defId] > 0).sort((a, b) => b!.star - a!.star)[0];
+    const unit = p.board.filter((u) => u !== null).sort((a, b) => b!.star - a!.star)[0];
     if (!unit || !applyAction(state, p.id, { type: 'useMirror', unit: unit.uid }).ok) break;
   }
   // Pacquiao's gloves: on the highest-star hero each fits.

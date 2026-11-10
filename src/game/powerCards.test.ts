@@ -1320,10 +1320,12 @@ describe('Emergency Rift', () => {
   test('25 souls now, and a second, different Plane Wanderer: 1★ until III-5, then 2★ for good', () => {
     const { state, a } = pickPurple(107, 'emergencyRift', (p) => (p.stacks = {}));
     expect(a.stacks.necromancer).toBe(25);
-    const grave = a.rewardUnit!.necromancer;
+    // The grave's pick is still open: the Rift's Wanderer is neither of those on offer.
+    const offer = a.rewardOffer!.necromancer;
     const extra = a.bench.find(Boolean)!;
     expect(TRAITS.necromancer.stacks!.rewardUnits).toContain(extra.defId);
-    expect(extra.defId).not.toBe(grave);
+    expect(offer).not.toContain(extra.defId);
+    applyAction(state, a.id, { type: 'pickReward', trait: 'necromancer', unit: offer[0] });
     expect(extra.star).toBe(1);
     state.round = roundAt(3, 5) - 1;
     syncPlayer(state, a);

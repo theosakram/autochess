@@ -7,8 +7,8 @@ import type { SkillDef } from './types';
 export const CRATER_FALL = {
   ticks: 3,
   every: 0.4, // seconds between ticks (and before the boom)
-  tick: [0.8, 0.9, 2], // of attack, physical, per tick to each enemy in the area
-  boom: [2.5, 2.8, 6], // of attack, physical, the explosion
+  tick: [0.8, 1.1, 4], // of attack, physical, per tick to each enemy in the area
+  boom: [2.5, 3.4, 12], // of attack, physical, the explosion
 };
 
 export const craterFall: SkillDef = {

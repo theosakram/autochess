@@ -10,8 +10,7 @@ import { playerTraits, traitTiles } from '../../game/traits';
 import type { Loc, Player } from '../../game/types';
 import { PAD, stageLayout, stageWidthForHeight, type StageLayout } from './layout';
 import { COLORS, EFFECT_COLORS, FONT, TILE_COLORS, mix } from './theme';
-import { makeToken, type TokenView } from './token';
-import { portraitOf } from '../portraits';
+import { heroFace, makeToken, type TokenView } from './token';
 import { lerp, Tweens } from './tween';
 
 const TICK_MS = 1000 / TICKS_PER_SECOND;
@@ -42,6 +41,30 @@ export interface Playback {
 }
 
 // The Pixi canvas: board + bench while shopping, and fight playback.
+// Slash looks for projectile effects (instead of a flying orb): the half-moon's size in board cells and how far
+// it sweeps (radians) as it fades.
+const SLASHES: Record<string, { radius: number; sweep: number }> = {
+  kerisslash: { radius: 1.7, sweep: 0.9 },
+  kerisslashall: { radius: 7, sweep: 0.7 },
+};
+
+// A half-moon facing +x: its outer edge an arc of `radius`, thickest (`thickness`) in the middle and sharp at the tips.
+function crescent(radius: number, thickness: number, color: number, alpha: number): Graphics {
+  const spread = Math.PI * 0.42;
+  const steps = 24;
+  const points: number[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = -spread + (2 * spread * i) / steps;
+    points.push(Math.cos(t) * radius, Math.sin(t) * radius);
+  }
+  for (let i = steps; i >= 0; i--) {
+    const t = -spread + (2 * spread * i) / steps;
+    const r = radius - thickness * Math.cos((t / spread) * (Math.PI / 2));
+    points.push(Math.cos(t) * r, Math.sin(t) * r);
+  }
+  return new Graphics().poly(points).fill({ color, alpha });
+}
+
 export class Stage {
   private app = new Application();
   private layers = { cells: new Container(), units: new Container(), fx: new Container(), top: new Container() };
@@ -149,8 +172,7 @@ export class Stage {
         .roundRect(at.x - size / 2, at.y - size / 2, size, size, 6)
         .fill({ color: COLORS.accent, alpha: 0.16 })
         .stroke({ width: 2.5, color: COLORS.accent, alpha: 0.9 });
-      const ghost = new Text({ text: portraitOf(defId), style: { fontFamily: FONT, fontSize: size * 0.42 } });
-      ghost.anchor.set(0.5);
+      const ghost = heroFace(defId, size * 0.42);
       ghost.alpha = 0.35;
       ghost.position.set(at.x, at.y);
       const thumb = new Text({ text: '👍', style: { fontFamily: FONT, fontSize: size * 0.24 } });
@@ -524,6 +546,32 @@ export class Stage {
         }
         case 'projectile': {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
+          // Slashes: a half-moon at `to`, facing away from `from`, that sweeps across and fades.
+          const slash = SLASHES[e.effect];
+          if (slash) {
+            const [from, to] = [at(e.from), at(e.to)];
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+            const radius = this.L.boardCell * slash.radius;
+            const moon = new Container();
+            moon.addChild(crescent(radius, radius * 0.32, color, 0.85), crescent(radius * 0.97, radius * 0.12, 0xffffff, 0.9));
+            // Pivot on the blade itself (its thick middle), so the blade sits over the struck area.
+            moon.pivot.set(radius * 0.85, 0);
+            moon.position.set(to.x, to.y);
+            this.layers.fx.addChild(moon);
+            const sweep = slash.sweep;
+            this.tweens.add(
+              Math.max(1, e.until - e.t) * TICK_MS,
+              (k) => {
+                if (moon.destroyed) return;
+                const ease = 1 - (1 - k) ** 3;
+                moon.rotation = angle - sweep / 2 + sweep * ease;
+                moon.scale.set(0.75 + 0.35 * ease);
+                moon.alpha = k < 0.55 ? 1 : 1 - (k - 0.55) / 0.45;
+              },
+              () => moon.destroyed || moon.destroy(),
+            );
+            break;
+          }
           const orb = new Graphics().circle(0, 0, this.L.boardCell * 0.12).fill(color).stroke({ width: 2, color: 0xffffff, alpha: 0.7 });
           const [from, to] = [at(e.from), at(e.to)];
           orb.position.set(from.x, from.y);

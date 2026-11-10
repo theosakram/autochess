@@ -105,12 +105,38 @@ function deliverGifts(state: GameState, p: Player): void {
   }
 }
 
-// This player's reward unit for a trait: rolled once from its options (when its counter first
-// appears), then the same all game, whatever happens to the units.
-function rewardUnit(state: GameState, p: Player, id: string): string | undefined {
-  const options = TRAITS[id].stacks?.rewardUnits;
+// This player's reward unit for a trait, the same all game once set, whatever happens to the units. With
+// `rewardChoices` > 1, that many different options are rolled once (when its counter first appears) and the
+// player picks one (pickReward); until then there's none, and its unit rewards wait.
+export function rewardUnit(state: GameState, p: Player, id: string): string | undefined {
+  const rule = TRAITS[id].stacks;
+  const options = rule?.rewardUnits;
   if (!options?.length) return undefined;
-  return ((p.rewardUnit ??= {})[id] ??= options[nextInt(state, options.length)]);
+  if (p.rewardUnit?.[id]) return p.rewardUnit[id];
+  const choices = Math.min(rule!.rewardChoices ?? 1, options.length);
+  if (choices <= 1) return ((p.rewardUnit ??= {})[id] = options[nextInt(state, options.length)]);
+  if (!p.rewardOffer?.[id]) {
+    const left = options.slice();
+    (p.rewardOffer ??= {})[id] = Array.from({ length: choices }, () => left.splice(nextInt(state, left.length), 1)[0]);
+  }
+  return undefined;
+}
+
+// Why the player can't take `unit` as their reward unit for trait `id`, or null.
+export function rewardPickBlock(p: Player, id: string, unit: string): string | null {
+  if (p.rewardUnit?.[id]) return 'Already chosen';
+  if (!p.rewardOffer?.[id]?.includes(unit)) return 'Not on offer';
+  return null;
+}
+
+// Picks one of the offered reward units (its waiting rewards are claimed on the sync after).
+export function pickReward(p: Player, id: string, unit: string): string | null {
+  const err = rewardPickBlock(p, id, unit);
+  if (err) return err;
+  (p.rewardUnit ??= {})[id] = unit;
+  delete p.rewardOffer![id];
+  if (!Object.keys(p.rewardOffer!).length) p.rewardOffer = undefined;
+  return null;
 }
 
 // Hands out every stack reward reached, in order. One that can't fit (full bench) waits for a later sync.

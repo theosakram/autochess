@@ -1,5 +1,5 @@
 import { applyAction } from './actions';
-import { interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playHarley, playRitual, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
+import { pickRewards, interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playHarley, playRitual, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
 import { COMMANDERS } from './commanders';
 import { REROLL_COST, STAR_MULT, stageRound } from './config';
 import { equipBlock } from './inventory';
@@ -251,6 +251,7 @@ export function normalBot(state: GameState, p: Player): void {
   if (p.factionOrbOffer) applyAction(state, p.id, { type: 'pickFactionOrb', trait: p.factionOrbOffer[0] });
   pickItems(state, p);
   playTrove(state, p);
+  pickRewards(state, p);
   playJohnnie(state, p);
   playAltars(state, p);
   playTwilight(state, p);

@@ -1,3 +1,5 @@
+import { SKILL_SVGS, svgImg } from './icons';
+
 // One icon per skill (by skill id), for the hero card's skill button. Emoji from Unicode 11 or older only, so they
 // all show on Windows 10. Anything missing falls back to SKILL_ICON_DEFAULT.
 export const SKILL_ICONS: Record<string, string> = {
@@ -53,6 +55,7 @@ export const SKILL_ICONS: Record<string, string> = {
   undyingfury: '😡',
   unfoldingtale: '📚',
   wanderersvolley: '🧭',
+  kerisslash: '⚔️',
   zodiacslam: '♈',
   mournfulshot: '🥀',
   fallingstar: '🌟',
@@ -63,4 +66,5 @@ export const SKILL_ICONS: Record<string, string> = {
   beastmaul: '🐻',
 };
 export const SKILL_ICON_DEFAULT = '✨';
-export const skillIcon = (id: string | undefined) => (id && SKILL_ICONS[id]) || SKILL_ICON_DEFAULT;
+// HTML: a hand-made SVG when the skill has one (icons/), else its emoji.
+export const skillIcon = (id: string | undefined) => (id && SKILL_SVGS[id] ? svgImg(SKILL_SVGS[id].svg, `skill-svg ${SKILL_SVGS[id].className ?? ''}`) : (id && SKILL_ICONS[id]) || SKILL_ICON_DEFAULT);

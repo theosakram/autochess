@@ -1,3 +1,4 @@
+import { rewardUnit } from './sync';
 import { BOARD_COLS, BOARD_ROWS, CARD_OFFER_SIZE, INTEREST_PER_10, MAX_INTEREST, roundAt, roundLabel, MAX_ITEMS_PER_UNIT, POWER_CARD_ROUNDS, SHOP_ODDS } from './config';
 import { canClaimToBoard, gainUnit, giveStarred, giveTwoStar } from './actions';
 import { mergeUnits } from './merge';
@@ -1546,13 +1547,14 @@ export function deliverSignatures(state: GameState, p: Player): void {
 }
 
 // Emergency Rift: souls for the grave now (it appears if it hadn't), and a second Plane Wanderer different from
-// the grave's (rolled now if it wasn't yet). It waits for room in Player.rift.
+// the grave's (or, before that's picked, from those on offer). It waits for room in Player.rift.
 function openRift(state: GameState, p: Player, souls: number): void {
   const rule = TRAITS.necromancer.stacks!;
   p.stacks.necromancer = Math.min(rule.max, (p.stacks.necromancer ?? 0) + souls);
   const options = rule.rewardUnits!;
-  const grave = ((p.rewardUnit ??= {}).necromancer ??= options[nextInt(state, options.length)]);
-  const others = options.filter((id) => id !== grave && id !== p.rift?.defId);
+  rewardUnit(state, p, 'necromancer'); // the grave's own: rolled (or its offer rolled) if it wasn't yet
+  const taken = new Set([p.rewardUnit?.necromancer, ...(p.rewardOffer?.necromancer ?? []), p.rift?.defId]);
+  const others = options.filter((id) => !taken.has(id));
   p.rift = { defId: others[nextInt(state, others.length)], given: false };
   syncRift(state, p);
 }

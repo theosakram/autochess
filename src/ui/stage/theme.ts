@@ -101,6 +101,8 @@ export const EFFECT_COLORS: Record<string, number> = {
   stormfists: 0xffe066,
   wanderersvolley: 0x9ad8ff,
   bladedescent: 0xff5a36,
+  kerisslash: 0xd4af37,
+  kerisslashall: 0xd4af37,
   craterfall: 0xc9a26b,
   craterboom: 0xff5a36,
   partycrasher: 0xff8c42,

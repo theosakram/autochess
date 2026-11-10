@@ -43,6 +43,8 @@ export interface ProtectPower {
 // What a commander or a card grants. Powers are merged in order, field by field: a later one overrides
 // an earlier one (a card's upgrade replaces the innate version of the same power).
 export interface CommanderPower {
+  boxPerks?: BoxPower; // Vex: Box round gold, a bonus pick and a free item copy
+  boxBonus?: number; // Vex's card: one more bonus pick on each of the first this many Box rounds
   beast?: BeastPower;
   ward?: WardPower;
   boost?: BoostPower;
@@ -241,6 +243,16 @@ export interface IceArrowPower {
   targets: number;
   share: number;
   attackSpeed: number;
+}
+
+// Vex's Box round perks, by box (the first is stage I's): `gold` when each of the first `goldBoxes` opens; a bonus
+// pick, after everyone has picked, in each of the first `bonusBoxes`; a free copy of the first item taken in each of
+// the first `copyBoxes`.
+export interface BoxPower {
+  gold: number;
+  goldBoxes: number;
+  bonusBoxes: number;
+  copyBoxes: number;
 }
 
 // Alice's Blood Pact: a use on each of `rounds`. Each extra copy of a blessed hero adds, by its current star:

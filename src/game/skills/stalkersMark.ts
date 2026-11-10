@@ -8,7 +8,7 @@ import type { SkillApi, SkillDef, SkillFighter } from './types';
 export const STALKERS_MARK = {
   execute: [0.08, 0.1, 0.15], // passive: of max hp
   back: 0.5, // seconds away before it strikes
-  atk: [4.5, 5, 22], // of attack, physical
+  atk: [4.5, 6, 22], // of attack, physical
   // 3★ only: after the strike, knives at this many random enemies, then a dash to the nearest and the strike again.
   knives: 3,
   knife: 8, // of attack, physical, per knife

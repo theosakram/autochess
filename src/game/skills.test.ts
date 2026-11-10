@@ -4,7 +4,7 @@ import { MAX_COMBAT_TICKS, TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { dist, GRID_H, GRID_W, type Point } from './grid';
 import { JIMAT } from './items';
-import { PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, bestLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { KERIS_SLASH, PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, bestLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, TRAITS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -2790,10 +2790,10 @@ describe('Storm Fists', () => {
 });
 
 describe("Wanderer's Volley", () => {
-  test('Moscow has Melina-like stats per star (mana: 50 / 50 / 20), range 4', () => {
+  test('Moscow, the glass cannon: low HP, high attack per star (mana: 50 / 50 / 20), range 4', () => {
     const at = (star: Star) => unitStats(UNIT_BY_ID.moscow, star);
-    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3365, 6415, 44205]);
-    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([220, 330, 705]);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([2900, 5220, 35960]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([265, 400, 850]);
     expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
     expect([UNIT_BY_ID.moscow.range, UNIT_BY_ID.moscow.attackTicks]).toEqual([4, 12]);
   });
@@ -2833,11 +2833,11 @@ describe("Wanderer's Volley", () => {
 });
 
 describe('Meteor Fist', () => {
-  test('Gatotkaca has 5g fighter stats per star (mana too), melee, 0.75 attacks a second', () => {
+  test('Gatotkaca, the bruiser: more HP, less attack per star (mana too), melee, 0.75 attacks a second', () => {
     const at = (star: Star) => unitStats(UNIT_BY_ID.gatotkaca, star);
-    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([4075, 7335, 50535]);
-    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([215, 320, 680]);
-    expect([1, 2, 3].map((s) => at(s as Star).ap)).toEqual([215, 320, 680]);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([4300, 7740, 53320]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([190, 285, 610]);
+    expect([1, 2, 3].map((s) => at(s as Star).ap)).toEqual([190, 285, 610]);
     expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
     expect([UNIT_BY_ID.gatotkaca.name, UNIT_BY_ID.gatotkaca.range, UNIT_BY_ID.gatotkaca.attackTicks]).toEqual(['Gatotkaca', 1, 13]);
   });
@@ -2885,10 +2885,10 @@ describe('Meteor Fist', () => {
 });
 
 describe('Crater Fall', () => {
-  test('Cyborg has tanky 5g stats per star (mana: 40 / 40 / 20), melee, 0.65 attacks a second', () => {
+  test('Cyborg, the tank: the most HP, the least attack per star (mana: 40 / 40 / 20), melee, 0.65 attacks a second', () => {
     const at = (star: Star) => unitStats(UNIT_BY_ID.cyborg, star);
-    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([4400, 7920, 54000]);
-    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([230, 345, 740]);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([4900, 8820, 60760]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([170, 255, 545]);
     expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([40, 40, 20]);
     expect([UNIT_BY_ID.cyborg.name, UNIT_BY_ID.cyborg.range, UNIT_BY_ID.cyborg.attackTicks]).toEqual(['Cyborg', 1, 15]);
   });
@@ -2913,16 +2913,16 @@ describe('Crater Fall', () => {
 });
 
 describe('Fate Thread', () => {
-  test('Novaria has stats per star a step below Nana (mana: 50 / 50 / 20), range 4, magic attacks', () => {
+  test('Novaria, the support: sturdy for the backline, the lowest attack (mana: 50 / 50 / 20), range 4, magic attacks', () => {
     const at = (star: Star) => unitStats(UNIT_BY_ID.novaria, star);
-    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3200, 5760, 40000]);
-    expect([1, 2, 3].map((s) => at(s as Star).ap)).toEqual([165, 250, 540]);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3500, 6300, 43400]);
+    expect([1, 2, 3].map((s) => at(s as Star).ap)).toEqual([150, 225, 480]);
     expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([50, 50, 20]);
     expect([UNIT_BY_ID.novaria.name, UNIT_BY_ID.novaria.range, UNIT_BY_ID.novaria.attackType]).toEqual(['Novaria', 4, 'magic']);
   });
 
-  test('passive: links 2 / 3 / 4 enemies by star', () => {
-    for (const [star, expected] of [[1, 2], [2, 3], [3, 4]] as const) {
+  test('passive: links 2 / 3 / 5 enemies by star', () => {
+    for (const [star, expected] of [[1, 2], [2, 3], [3, 5]] as const) {
       const b = fakeBattle([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 }]);
       b.caster.star = star;
       b.atStart('fatethread');
@@ -2970,10 +2970,10 @@ describe('Fate Thread', () => {
 });
 
 describe("Stalker's Mark", () => {
-  test('Amon has stats per star just below Fanny (mana: 40 / 40 / 20), melee', () => {
+  test('Amon, the assassin: low HP, high attack per star (mana: 40 / 40 / 20), melee', () => {
     const at = (star: Star) => unitStats(UNIT_BY_ID.amon, star);
-    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3900, 7020, 48000]);
-    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([235, 355, 760]);
+    expect([1, 2, 3].map((s) => at(s as Star).hp)).toEqual([3300, 5940, 40920]);
+    expect([1, 2, 3].map((s) => at(s as Star).atk)).toEqual([255, 380, 815]);
     expect([1, 2, 3].map((s) => at(s as Star).maxMana)).toEqual([40, 40, 20]);
     expect([UNIT_BY_ID.amon.name, UNIT_BY_ID.amon.range, UNIT_BY_ID.amon.attackTicks]).toEqual(['Amon', 1, 13]);
   });
@@ -3034,8 +3034,8 @@ describe("Stalker's Mark", () => {
       p.bench.fill(null);
       p.items = [];
     }
-    // Sturdy enough that its hits leave them low rather than one-shot them.
-    a.board[3] = { uid: 1, defId: 'amon', star: 1 };
+    // Sturdy enough that its hits leave them low rather than one-shot them; 2★ so the assassin outlasts two of them.
+    a.board[3] = { uid: 1, defId: 'amon', star: 2 };
     b.board[3] = { uid: 2, defId: 'titan', star: 1 };
     b.board[4] = { uid: 3, defId: 'titan', star: 1 };
     const r = simulateCombat({ rng: 1 }, a, b);
@@ -3046,7 +3046,7 @@ describe("Stalker's Mark", () => {
       if (e.type !== 'effect') continue;
       expect(e.by).toBe(me);
       const victim = r.fighters.find((f) => f.id === e.target)!;
-      expect(e.damage).toBeLessThan(victim.maxHp * STALKERS_MARK.execute[0]);
+      expect(e.damage).toBeLessThan(victim.maxHp * STALKERS_MARK.execute[1]);
       expect(r.events.some((x) => x.type === 'death' && x.id === e.target && x.t === e.t)).toBe(true);
     }
   });
@@ -3097,12 +3097,56 @@ describe('Spectral Cataclysm', () => {
   });
 });
 
+describe('Cursed Keris (Ken Arok)', () => {
+  const ken = UNIT_BY_ID.kenarok;
+  // He stands at (3,5) facing up. In the 3x2 ahead: (3,4) his target, (2,4), (4,3). Out: 3 deep, too wide, behind.
+  const cells = [{ x: 3, y: 4 }, { x: 2, y: 4 }, { x: 4, y: 3 }, { x: 3, y: 2 }, { x: 5, y: 4 }, { x: 3, y: 6 }];
+
+  test('one slash at the 3 wide, 2 deep block in front of him', () => {
+    for (const star of [1, 2] as Star[]) {
+      const b = fakeBattle(cells);
+      b.caster.star = star;
+      b.caster.stats = unitStats(ken, star);
+      b.cast('kerisslash');
+      const hits = [...b.log.hits].sort((x, y) => x.target - y.target);
+      expect(hits.map((h) => h.target)).toEqual([1, 2, 3]);
+      for (const h of hits) expect(h.raw).toBeCloseTo(b.caster.stats.atk * KERIS_SLASH.atk[star - 1]);
+      expect(b.log.hitTypes.every((t) => t === 'physical')).toBe(true);
+    }
+  });
+
+  test('at 3 stars the slash sweeps the entire board', () => {
+    const b = fakeBattle(cells);
+    b.caster.star = 3;
+    b.caster.stats = unitStats(ken, 3);
+    b.cast('kerisslash');
+    expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    for (const h of b.log.hits) expect(h.raw).toBeCloseTo(b.caster.stats.atk * KERIS_SLASH.atk[2]);
+  });
+
+  test('in combat it shows a half-moon slash: over the block below 3 stars, across the board at 3', () => {
+    for (const [star, effect] of [[1, 'kerisslash'], [3, 'kerisslashall']] as const) {
+      const state = createGame(1, [{ id: 'a', name: 'A', isBot: false }, { id: 'b', name: 'B', isBot: false }]);
+      const [a, b] = state.players;
+      for (const p of state.players) {
+        p.board.fill(null);
+        p.bench.fill(null);
+        p.items = [];
+      }
+      a.board[3] = { uid: 1, defId: 'kenarok', star };
+      b.board[3] = { uid: 2, defId: 'titan', star: 2 };
+      const r = simulateCombat({ rng: 1 }, a, b);
+      expect(r.events.some((e) => e.type === 'projectile' && e.effect === effect)).toBe(true);
+    }
+  });
+});
+
 describe('Party Crasher (Johnnie)', () => {
   const johnnie = UNIT_BY_ID['johnnie-astral-fighter'];
   // Three enemies side by side up front, one off on its own.
   const cells = [{ x: 2, y: 1 }, { x: 3, y: 1 }, { x: 4, y: 1 }, { x: 6, y: 4 }];
 
-  test('when combat starts, leaps into the thickest group: magic attack plus a share of its own max hp', () => {
+  test('when combat starts, leaps into the thickest group: the higher of attack and magic attack plus a share of its own max hp', () => {
     for (const star of [1, 3] as Star[]) {
       const b = fakeBattle(cells);
       b.caster.star = star;
@@ -3115,7 +3159,16 @@ describe('Party Crasher (Johnnie)', () => {
       const hits = [...b.log.hits].sort((x, y) => x.target - y.target);
       expect(hits.map((h) => h.target)).toEqual([1, 2, 3]);
       for (const h of hits) expect(h.raw).toBeCloseTo(b.caster.stats.ap * PARTY_CRASHER.leapAp[i] + b.caster.maxHp * PARTY_CRASHER.leapHp[i]);
+      expect(b.log.hitTypes.every((t) => t === 'adaptive')).toBe(true);
     }
+  });
+
+  test('adaptive, like Alpha: both hits scale off whichever of attack and magic attack is higher', () => {
+    const b = fakeBattle(cells);
+    b.caster.stats = { ...unitStats(johnnie, 1), atk: 500, ap: 100 };
+    b.cast('partycrasher');
+    expect(b.log.hits.every((h) => h.raw === 500 * PARTY_CRASHER.ap[0])).toBe(true);
+    expect(b.log.hitTypes.every((t) => t === 'adaptive')).toBe(true);
   });
 
   test('throws at the thickest group: every enemy in the 3x3 around the one aimed at is hit and stunned', () => {
