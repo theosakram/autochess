@@ -1,4 +1,5 @@
 import type { StatKey, StatMod } from '../stats';
+import type { Term } from './terms';
 // Commanders: each player picks one at the start of the game. The commander is the player: it holds
 // their hp, and its innate power works for them all game. On round COMMANDER_CARD_ROUND every player
 // picks one commander card; a card does one thing for its own commander (an upgrade) and another for
@@ -97,9 +98,66 @@ export interface CommanderPower {
   rally?: RallyPower; // Cyclops: once, at low hp (see cyclops.ts in game/)
   heirShare?: number; // Cyclops: of a knocked-out player's hero value, as gold
   heirShareCard?: number; // Cyclops's card: the same again (a separate field, so the two add up)
+  tierUp?: number; // Zhu Yong: every power card round offers this many tiers higher (blue, purple, gold)
+  tierUpCard?: number; // his card: the same again (a separate field, so the two add up)
+  treasure?: TreasurePower; // Zhu Yong: Black Dragon Treasures
+  frost?: FrostPower; // Aurora: a frozen shop, and Frost Energy for rounds without a purchase
+  idlePrize?: IdlePrizePower; // Aurora's card: a prize for each round without a purchase
+  tierShop?: TierShopPower; // Harley: Full House charges (a shop of one cost, and a free buy)
+  tierShopCard?: TierShopPower; // his card: its own charges (a separate field, so both work)
+  ritual?: RitualPower; // Moscow: the Shadow Altar's ritual, and its charge
+  ladder?: LadderPower; // Moscow's card: a hero of each cost, one a round
   loveBeam?: LoveBeamPower; // Angela's card: protected heroes fire Love Beams
   enhance?: EnhancePower; // Freya (see freya.ts in game/)
   enhanceExtra?: { gold: number }; // Freya's card: more with every reward claimed
+}
+
+// Moscow: the Shadow Altar names a random hero of each of `costs`; all offered, a charge: `copies` more copies of
+// a hero, made from nothing.
+export interface RitualPower {
+  costs: number[];
+  copies: number;
+}
+
+// Moscow's card: a random hero of `tiers[0]` cost on the pick, then one of each next cost at each round start.
+export interface LadderPower {
+  tiers: number[];
+}
+
+// Harley: a charge on round `first` and every `every` rounds after. Using one fills the shop with `tier`-cost
+// heroes, and `free` heroes bought that round cost nothing.
+export interface TierShopPower {
+  first: number;
+  every: number;
+  tier: number;
+  free: number;
+}
+
+// Aurora: the shop locks itself at every round start. Each round without a purchase gives `gain` Frost Energy, paid
+// at the next round start; at `need`, a random prize worth `min` to `max` gold, and back to 0.
+export interface FrostPower {
+  gain: number;
+  need: number;
+  min: number;
+  max: number;
+}
+
+// Aurora's card: each round without a purchase, a random prize worth `min` to `max` gold at the next round start;
+// `times`: at most this many (no cap without).
+export interface IdlePrizePower {
+  min: number;
+  max: number;
+  times?: number;
+}
+
+// Zhu Yong: a Black Dragon Treasure on `round`, and one for every tier a power card round is raised past gold.
+// Each pays one prize at random: a faction or role orb; an Equipment Chest and `chestGold`; `heroes` random heroes
+// of the biggest trait; or `gold`.
+export interface TreasurePower {
+  round: number;
+  chestGold: number;
+  heroes: number;
+  gold: number;
 }
 
 // Cyclops: the first time the player is at `hp` or below, `heroes` random heroes of their biggest trait
@@ -243,4 +301,5 @@ export interface CommanderDef {
   desc: string; // the innate power
   innate: CommanderPower;
   card: CommanderCard;
+  terms?: Record<string, Term>; // the fine print its texts link to (term() in terms.ts)
 }

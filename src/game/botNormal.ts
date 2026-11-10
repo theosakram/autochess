@@ -1,5 +1,5 @@
 import { applyAction } from './actions';
-import { interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
+import { interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playHarley, playRitual, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
 import { COMMANDERS } from './commanders';
 import { REROLL_COST, STAR_MULT, stageRound } from './config';
 import { equipBlock } from './inventory';
@@ -255,6 +255,8 @@ export function normalBot(state: GameState, p: Player): void {
   playAltars(state, p);
   playTwilight(state, p);
   playBlood(state, p);
+  playHarley(state, p);
+  playRitual(state, p);
 
   const bank = interestBank(p);
   const { stage } = stageRound(state.round);

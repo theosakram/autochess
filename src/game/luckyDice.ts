@@ -47,17 +47,22 @@ const PRIZES: Prize[] = [
 ];
 export const PRIZE_VALUES: Record<string, number> = Object.fromEntries(PRIZES.map((z) => [z.id, z.value]));
 
-// Pays a prize worth `value` gold: a random prize that fits (gold alone always does), then gold for the
-// rest. A prize that can't be given falls back to gold. Returns what was given, e.g. "a Mirror Device + 3 gold".
+// Pays a prize worth `value` gold (Kaela's dice, kept as her last prize).
 export function payPrize(state: GameState, p: Player, value: number): string {
-  const fits = PRIZES.filter((z) => z.value <= value);
+  const text = rollPrize(state, p, value);
+  (p.luck ??= { rolled: [], last: null }).last = text;
+  return text;
+}
+
+// A random prize worth `value` gold that fits (gold alone always does), then gold for the rest; `skip`: prize ids
+// left out. A prize that can't be given falls back to gold. Returns what was given, e.g. "a Mirror Device + 3 gold".
+export function rollPrize(state: GameState, p: Player, value: number, skip: string[] = []): string {
+  const fits = PRIZES.filter((z) => z.value <= value && !skip.includes(z.id));
   const prize = fits[nextInt(state, fits.length)];
   const name = prize.value > 0 ? prize.give(state, p) : null;
   const gold = name === null ? value : value - prize.value;
   p.gold += gold;
-  const text = [name, gold > 0 || !name ? `${gold} gold` : ''].filter(Boolean).join(' + ');
-  (p.luck ??= { rolled: [], last: null }).last = text;
-  return text;
+  return [name, gold > 0 || !name ? `${gold} gold` : ''].filter(Boolean).join(' + ');
 }
 
 const troveOf = (p: Player) => (p.trove ??= { points: 0, rolls: 0, rolledRound: 0, opens: 0, lastRoll: null, bust: false });

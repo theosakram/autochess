@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { list, term } from './terms';
 import type { CommanderDef, EchoPower, EssencePower } from './types';
 
 // Tune with `bun run balance`. The role effects themselves are in essence.ts (ESSENCE_ROLES).
@@ -16,11 +17,7 @@ export const luoyi: CommanderDef = {
   name: 'Luo Yi',
   icon: '🧙‍♀️',
   title: 'Sage of the Deep Earth',
-  desc:
-    'Raises an Essence Altar beside your board. Put a hero on it and it becomes an Essence Core, an item another hero can hold: ' +
-    `the holder gets ${pct(LUO_YI.essence.share)} of that hero's HP, attack, magic attack, armor and magic resist, ` +
-    `${pct(LUO_YI.essence.share)} of the stats of the items it held, and an Enhancement Effect for each of its roles. ` +
-    "The hero on the altar doesn't count toward traits. Take it back out any time, or put another hero on to swap them.",
+  desc: `Raises an Essence Altar beside your board. Put a hero on it to turn it into an ${term('essenceCore', 'Essence Core')}: an item that lends ${pct(LUO_YI.essence.share)} of that hero's power to whoever holds it.`,
   innate: { essence: LUO_YI.essence },
   card: {
     name: 'Earthen Echo',
@@ -29,5 +26,19 @@ export const luoyi: CommanderDef = {
     self: { echo: LUO_YI.echo },
     otherDesc: echoDesc,
     other: { echo: LUO_YI.echo },
+  },
+  terms: {
+    // The UI adds the Enhancement Effects table (views.ts, TERM_TABLES).
+    essenceCore: {
+      icon: '🔶',
+      title: 'Essence Core',
+      body: list(
+        `The holder gets ${pct(LUO_YI.essence.share)} of the hero's HP, attack, magic attack, armor and magic resist.`,
+        `Plus ${pct(LUO_YI.essence.share)} of the stats of the items that hero held.`,
+        "Plus an Enhancement Effect for each of the hero's roles (below).",
+        "The hero on the altar doesn't count toward traits.",
+        'Take it back out any time, or put another hero on to swap them.',
+      ),
+    },
   },
 };

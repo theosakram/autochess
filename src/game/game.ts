@@ -1,6 +1,10 @@
 import { grantBlood } from './blood';
 import { closeBox, isBoxRound, openBox } from './box';
 import { giveGloves } from './gloves';
+import { treasureRound } from './treasure';
+import { frostRound } from './frost';
+import { chargeFullHouses } from './tierShop';
+import { payLadder } from './ritual';
 import { essenceRound, payEcho, releaseEssence } from './essence';
 import { runBot } from './bot';
 import { enemyDeaths, killsBy, memberSkills, simulateCombat, type CombatResult } from './combat';
@@ -138,7 +142,7 @@ export function startRound(state: GameState): RoundBonus[] {
     // Healing Fountain: the commander heals, up to full.
     p.hp = Math.min(START_HP, p.hp + roundHealOf(p));
     // That paid one round of each Payday owed.
-    p.freeBuy = freeBuyOf(p) || undefined; // Opening Promotion
+    p.freeBuy = freeBuyOf(p) ? 1 : undefined; // Opening Promotion (Harley's are added below)
     if (p.payday) p.payday = p.payday.map((d) => ({ ...d, rounds: d.rounds - 1 })).filter((d) => d.rounds > 0);
     // A locked shop keeps what's left in it for this round, then unlocks.
     if (p.shopLocked) p.shopLocked = false;
@@ -146,6 +150,9 @@ export function startRound(state: GameState): RoundBonus[] {
       refreshShop(state, p);
       if (state.round > 1) rollFreeHero(state, p); // Guiness: after fights only
     }
+    frostRound(state, p); // Aurora: last round's Frost Energy and prizes
+    chargeFullHouses(state, p); // Harley: Full House charges due this round
+    payLadder(state, p); // Moscow's card: this round's hero
   }
   // The commander card round: everyone gets an offer to pick from.
   if (state.round === COMMANDER_CARD_ROUND) for (const p of alive) if (!p.commanderCard) p.cardOffer = offerCards(state, p);
@@ -166,6 +173,8 @@ export function startRound(state: GameState): RoundBonus[] {
   for (const p of alive) grantBlood(state, p);
   // Pacquiao: his gloves due by this round.
   for (const p of alive) giveGloves(state, p);
+  // Zhu Yong: his Black Dragon Treasure on its round.
+  for (const p of alive) treasureRound(state, p);
   // Kaela's card: its Lucky Dice rolls due this round.
   for (const p of alive) cardRolls(state, p);
   // Cyclical Support's chests due this round.

@@ -1,4 +1,5 @@
 import { pct } from '../traits/format';
+import { term } from './terms';
 import type { CommanderDef, EnhancePower } from './types';
 
 // Tune with `bun run balance`. Per level of the enhanced trait, index 0 = first breakpoint (2/4/6).
@@ -28,8 +29,8 @@ export function enhanceValues(mod: { stat: string; add?: number[]; pct?: number[
   return '+' + v.map((n) => (asPct ? pct(n) : String(n))).join('/');
 }
 
-// The per-role bonuses sit behind this link (the UI opens them in a popup: data-action="openBonus").
-const SPECIAL_BONUS = '<button class="text-link" data-action="openBonus" data-bonus="freya">Special Bonus</button>';
+// The per-role bonuses sit behind this link (the UI adds their table: views.ts, TERM_TABLES).
+const SPECIAL_BONUS = term('specialBonus', 'Special Bonus');
 
 export const freya: CommanderDef = {
   id: 'freya',
@@ -45,5 +46,8 @@ export const freya: CommanderDef = {
     icon: '🎁',
     selfDesc: `Each reward you claim brings more: at 2, ${FREYA.cardGold} gold; at 4, an Equipment Chest; at 6, a random faction or role orb.`,
     self: { enhanceExtra: { gold: FREYA.cardGold } },
+  },
+  terms: {
+    specialBonus: { icon: '🌸', title: 'Special Bonus', body: "<p>A blessed role's extra, at its 2 / 4 / 6.</p>" },
   },
 };

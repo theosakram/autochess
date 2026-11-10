@@ -3,7 +3,7 @@ import { applyAction } from './actions';
 import { roundAt } from './config';
 import { createGame, startRound } from './game';
 import { orbOptions } from './orb';
-import { traitCounts } from './traits';
+import { orbTraits, traitCounts, TRAITS } from './traits';
 import type { GameState } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -89,5 +89,14 @@ describe('merging keeps items', () => {
     applyAction(state, p.id, { type: 'buy', slot: 0 });
     expect(p.board[0]?.star).toBe(2);
     expect(p.items[0].holder).toBe(1);
+  });
+});
+
+describe('random faction/role orb rewards', () => {
+  test('only traits with a 6 breakpoint', () => {
+    for (const small of ['phasewarper', 'scavenger', 'storyweaver', 'mooneater', 'mistbender']) expect(orbTraits()).not.toContain(small);
+    for (const id of orbTraits()) expect(TRAITS[id].breakpoints).toContain(6);
+    expect(orbTraits('faction').every((id) => TRAITS[id].kind === 'faction')).toBe(true);
+    expect(orbTraits('role').every((id) => TRAITS[id].kind === 'role')).toBe(true);
   });
 });

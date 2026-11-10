@@ -27,9 +27,14 @@ import { minos } from './minos';
 import { katarina } from './katarina';
 import { lung } from './lung';
 import { pacquiao } from './pacquiao';
+import { zhuyong } from './zhuyong';
+import { aurora } from './aurora';
+import { harley } from './harley';
+import { moscow } from './moscow';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
+import type { Term } from './terms';
 
-export type { DuelPower, AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TwilightPower, WardPower } from './types';
+export type { DuelPower, AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TreasurePower, FrostPower, IdlePrizePower, TierShopPower, RitualPower, LadderPower, TwilightPower, WardPower } from './types';
 export { ALICE } from './alice';
 export { AMON } from './amon';
 export { ANGELA } from './angela';
@@ -51,8 +56,16 @@ export { MINOS } from './minos';
 export { KATARINA } from './katarina';
 export { LUNG } from './lung';
 export { PACQUIAO } from './pacquiao';
+export { ZHU_YONG } from './zhuyong';
+export { AURORA } from './aurora';
+export { HARLEY } from './harley';
+export { MOSCOW } from './moscow';
+export { term, type Term } from './terms';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow].map((c) => [c.id, c]));
+
+// Every commander's glossary terms, by id (see terms.ts).
+export const TERMS: Record<string, Term> = Object.assign({}, ...Object.values(COMMANDERS).map((c) => c.terms ?? {}));
 
 // The board piece a beast power puts on the board (see UnitDef.piece).
 export const BEAST_PIECE = 'divinebeast';

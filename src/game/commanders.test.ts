@@ -1,7 +1,7 @@
 import { altarStatus } from './altar';
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
-import { EQUIPMENT } from './items';
+import { EQUIPMENT, itemCard } from './items';
 import { openChest } from './inventory';
 import { killsBy, type CombatResult } from './combat';
 import { countDuels, earnChests, payBounty } from './game';
@@ -27,6 +27,13 @@ import { createGame, resolveCombat, startRound } from './game';
 import { cardRolls, payPrize, PRIZE_VALUES } from './luckyDice';
 import { boardCount } from './player';
 import type { GameState, Player } from './types';
+import { openTreasure, raisedTier } from './treasure';
+import { offerPowerCards, powerPool } from './powerCards';
+import { AURORA, HARLEY, MOSCOW, ZHU_YONG } from './commanders';
+import { ritualLeft } from './ritual';
+import { nextFullHouses } from './tierShop';
+import { shopPrice as priceAt } from './shop';
+import { POWER_CARD_ROUNDS } from './config';
 import { UNIT_BY_ID, UNITS } from './units';
 
 const SEEDS = [
@@ -1868,5 +1875,436 @@ describe('Pacquiao', () => {
     p.bench[1] = { uid: 601, defId: hero(4).id, star: 1 };
     expect(gloveBlock(p, 'glory', 601)).not.toBeNull();
     expect(gloveBlock(p, 'glory', 600)).toBeNull();
+  });
+});
+
+describe('Zhu Yong', () => {
+  function zhuGame(): { state: GameState; z: Player; o: Player } {
+    const state = createGame(7, SEEDS);
+    const [z, o] = state.players;
+    expect(applyAction(state, z.id, { type: 'pickCommander', commander: 'zhuyong' }).ok).toBe(true);
+    expect(applyAction(state, o.id, { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    return { state, z, o };
+  }
+  const takeCard = (state: GameState, p: Player) => {
+    p.cardOffer = ['zhuyong'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'zhuyong' }).ok).toBe(true);
+  };
+
+  test('his power: each round one tier up, a treasure for a tier past gold', () => {
+    const { z, o } = zhuGame();
+    expect(raisedTier(z, 'blue')).toEqual({ tier: 'purple', from: 'blue', treasures: 0 });
+    expect(raisedTier(z, 'purple')).toEqual({ tier: 'gold', from: 'purple', treasures: 0 });
+    expect(raisedTier(z, 'gold')).toEqual({ tier: 'gold', from: undefined, treasures: 1 });
+    expect(raisedTier(o, 'blue')).toEqual({ tier: 'blue', from: undefined, treasures: 0 });
+  });
+
+  test('his card on him: always gold, a treasure per tier past it; on anyone else: plain +1, no treasures', () => {
+    const { state, z, o } = zhuGame();
+    takeCard(state, z);
+    expect(raisedTier(z, 'blue')).toMatchObject({ tier: 'gold', treasures: 0 });
+    expect(raisedTier(z, 'purple')).toMatchObject({ tier: 'gold', treasures: 1 });
+    expect(raisedTier(z, 'gold')).toMatchObject({ tier: 'gold', treasures: 2 });
+    takeCard(state, o);
+    expect(raisedTier(o, 'blue')).toMatchObject({ tier: 'purple', treasures: 0 });
+    expect(raisedTier(o, 'purple')).toMatchObject({ tier: 'gold', treasures: 0 });
+    expect(raisedTier(o, 'gold')).toMatchObject({ tier: 'gold', treasures: 0 });
+  });
+
+  test('a power card round offers the raised tier, and pays the treasures then', () => {
+    const { state, z } = zhuGame();
+    takeCard(state, z);
+    state.powerTiers = ['gold', 'blue'];
+    state.round = POWER_CARD_ROUNDS[0];
+    z.powerOffer = undefined;
+    offerPowerCards(state, z);
+    expect(z.powerOffer!.tier).toBe('gold');
+    expect(z.powerOffer!.from).toBeUndefined();
+    expect(z.treasures).toHaveLength(2);
+    expect(z.powerOffer!.cards.every((id) => powerPool('gold').includes(id))).toBe(true);
+    applyAction(state, z.id, { type: 'pickPower', card: z.powerOffer!.cards[0] });
+    state.round = POWER_CARD_ROUNDS[1];
+    offerPowerCards(state, z);
+    expect(z.powerOffer).toMatchObject({ tier: 'gold', from: 'blue' });
+    expect(z.treasures).toHaveLength(2);
+  });
+
+  test('a treasure on the commander card round', () => {
+    const { state, z, o } = zhuGame();
+    while (state.round < COMMANDER_CARD_ROUND) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    expect(z.treasures).toHaveLength(1);
+    expect(o.treasures).toBeUndefined();
+  });
+
+  test('a treasure pays one of its four prizes', () => {
+    const t = ZHU_YONG.treasure;
+    const seen = new Set<string>();
+    for (let seed = 0; seed < 40; seed++) {
+      const { state, z } = zhuGame();
+      z.board.fill(null);
+      z.bench.fill(null);
+      const mages = UNITS.filter((u) => u.shop !== false && !u.locked && u.tier === 1 && u.traits.includes('mage'));
+      mages.slice(0, 2).forEach((u, i) => (z.board[i] = { uid: 900 + i, defId: u.id, star: 1 }));
+      state.rng = seed * 7919 + 1;
+      const gold = z.gold;
+      const orbs = z.mistOrbs?.length ?? 0;
+      const chests = z.chests?.waiting ?? 0;
+      const offers = z.itemOffer?.length ?? 0;
+      const text = openTreasure(state, z);
+      if (text.includes('orb')) {
+        seen.add('orb');
+        expect(z.mistOrbs!.length).toBe(orbs + 1);
+        expect(z.gold).toBe(gold);
+      } else if (text.includes('Chest')) {
+        seen.add('chest');
+        expect(z.gold).toBe(gold + t.chestGold);
+        expect((z.chests?.waiting ?? 0) > chests || (z.itemOffer?.length ?? 0) > offers).toBe(true); // opened, or waiting its turn
+      } else if (text.includes('heroes')) {
+        seen.add('heroes');
+        // The biggest trait: Mage, or a trait both Mages share (ties are random).
+        const trait = Object.values(TRAITS).find((tr) => text.endsWith(` ${tr.name} heroes`))!;
+        expect(mages.slice(0, 2).every((u) => u.traits.includes(trait.id))).toBe(true);
+        expect(z.gifts!.slice(-t.heroes).every((id) => UNIT_BY_ID[id].traits.includes(trait.id))).toBe(true);
+      } else {
+        seen.add('gold');
+        expect(z.gold).toBe(gold + t.gold);
+      }
+      expect(z.treasures!.at(-1)).toBe(text);
+    }
+    expect([...seen].sort()).toEqual(['chest', 'gold', 'heroes', 'orb']);
+  });
+
+  test('heroes with nothing fielded fall back to gold', () => {
+    const { state, z } = zhuGame();
+    z.board.fill(null);
+    z.bench.fill(null);
+    for (let k = 0; k < 40; k++) {
+      const text = openTreasure(state, z);
+      expect(text).not.toContain('heroes');
+    }
+  });
+});
+
+describe('Aurora', () => {
+  function auroraGame(): { state: GameState; a: Player; o: Player } {
+    const state = createGame(9, SEEDS);
+    const [a, o] = state.players;
+    expect(applyAction(state, a.id, { type: 'pickCommander', commander: 'aurora' }).ok).toBe(true);
+    expect(applyAction(state, o.id, { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    return { state, a, o };
+  }
+  // Plays the round out and starts the next.
+  const next = (state: GameState) => {
+    resolveCombat(state);
+    startRound(state);
+  };
+  const buyOne = (state: GameState, p: Player) => {
+    p.gold = 100;
+    p.shop[0] = 'cici';
+    expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+  };
+
+  test("the freeze is only a look: her shop isn't locked and refreshes as usual", () => {
+    const { state, a } = auroraGame();
+    next(state);
+    expect(a.shopLocked).toBeFalsy();
+    const shops = new Set<string>();
+    for (let k = 0; k < 4; k++) {
+      shops.add(a.shop.join());
+      next(state);
+    }
+    expect(shops.size).toBeGreaterThan(1);
+  });
+
+  test('only a hero counts as buying: an item card (Gustiwana) keeps the round idle', () => {
+    const { state, a } = auroraGame();
+    next(state);
+    const energy = a.frost!.energy;
+    const gw = Object.values(ITEMS).find((i) => i.trait === 'gustiwana')!;
+    a.items.push({ uid: 4242, id: gw.id, tier: 1, holder: null });
+    a.shop[0] = itemCard(gw.id);
+    expect(applyAction(state, a.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    expect(a.boughtRound).not.toBe(state.round);
+    next(state);
+    // Idle: the 3 counted (at 6 that's the prize, and back to 0).
+    expect(a.frost!.energy).toBe(energy + AURORA.frost.gain >= AURORA.frost.need ? 0 : energy + AURORA.frost.gain);
+    expect(a.frost!.last).toBeTruthy();
+  });
+
+  test('3 Frost Energy per round without a purchase; at 6, a prize worth 8-12 gold, back to 0', () => {
+    const { state, a } = auroraGame();
+    next(state); // round 1 idle
+    expect(a.frost!.energy).toBe(AURORA.frost.gain);
+    expect(a.frost!.last).toBeNull();
+    buyOne(state, a);
+    next(state); // bought: nothing
+    expect(a.frost!.energy).toBe(AURORA.frost.gain);
+    const gold = a.gold;
+    const orbs = a.mistOrbs?.length ?? 0;
+    const items = a.items.length;
+    const units = [...a.board, ...a.bench].filter(Boolean).length + (a.gifts?.length ?? 0);
+    next(state); // idle again: 6, the prize
+    expect(a.frost!.energy).toBe(0);
+    expect(a.frost!.last).toBeTruthy();
+    expect(a.frost!.last).not.toContain('Mirror');
+    const got = a.gold - gold > 0 || (a.mistOrbs?.length ?? 0) > orbs || a.items.length > items || [...a.board, ...a.bench].filter(Boolean).length + (a.gifts?.length ?? 0) > units;
+    expect(got).toBe(true);
+  });
+
+  test('a prize is worth 8-12 gold: when it is just gold, that much (on top of income)', () => {
+    let golds = 0;
+    for (let seed = 0; seed < 30; seed++) {
+      const { state, a } = auroraGame();
+      state.rng = seed * 104729 + 3;
+      a.frost = { energy: AURORA.frost.need - AURORA.frost.gain, prizes: 0, last: null };
+      next(state);
+      const last = a.frost!.last!;
+      const m = /^(\d+) gold$/.exec(last);
+      if (!m) continue;
+      golds++;
+      expect(Number(m[1])).toBeGreaterThanOrEqual(AURORA.frost.min);
+      expect(Number(m[1])).toBeLessThanOrEqual(AURORA.frost.max);
+    }
+    expect(golds).toBeGreaterThan(0);
+  });
+
+  test("her card's prize is a hero or gold, never an orb or equipment, even if it were worth more", () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const { state, o } = auroraGame();
+      state.rng = seed * 7907 + 5;
+      o.cardOffer = ['aurora'];
+      applyAction(state, o.id, { type: 'pickCard', card: 'aurora' });
+      const orbs = o.mistOrbs?.length ?? 0;
+      const items = o.items.length;
+      next(state);
+      expect(o.frost!.last).toMatch(/gold/);
+      expect(o.frost!.last).not.toMatch(/orb|Mirror/);
+      expect(o.mistOrbs?.length ?? 0).toBe(orbs);
+      expect(o.items.length).toBe(items);
+    }
+  });
+
+  test('her card: a 4-6 gold prize after each round without a purchase; on another commander, up to 6', () => {
+    const { state, a, o } = auroraGame();
+    for (const p of [a, o]) {
+      p.cardOffer = ['aurora'];
+      expect(applyAction(state, p.id, { type: 'pickCard', card: 'aurora' }).ok).toBe(true);
+    }
+    expect(powersOf(o).frost).toBeUndefined(); // no frozen shop, no Frost Energy on another commander
+    buyOne(state, o);
+    next(state);
+    expect(o.frost?.prizes ?? 0).toBe(0); // bought
+    expect(a.frost!.prizes).toBe(1);
+    for (let k = 0; k < 10; k++) next(state);
+    expect(o.frost!.prizes).toBe(AURORA.otherTimes);
+    expect(a.frost!.prizes).toBe(11); // no cap on Aurora
+    expect(o.shopLocked).toBeFalsy();
+  });
+});
+
+describe('Harley', () => {
+  function harleyGame(): { state: GameState; h: Player; o: Player } {
+    const state = createGame(13, SEEDS);
+    const [h, o] = state.players;
+    expect(applyAction(state, h.id, { type: 'pickCommander', commander: 'harley' }).ok).toBe(true);
+    expect(applyAction(state, o.id, { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    return { state, h, o };
+  }
+  const toRound = (state: GameState, round: number) => {
+    while (state.round < round) {
+      for (const p of state.players) {
+        p.powerOffer = undefined;
+        p.powerQueue = undefined;
+        p.cardOffer = undefined;
+        p.hp = 100;
+      }
+      resolveCombat(state);
+      startRound(state);
+    }
+  };
+  const tiers = (p: Player) => p.shop.filter((id): id is string => !!id).map((id) => UNIT_BY_ID[id].tier);
+  const S = HARLEY.shop.first; // II-1
+  const C = HARLEY.card.first; // I-3
+
+  test('his power: a 5-gold charge on II-1 and every 6 rounds after; charges stack', () => {
+    const { state, h, o } = harleyGame();
+    expect(S).toBe(roundAt(2, 1));
+    toRound(state, S - 1);
+    expect(h.fullHouse?.[5] ?? 0).toBe(0);
+    toRound(state, S);
+    expect(h.fullHouse![5]).toBe(1);
+    toRound(state, S + 6);
+    expect(h.fullHouse![5]).toBe(2); // unused: banked
+    expect(o.fullHouse).toBeUndefined();
+    // The countdown: on II-1 the next is 6 rounds on.
+    expect(nextFullHouses(h, S + 1)).toEqual([{ tier: 5, round: S + 6, card: false }]);
+    expect(nextFullHouses(h, 1)).toEqual([{ tier: 5, round: S, card: false }]);
+  });
+
+  test('using a charge: a shop of 5-gold heroes and one free buy, this round only', () => {
+    const { state, h } = harleyGame();
+    expect(applyAction(state, h.id, { type: 'fullHouse', tier: 5 }).ok).toBe(false); // no charge
+    expect(applyAction(state, h.id, { type: 'fullHouse', tier: 4 }).ok).toBe(false); // no such power
+    toRound(state, S);
+    const pool = { ...state.pool };
+    const old = h.shop.filter((id): id is string => !!id);
+    expect(applyAction(state, h.id, { type: 'fullHouse', tier: 5 }).ok).toBe(true);
+    expect(h.fullHouse![5]).toBe(0);
+    expect(tiers(h)).toEqual([5, 5, 5, 5, 5]);
+    for (const id of new Set(old)) if (UNIT_BY_ID[id].tier !== 5) expect(state.pool[id]).toBe(pool[id] + old.filter((x) => x === id).length); // the old shop went back
+    expect(h.freeBuy).toBe(1);
+    h.gold = 5;
+    expect(priceAt(h, 0)).toBe(0);
+    expect(applyAction(state, h.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    expect(h.gold).toBe(5);
+    expect(priceAt(h, 1)).toBe(5);
+    // An unused free buy doesn't carry over.
+    h.fullHouse![5] = 1;
+    applyAction(state, h.id, { type: 'fullHouse', tier: 5 });
+    toRound(state, S + 1);
+    expect(h.freeBuy).toBeUndefined();
+  });
+
+  test('his card: 6 gold now, and a 4-gold charge on I-3 and every 4 rounds after, on anyone', () => {
+    const { state, h, o } = harleyGame();
+    for (const p of [h, o]) {
+      p.cardOffer = ['harley'];
+      const gold = p.gold;
+      expect(applyAction(state, p.id, { type: 'pickCard', card: 'harley' }).ok).toBe(true);
+      expect(p.gold - gold).toBe(HARLEY.cardGold);
+    }
+    expect(C).toBe(roundAt(1, 3));
+    toRound(state, C);
+    expect(o.fullHouse).toEqual({ 4: 1 });
+    toRound(state, C + 4);
+    expect(o.fullHouse).toEqual({ 4: 2 });
+    expect(applyAction(state, o.id, { type: 'fullHouse', tier: 4 }).ok).toBe(true);
+    expect(tiers(o)).toEqual([4, 4, 4, 4, 4]);
+    expect(o.fullHouse).toEqual({ 4: 1 });
+    // Harley holds both, banked apart, each with its own countdown.
+    expect(h.fullHouse![4]).toBe(2);
+    toRound(state, S);
+    expect(h.fullHouse![5]).toBe(1);
+    expect(nextFullHouses(h, S + 1)).toEqual([
+      { tier: 5, round: S + 6, card: false },
+      { tier: 4, round: C + Math.ceil((S + 1 - C) / 4) * 4, card: true },
+    ]);
+  });
+});
+
+describe('Moscow', () => {
+  function moscowGame(): { state: GameState; m: Player; o: Player } {
+    const state = createGame(17, SEEDS);
+    const [m, o] = state.players;
+    expect(applyAction(state, m.id, { type: 'pickCommander', commander: 'moscow' }).ok).toBe(true);
+    expect(applyAction(state, o.id, { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    for (const p of state.players) {
+      p.board.fill(null);
+      p.bench.fill(null);
+    }
+    return { state, m, o };
+  }
+  let uid = 88_000;
+  const bench = (p: Player, defId: string, star: 1 | 2 = 1) => {
+    const unit = { uid: ++uid, defId, star };
+    p.bench[p.bench.indexOf(null)] = unit;
+    return unit;
+  };
+  const owned = (p: Player, defId: string) => [...p.board, ...p.bench].filter((u) => u?.defId === defId).map((u) => u!.star);
+
+  test('the altar names one random hero of each cost 1-4, once', () => {
+    const { state, m, o } = moscowGame();
+    expect(m.ritual!.want.map((id) => UNIT_BY_ID[id].tier as number)).toEqual(MOSCOW.ritual.costs);
+    const want = [...m.ritual!.want];
+    resolveCombat(state);
+    startRound(state);
+    expect(m.ritual!.want).toEqual(want); // never rerolled
+    expect(o.ritual).toBeUndefined();
+  });
+
+  test('offering: only named heroes, any order; each one gone (copies back to the pool); all four end it with a charge', () => {
+    const { state, m } = moscowGame();
+    const [one, two, three, four] = m.ritual!.want;
+    const wrong = UNITS.find((u) => u.shop !== false && !u.piece && !m.ritual!.want.includes(u.id))!;
+    const w = bench(m, wrong.id);
+    expect(applyAction(state, m.id, { type: 'ritualOffer', unit: w.uid }).ok).toBe(false);
+    for (const id of [three, one, four]) {
+      const u = bench(m, id);
+      const pool = state.pool[id];
+      expect(applyAction(state, m.id, { type: 'ritualOffer', unit: u.uid }).ok).toBe(true);
+      expect(owned(m, id)).toEqual([]);
+      expect(state.pool[id]).toBe(pool + 1);
+    }
+    expect(m.ritual!.charges).toBe(0);
+    expect(ritualLeft(m)).toEqual([two]);
+    const last = bench(m, two, 2); // a 2-star counts too, all 3 copies back to the pool
+    const pool = state.pool[two];
+    expect(applyAction(state, m.id, { type: 'ritualOffer', unit: last.uid }).ok).toBe(true);
+    expect(state.pool[two]).toBe(pool + 3);
+    expect(m.ritual!.charges).toBe(1);
+    // The ritual is over: no more offerings.
+    const again = bench(m, one);
+    expect(applyAction(state, m.id, { type: 'ritualOffer', unit: again.uid }).ok).toBe(false);
+  });
+
+  test('the charge: 2 copies from nothing; a lone 1-star 5-gold hero goes 2-star at once; selling returns nothing to the pool', () => {
+    const { state, m } = moscowGame();
+    const five = UNITS.find((u) => u.tier === 5 && u.shop !== false && !u.piece && (u.mergeSize ?? 3) === 3)!;
+    const u = bench(m, five.id);
+    expect(applyAction(state, m.id, { type: 'ritualCopy', unit: u.uid }).ok).toBe(false); // no charge yet
+    m.ritual!.charges = 1;
+    m.bench.fill(null);
+    m.bench[0] = u; // only the hero, and a full bench but for it: the copies still fit (one lands, one merges)
+    for (let i = 1; i < m.bench.length; i++) m.bench[i] = { uid: ++uid, defId: 'cici', star: 1 };
+    m.bench[m.bench.length - 1] = null;
+    m.board = m.board.map(() => ({ uid: ++uid, defId: 'cici', star: 2 as const }));
+    const pool = state.pool[five.id];
+    expect(applyAction(state, m.id, { type: 'ritualCopy', unit: u.uid }).ok).toBe(true);
+    expect(owned(m, five.id)).toEqual([2]);
+    expect(state.pool[five.id]).toBe(pool); // the pool untouched
+    expect(m.ritual!.charges).toBe(0);
+    expect(m.ritual!.last).toBe(five.id);
+    // Sold: 3 copies' gold, but only the 1 real copy back to the pool.
+    const at = m.bench.findIndex((x) => x?.defId === five.id);
+    expect(applyAction(state, m.id, { type: 'sell', from: { area: 'bench', index: at } }).ok).toBe(true);
+    expect(state.pool[five.id]).toBe(pool + 1);
+  });
+
+  test("the charge won't go where the copies have no room", () => {
+    const { state, m } = moscowGame();
+    m.ritual!.charges = 1;
+    const two = UNITS.find((u) => u.tier === 2 && u.shop !== false && !u.piece)!;
+    m.board = m.board.map(() => ({ uid: ++uid, defId: 'cici', star: 2 as const }));
+    m.bench = m.bench.map(() => ({ uid: ++uid, defId: 'cici', star: 2 as const }));
+    m.bench[0] = { uid: ++uid, defId: two.id, star: 2 }; // a 2-star: both copies need a slot, there are none
+    expect(applyAction(state, m.id, { type: 'ritualCopy', unit: m.bench[0].uid }).ok).toBe(false);
+    expect(m.ritual!.charges).toBe(1);
+  });
+
+  test('his card: 5 gold and a 1-gold hero now, then a 2, 3, 4 and 5-gold hero over the next rounds, on anyone', () => {
+    const { state, m, o } = moscowGame();
+    for (const p of [m, o]) {
+      p.cardOffer = ['moscow'];
+      const gold = p.gold;
+      expect(applyAction(state, p.id, { type: 'pickCard', card: 'moscow' }).ok).toBe(true);
+      expect(p.gold - gold).toBe(MOSCOW.cardGold);
+    }
+    // One more each round start, one cost up, until all five are given.
+    expect(o.ladder!.given).toBe(1);
+    expect(UNIT_BY_ID[o.ladder!.last!].tier).toBe(1);
+    for (let k = 2; k <= 6; k++) {
+      for (const p of state.players) p.hp = 100;
+      resolveCombat(state);
+      startRound(state);
+      expect(o.ladder!.given).toBe(Math.min(k, 5));
+      if (k <= 5) {
+        expect(UNIT_BY_ID[o.ladder!.last!].tier as number).toBe(MOSCOW.card.tiers[k - 1]);
+      }
+    }
+    expect(o.ladder!.given).toBe(5);
+    expect(m.ladder!.given).toBe(5);
   });
 });

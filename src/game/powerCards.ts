@@ -7,8 +7,9 @@ import { drawFromTier } from './shop';
 import { nextFloat, nextInt, shuffle } from './rng';
 import { enhanceItem, EQUIPMENT, ITEMS } from './items';
 import type { StatMod } from './stats';
-import { TRAITS } from './traits';
-import type { GameState, Player, PowerTier, Star } from './types';
+import { orbTraits, TRAITS } from './traits';
+import type { GameState, Player, PowerDeal, PowerOffer, PowerTier, Star } from './types';
+import { openTreasure, raisedTier } from './treasure';
 import { JOHNNIE_FACTIONS, JOHNNIE_ROLES, turretId, UNIT_BY_ID, UNITS } from './units';
 
 // Power cards: picked on POWER_CARD_ROUNDS, at the tier the match rolled for that round (blue I, purple II,
@@ -1062,27 +1063,57 @@ export const powerPool = (tier: PowerTier, p?: Player): string[] =>
   );
 
 // A power card round's offer. No time limit: it waits until picked, even rounds later, and a game that ends first
-// gives nothing. One still waiting when the next round comes queues that round's tier behind it; its cards are
-// drawn once the earlier pick is made (so never one already held).
+// gives nothing. One still waiting when the next round comes queues that round behind it; its cards are drawn
+// once the earlier pick is made (so never one already held).
+// Zhu Yong raises the round's tier (and pays a treasure for each tier past gold) as it's offered.
 export function offerPowerCards(state: GameState, p: Player): void {
-  const tier = powerTierAt(state, state.round);
-  if (!tier) return;
-  if (p.powerOffer) (p.powerQueue ??= []).push(tier);
-  else dealPowerOffer(state, p, tier);
+  const base = powerTierAt(state, state.round);
+  if (!base) return;
+  const { tier, from, treasures } = raisedTier(p, base);
+  for (let k = 0; k < treasures; k++) openTreasure(state, p);
+  const deal: PowerDeal = { tier, round: state.round, ...(from && { from }) };
+  if (p.powerOffer) (p.powerQueue ??= []).push(deal);
+  else dealPowerOffer(state, p, deal);
 }
 
-function dealPowerOffer(state: GameState, p: Player, tier: PowerTier): void {
-  p.powerOffer = { tier, cards: shuffle(state, powerPool(tier, p)).slice(0, CARD_OFFER_SIZE), rerolls: 0 };
+// A round's deck at a tier: every card of the tier, shuffled once, shared by every player. Offers and rerolls
+// draw from the top, so everyone at the tier is shown the same cards in the same order (skipping the ones
+// they can't take).
+function powerDeck(state: GameState, round: number, tier: PowerTier): string[] {
+  return ((state.powerDecks ??= {})[`${round}:${tier}`] ??= shuffle(state, powerPool(tier)));
 }
 
-// Swaps one offered power card for another not on offer. Each slot gets one reroll.
+// The next card in the offer's deck this player can take and hasn't been shown in this offer, if any.
+function nextPowerCard(state: GameState, p: Player, offer: PowerOffer): string | undefined {
+  const seen = offer.seen ?? offer.cards;
+  const can = new Set(powerPool(offer.tier, p));
+  return powerDeck(state, offer.round ?? state.round, offer.tier).find((id) => can.has(id) && !seen.includes(id));
+}
+
+function dealPowerOffer(state: GameState, p: Player, deal: PowerDeal): void {
+  const offer: PowerOffer = { ...deal, cards: [], rerolls: 0, seen: [] };
+  for (let k = 0; k < CARD_OFFER_SIZE; k++) {
+    const id = nextPowerCard(state, p, offer);
+    if (!id) break;
+    offer.cards.push(id);
+    offer.seen!.push(id);
+  }
+  p.powerOffer = offer;
+}
+
+// Whether a reroll has a card left to bring (one not shown in this offer yet).
+export const canRerollPower = (state: GameState, p: Player): boolean => !!p.powerOffer && nextPowerCard(state, p, p.powerOffer) !== undefined;
+
+// Swaps one offered power card for the next in the deck. Each slot gets one reroll (shared). A card once
+// shown never comes back in this offer.
 export function rerollPowerCard(state: GameState, p: Player, slot: number): string | null {
   const offer = p.powerOffer;
   if (!offer?.cards[slot]) return 'No card there';
   if (offer.rerolls >= offer.cards.length) return 'No rerolls left';
-  const pool = powerPool(offer.tier, p).filter((id) => !offer.cards.includes(id));
-  if (pool.length === 0) return 'No other cards left';
-  offer.cards[slot] = pool[nextInt(state, pool.length)];
+  const next = nextPowerCard(state, p, offer);
+  if (!next) return 'No other cards left';
+  (offer.seen ??= [...offer.cards]).push(next);
+  offer.cards[slot] = next;
   offer.rerolls++;
   return null;
 }
@@ -1106,7 +1137,7 @@ function gainPowerCard(state: GameState, p: Player, id: string, tier: PowerTier)
   const orbChoices = POWER_CARDS[id].factionOrbChoices?.[tier];
   if (orbChoices) {
     // Factions and roles in one pile, so any one of them is less likely to come up.
-    const factions = shuffle(state, Object.values(TRAITS).filter((t) => t.kind === 'faction' || t.kind === 'role').map((t) => t.id)).slice(0, orbChoices);
+    const factions = shuffle(state, orbTraits()).slice(0, orbChoices);
     if (factions.length === 1) giveFactionOrb(state, p, factions[0]);
     else p.factionOrbOffer = factions;
   }
@@ -1132,7 +1163,7 @@ function gainPowerCard(state: GameState, p: Player, id: string, tier: PowerTier)
   }
   const legacy = POWER_CARDS[id].legacy?.[tier];
   if (legacy) {
-    const factions = Object.values(TRAITS).filter((t) => t.kind === 'faction').map((t) => t.id);
+    const factions = orbTraits('faction');
     const trait = factions[nextInt(state, factions.length)];
     giveFactionOrb(state, p, trait);
     for (let i = 0; i < legacy; i++) {
@@ -1184,7 +1215,7 @@ function gainPowerCard(state: GameState, p: Player, id: string, tier: PowerTier)
   if (turrets) deliverTurrets(state, p);
   const fortune = c.fortune?.[tier];
   if (fortune) (p.fortunes ??= []).push({ round: state.round + fortune, shield: c.pickShield?.[tier] ?? 0 });
-  if (POWER_CARDS[id].freeBuy?.[tier]) p.freeBuy = true; // Opening Promotion: starting with this round
+  if (POWER_CARDS[id].freeBuy?.[tier]) p.freeBuy = (p.freeBuy ?? 0) + 1; // Opening Promotion: starting with this round
   for (const more of POWER_CARDS[id].pickItems?.[tier] ?? []) p.items.push({ uid: state.nextUid++, id: more, tier: 1, holder: null });
   const cap = POWER_CARDS[id].levelCap?.[tier];
   if (cap) {
@@ -1339,7 +1370,7 @@ export const fortifyOf = (p: Player): number =>
 export const starGiftOf = (p: Player): boolean => (p.powerCards ?? []).some((c) => POWER_CARDS[c.id].starGift?.[c.tier]);
 
 // An Equipment Chest, opened now unless another offer is up (then it waits its turn).
-function giveChest(state: GameState, p: Player): void {
+export function giveChest(state: GameState, p: Player): void {
   (p.chests ??= { kills: 0, earned: 0, waiting: 0 }).waiting++;
   openChest(state, p);
 }
@@ -1596,7 +1627,7 @@ export const antiHealOf = (p: Player): number =>
   Math.min(1, (p.powerCards ?? []).reduce((n, c) => n + (POWER_CARDS[c.id].antiHeal?.[c.tier] ?? 0), 0));
 
 // Prime Selection, Legacy of Valor, badges: a faction or role orb (a Mist orb) to the inventory, to put on a hero like an item.
-function giveFactionOrb(state: GameState, p: Player, trait: string): void {
+export function giveFactionOrb(state: GameState, p: Player, trait: string): void {
   (p.mistOrbs ??= []).push({ uid: state.nextUid++, trait, holder: null });
 }
 

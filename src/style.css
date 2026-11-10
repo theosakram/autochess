@@ -66,6 +66,8 @@ kbd {
 .hud-stat > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .hud-stat span small { color: var(--muted); font-size: 12px; }
 .hud-stat small.warn { color: #ffb04d; font-weight: 600; }
+/* More heroes on the board than may fight. */
+.hud-stat b.over { color: #f85149; }
 .xp-bar, .hp-bar { display: inline-block; width: 72px; height: 8px; border-radius: 4px; background: var(--cell); overflow: hidden; }
 .xp-bar span, .hp-bar span { display: block; height: 100%; }
 .xp-bar span { background: #7c6cf0; }
@@ -262,6 +264,7 @@ main { min-width: 0; min-height: 0; }
 .dock-gold small { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 .dock-icons { display: grid; flex: 1; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.dock-icons:has(.full-house) { grid-template-columns: repeat(3, 1fr); } /* Harley: two more buttons, two rows of three */
 /* Level up / reroll / lock: a tinted icon over its cost, key hint in the corner. */
 .dock-icon {
   --tint: #9aa0b2;
@@ -355,6 +358,29 @@ main { min-width: 0; min-height: 0; }
 
 .shop-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .shop-cards.locked { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+/* Moscow: the Shadow Altar's named heroes in a row, offered ones dimmed and ticked. */
+.ritual-slots { display: flex; gap: 6px; margin: 4px 0 6px; }
+.ritual-slot { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px; border: 1px dashed #6b5a8a; border-radius: 6px; font-size: 11px; color: var(--muted); }
+.ritual-slot.done { border-style: solid; border-color: #4caf50; opacity: 0.6; color: #4caf50; }
+/* Harley: a Full House button per power, lit while it has a charge. */
+.dock-icon.full-house .full-house-icon { font-size: 18px; line-height: 1; }
+.dock-icon.full-house.ready { border-color: #ffc93c; box-shadow: 0 0 6px #ffc93c80; }
+/* Aurora: the shop frosts over while the round is still idle (no hero bought). Only a look. */
+.shop-cards.frozen { position: relative; border-radius: 6px; box-shadow: 0 0 0 2px #8fd3ff80, 0 0 14px #8fd3ff55, inset 0 0 18px #bfe8ff33; animation: frost-glow 3s ease-in-out infinite; }
+.shop-cards.frozen::after {
+  content: '❄️ Frozen';
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #16324a;
+  color: #bfe8ff;
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+}
+@keyframes frost-glow { 50% { box-shadow: 0 0 0 2px #bfe8ffb0, 0 0 20px #8fd3ff80, inset 0 0 24px #bfe8ff4d; } }
 .dock.fighting .shop-cards { opacity: 0.55; }
 
 .shop-card {
@@ -550,7 +576,11 @@ aside.traits {
   border-radius: 8px;
 }
 aside.traits h3, .armory h3 { grid-column: 1 / -1; margin: 2px 2px 4px; font-size: 14px; }
-.armory-stash { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--cell); }
+/* Equipment on the left (one column of icons, top to bottom), heroes on the right; each scrolls on its own. No
+   labels: icons and tooltips only. */
+.armory { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; overflow: hidden; }
+.armory-stash, .armory-heroes { min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a5060 transparent; }
+.armory-stash { padding-right: 8px; border-right: 1px solid var(--cell); }
 .traits-empty { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin: 4px 2px; }
 
 /* Icon and count only (name in the tooltip). Active in full; inactive dimmed. */
@@ -766,7 +796,11 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 
 .hud .vs b { color: #d65151; }
 
-.armory-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.armory-items { display: flex; flex-direction: column; gap: 6px; }
+.armory-items { min-width: 36px; min-height: 100%; }
+.armory-items .item-chip, .armory-items .usable-chip { position: relative; justify-content: center; width: 36px; height: 36px; padding: 0; }
+.armory-items .item-chip .item-icon, .armory-items .usable-chip .item-icon { font-size: 20px; }
+.armory-items .item-chip b, .armory-items .usable-chip b { position: absolute; right: 1px; bottom: -1px; font-size: 10px; text-shadow: 0 0 2px #000; }
 .armory {
   padding: 8px;
   background: var(--panel);
@@ -808,29 +842,31 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .magic-chip { border-color: #c77dff; }
 
 /* A deployed hero: who it is, its orb slot, its equipment slots. */
-.gear-heroes { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.gear-heroes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .gear-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 4px;
-  border-left: 3px solid var(--tier-color);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 6px;
   border-radius: 6px;
   background: var(--cell);
 }
-.gear-who { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: none; background: none; text-align: left; }
-.gear-who:hover .gear-name { color: var(--accent); }
-.gear-face { width: 32px; height: 32px; border-radius: 6px; font-size: 20px; }
-.gear-name { min-width: 0; font-size: 11px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
-.gear-name .unit-star { display: block; font-size: 10px; font-style: normal; }
-.gear-slots { display: flex; gap: 3px; }
+/* A hero card: one row, portrait (stars over its foot), orb slot, equipment slots. */
+.gear-face-btn { position: relative; flex: none; padding: 0; border: none; background: none; border-radius: 6px; }
+.gear-face-btn .gear-stars { position: absolute; left: 0; right: 0; bottom: -3px; font-size: 9px; font-style: normal; line-height: 1; text-align: center; text-shadow: 0 0 2px #000; }
+.gear-face-btn:hover { filter: brightness(1.2); }
+.gear-face { width: 100%; height: auto; aspect-ratio: 1; border-radius: 6px; font-size: 22px; }
+/* Portrait, orb slot, 3 equipment slots: five square cells that shrink with the column (36px at most), so a
+   narrow window never cuts the row off. */
+.gear-row { display: grid; grid-template-columns: repeat(5, minmax(0, 36px)); align-items: center; gap: 5px; }
+.gear-slots { display: contents; }
 .gear-slot {
   display: grid;
   flex: none;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
   border: 1px dashed #4a5060;
   border-radius: 6px;
   background: #0003;
@@ -839,9 +875,9 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 .gear-slot.taken { border-style: solid; background: var(--panel); }
 .gear-slot .item-chip { position: relative; width: 100%; height: 100%; justify-content: center; padding: 0; border-radius: 5px; }
 .gear-slot .orb-chip { border-radius: 50%; }
-.gear-slot .item-chip b { position: absolute; right: 0; bottom: -2px; font-size: 9px; text-shadow: 0 0 2px #000; }
-.gear-slot .item-chip .item-icon { font-size: 15px; }
-.magic-orb { position: relative; font-size: 15px; line-height: 1; cursor: help; }
+.gear-slot .item-chip b { position: absolute; right: 1px; bottom: -1px; font-size: 10px; text-shadow: 0 0 2px #000; }
+.gear-slot .item-chip .item-icon { font-size: 20px; }
+.magic-orb { position: relative; font-size: 20px; line-height: 1; cursor: help; }
 /* Its trait, small in the corner: the 🔮 stays the main thing, so it can't pass for a faction or role orb. */
 .magic-orb .trait-badge { position: absolute; right: -5px; bottom: -4px; font-size: 7px; }
 /* While an item or orb is on the move, the slots that can take it light up. */
@@ -935,6 +971,8 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 @media (max-width: 1500px) {
   .layout { grid-template-columns: auto minmax(0, 1fr) 250px; }
   aside.traits, .col-left .meter, .armory { width: 262px; }
+  .armory-items .item-chip, .armory-items .usable-chip { width: 30px; height: 30px; }
+  .armory-items { min-width: 30px; }
   .col-left { min-width: 262px; }
   .dock { grid-template-columns: 120px minmax(0, 1fr) 110px; }
   .shop-card { gap: 6px; }
@@ -1544,6 +1582,11 @@ button.commander-tab:hover { border-color: var(--accent); }
 @keyframes box-take { from { opacity: 1; filter: none; } }
 @keyframes box-stamp { from { opacity: 0; transform: translate(-50%, -50%) rotate(-8deg) scale(1.6); } }
 .box-orb { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; font-size: 24px; background: radial-gradient(circle at 35% 30%, #ffffff40, transparent 60%), color-mix(in srgb, var(--tier-4) 45%, #1b1e27); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tier-4) 70%, transparent), 0 0 18px color-mix(in srgb, var(--tier-4) 35%, transparent); }
+/* The plus is drawn (two bars, centred), so it sits dead in the middle at any size. */
+.box-orb.capacity .plus { position: relative; width: 46%; height: 46%; }
+.box-orb.capacity .plus::before, .box-orb.capacity .plus::after { content: ''; position: absolute; inset: 0; margin: auto; border-radius: 2px; background: currentColor; }
+.box-orb.capacity .plus::before { width: 100%; height: 18%; }
+.box-orb.capacity .plus::after { width: 18%; height: 100%; }
 .box-orb.capacity { color: #d6ffe0; font-size: 28px; font-weight: 800; background: radial-gradient(circle at 35% 30%, #ffffff4d, transparent 60%), color-mix(in srgb, #3fb950 50%, #1b1e27); box-shadow: 0 0 0 2px #3fb950aa, 0 0 18px #3fb95055; }
 
 /* The action bar sticks to the bottom of the dialog. */
@@ -1591,11 +1634,12 @@ button.commander-tab:hover { border-color: var(--accent); }
   .box-round .box-cta { min-width: 0; flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .shop-cards.frozen { animation: none; }
   .box-round .box-prize, .box-round .box-cta { transition: none; }
   .box-round .box-prize.fresh, .box-round .box-prize.fresh .box-stamp, .box-dots i { animation: none; }
 }
 
-/* An inline link inside rules text that opens more detail (Freya's Special Bonus). */
+/* An inline link inside rules text that opens a glossary term's fine print (commanders/terms.ts). */
 .text-link, .dialog button.text-link {
   display: inline;
   padding: 0;
@@ -1610,7 +1654,11 @@ button.commander-tab:hover { border-color: var(--accent); }
 }
 .text-link:hover { color: #ffc93c; }
 .text-link:focus-visible { outline: 2px solid #ffc93c; outline-offset: 2px; border-radius: 2px; }
-.bonus-popup { width: min(94vw, 560px); text-align: left; }
+.term-popup { width: min(94vw, 560px); text-align: left; }
+.term-body p { margin: 0 0 10px; color: var(--muted); }
+.term-list { margin: 0 0 12px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
+.term-list li + li { margin-top: 6px; }
+.term-list li::marker { color: var(--accent); }
 .bonus-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .bonus-table td { padding: 7px 8px; border-top: 1px solid #343947; vertical-align: middle; }
 .bonus-table td:first-child { white-space: nowrap; }

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
 import { createGame, startRound } from './game';
 import { refreshShop } from './shop';
+import { syncPlayer } from './sync';
 import { SPECTRE, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -99,18 +100,42 @@ describe('Spectre', () => {
     expect(threes).toHaveLength(1);
   });
 
-  test('Spectre 2 does nothing for 3-gold Spectres; Spectre 4 does', () => {
+  test('a 3-gold Spectre two-starred at Spectre 2 waits, and pays its gift on reaching Spectre 4', () => {
     const state = newGame();
     const p = state.players[0];
     put(p, 'phove', 0);
     put(p, 'ginger', 1);
     twoStar(state, p, 'saber');
-    expect(owned(p).some((u) => u.startsWith('gourd'))).toBe(false);
+    expect(owned(p).some((u) => u.startsWith('gourd'))).toBe(false); // Spectre 2: not yet
+    expect(p.promotionsWaiting).toEqual([{ trait: 'spectre', defId: 'saber', star: 2 }]);
+    // Field the 2★ Saber (bought to the bench) and a 4th Spectre.
+    const at = p.bench.findIndex((u) => u?.defId === 'saber');
+    p.board[3] = p.bench[at];
+    p.bench[at] = null;
+    put(p, 'pacquiao', 2);
+    syncPlayer(state, p);
+    expect(owned(p).filter((u) => u === 'gourd1')).toHaveLength(1);
+    expect(p.promotionsWaiting).toBeUndefined();
+    syncPlayer(state, p);
+    expect(owned(p).filter((u) => u === 'gourd1')).toHaveLength(1); // paid once
+    // Two-starring at Spectre 4 pays right away, as before.
+    twoStar(state, p, 'pacquiao');
+    expect(owned(p).filter((u) => u === 'gourd1')).toHaveLength(2);
+    expect(owned(p).filter((u) => u.startsWith('alice'))).toEqual([]);
+  });
+
+  test('a waiting gift is dropped if the hero is sold before the level is reached', () => {
+    const state = newGame();
+    const p = state.players[0];
+    put(p, 'phove', 0);
+    put(p, 'ginger', 1);
+    twoStar(state, p, 'saber');
+    for (const slots of [p.board, p.bench]) slots.forEach((u, i) => u?.defId === 'saber' && (slots[i] = null));
     put(p, 'pacquiao', 2);
     put(p, 'gourd', 3);
-    twoStar(state, p, 'pacquiao');
-    expect(owned(p).filter((u) => u.startsWith('alice'))).toEqual([]);
-    expect(owned(p).filter((u) => u === 'gourd1')).toHaveLength(2);
+    syncPlayer(state, p);
+    expect(owned(p).filter((u) => u.startsWith('gourd'))).toEqual(['gourd1']); // only the one put down
+    expect(p.promotionsWaiting).toBeUndefined();
   });
 
   test('Spectre 6: two-starring the 5-gold unlocks Boss Alpha in this player\'s shop and gives one', () => {

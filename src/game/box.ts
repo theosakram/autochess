@@ -3,7 +3,7 @@ import { STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound } from './config';
 import { EQUIPMENT } from './items';
 import { isAlive } from './player';
 import { shuffle } from './rng';
-import { TRAITS } from './traits';
+import { orbTraits } from './traits';
 import type { Box, BoxPrize, GameState, Player, Tier } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -38,8 +38,7 @@ export function openBox(state: GameState): void {
     return defId ? [{ kind: 'hero', defId }] : [];
   });
   const orbCount = byStage(BOX.orbs, stage);
-  const traits = Object.values(TRAITS).filter((t) => t.kind === 'faction' || t.kind === 'role').map((t) => t.id);
-  const orbs = shuffle(state, traits).slice(0, orbCount).map((trait): BoxPrize => ({ kind: 'orb', trait }));
+  const orbs = shuffle(state, orbTraits()).slice(0, orbCount).map((trait): BoxPrize => ({ kind: 'orb', trait }));
   const items = shuffle(state, [...EQUIPMENT]).slice(0, BOX.slots - orbCount).map((id): BoxPrize => ({ kind: 'item', id }));
   const caps = Array.from({ length: BOX.capacity }, (): BoxPrize => ({ kind: 'capacity' }));
   // Ties on hp in random order.

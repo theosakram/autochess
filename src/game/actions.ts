@@ -8,6 +8,8 @@ import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, rerollC
 import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { cardRolls, openTrove, rollTrove } from './luckyDice';
+import { useFullHouse } from './tierShop';
+import { payLadder, ritualOffer, useRitualCopy } from './ritual';
 import { useMirror } from './mirror';
 import { DEATH_ORACLE, refreshXp, pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
 import { useDuplicator } from './duplicator';
@@ -32,6 +34,9 @@ export type Action =
   | { type: 'reroll' }
   | { type: 'levelUp' }
   | { type: 'toggleLock' }
+  | { type: 'fullHouse'; tier: number }
+  | { type: 'ritualOffer'; unit: number } // Moscow: offer a hero (uid) the Shadow Altar asks for
+  | { type: 'ritualCopy'; unit: number } // Moscow: spend the Shadow charge on a hero (uid)
   | { type: 'buy'; slot: number }
   | { type: 'sell'; from: Loc }
   | { type: 'move'; from: Loc; to: Loc }
@@ -206,6 +211,17 @@ function perform(state: GameState, p: Player, action: Action): Result {
       return OK;
     }
 
+    case 'ritualOffer':
+      return result(ritualOffer(state, p, action.unit));
+
+    case 'ritualCopy':
+      return result(useRitualCopy(state, p, action.unit));
+
+    case 'fullHouse': {
+      const why = useFullHouse(state, p, action.tier);
+      return why ? fail(why) : OK;
+    }
+
     case 'toggleLock': {
       p.shopLocked = !p.shopLocked;
       return OK;
@@ -221,29 +237,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
     }
 
     case 'buy': {
-      const { slot } = action;
-      if (!Number.isInteger(slot) || slot < 0 || slot >= SHOP_SIZE) return fail('Bad shop slot');
-      const defId = p.shop[slot];
-      if (!defId) return fail('Nothing to buy there');
-      if (isItemCard(defId)) return upgradeItem(state, p, slot);
-      const cost = shopPrice(p, slot);
-      if (p.gold < cost) return fail('Not enough gold');
-      // Opening Promotion: this was the round's free buy (unless Guiness had made the hero free anyway).
-      if (p.freeBuy && p.freeSlot !== slot) p.freeBuy = undefined;
-      // Fast Promotion: it comes 2★ (bench, else the board).
-      if (p.promoteNext) {
-        if (!p.bench.includes(null) && !p.board.includes(null)) return fail('No room');
-        p.gold -= cost;
-        p.shop[slot] = null;
-        if (p.freeSlot === slot) p.freeSlot = null;
-        p.promoteNext = p.promoteNext - 1 || undefined;
-        giveTwoStar(state, p, defId, 1);
-        return OK;
-      }
-      if (!canClaim(p, defId)) return fail('Bench is full');
-      p.gold -= cost;
-      claimShopSlot(state, p, slot);
-      return OK;
+      return buyAt(state, p, action.slot);
     }
 
     case 'sell': {
@@ -315,6 +309,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       payCard(state, p, action.card);
       openChest(state, p);
       cardRolls(state, p);
+      payLadder(state, p); // Moscow's card: its first hero
       return OK;
     }
 
@@ -421,6 +416,34 @@ function perform(state: GameState, p: Player, action: Action): Result {
 
 // Upgrade cards are free: they raise the matching owned item one tier, up to the shop's cap. A hero takes
 // the card's slot, so the shop doesn't come up a slot short.
+// Buys shop slot `slot`: a hero (or an item card's upgrade, which doesn't count as buying for Aurora).
+function buyAt(state: GameState, p: Player, slot: number): Result {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= SHOP_SIZE) return fail('Bad shop slot');
+  const defId = p.shop[slot];
+  if (!defId) return fail('Nothing to buy there');
+  if (isItemCard(defId)) return upgradeItem(state, p, slot);
+  const cost = shopPrice(p, slot);
+  if (p.gold < cost) return fail('Not enough gold');
+  // A free buy (Opening Promotion, Harley) used up, unless Guiness had made the hero free anyway.
+  if (p.freeBuy && p.freeSlot !== slot) p.freeBuy = p.freeBuy - 1 || undefined;
+  // Fast Promotion: it comes 2★ (bench, else the board).
+  if (p.promoteNext) {
+    if (!p.bench.includes(null) && !p.board.includes(null)) return fail('No room');
+    p.gold -= cost;
+    p.shop[slot] = null;
+    if (p.freeSlot === slot) p.freeSlot = null;
+    p.promoteNext = p.promoteNext - 1 || undefined;
+    giveTwoStar(state, p, defId, 1);
+    p.boughtRound = state.round;
+    return OK;
+  }
+  if (!canClaim(p, defId)) return fail('Bench is full');
+  p.gold -= cost;
+  claimShopSlot(state, p, slot);
+  p.boughtRound = state.round; // Aurora: a round with a hero bought (item cards don't count)
+  return OK;
+}
+
 function upgradeItem(state: GameState, p: Player, slot: number): Result {
   const itemId = cardItem(p.shop[slot]!);
   const item = p.items.find((i) => baseItemOf(i.id) === itemId); // its enhanced version too

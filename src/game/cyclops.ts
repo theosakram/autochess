@@ -14,13 +14,26 @@ import { UNIT_BY_ID, UNITS, unitPrice } from './units';
 export function checkRally(state: GameState, p: Player): void {
   const rally = powersOf(p).rally;
   if (!rally || p.rallied || p.hp <= 0 || p.hp > rally.hp) return;
+  const trait = biggestTrait(state, p);
+  const heroes = trait ? traitHeroes(state, p, trait, rally.heroes) : [];
+  (p.chests ??= { kills: 0, earned: 0, waiting: 0 }).waiting += rally.chests;
+  p.rallied = { trait, heroes };
+}
+
+// The player's biggest trait: the most fielded heroes (ties at random), or null with none fielded.
+export function biggestTrait(state: GameState, p: Player): string | null {
   const counts = playerTraitCounts(p);
   const top = Math.max(0, ...Object.values(counts));
   const best = Object.keys(counts).filter((t) => counts[t] === top);
-  const trait = top > 0 ? best[nextInt(state, best.length)] : null;
+  return top > 0 ? best[nextInt(state, best.length)] : null;
+}
+
+// Up to `count` random heroes of `trait` from the pool, at costs the player's shop can roll now, waiting for
+// bench room like gifts. Returns the ones given (fewer if the pool runs dry).
+export function traitHeroes(state: GameState, p: Player, trait: string, count: number): string[] {
   const odds = SHOP_ODDS[p.level - 1];
   const heroes: string[] = [];
-  for (let k = 0; trait && k < rally.heroes; k++) {
+  for (let k = 0; k < count; k++) {
     const open = UNITS.filter((u) => u.shop !== false && !u.locked && u.traits.includes(trait) && (odds[u.tier - 1] ?? 0) > 0 && (state.pool[u.id] ?? 0) > 0);
     if (!open.length) break;
     const id = open[nextInt(state, open.length)].id;
@@ -28,8 +41,7 @@ export function checkRally(state: GameState, p: Player): void {
     heroes.push(id);
   }
   (p.gifts ??= []).push(...heroes);
-  (p.chests ??= { kills: 0, earned: 0, waiting: 0 }).waiting += rally.chests;
-  p.rallied = { trait, heroes };
+  return heroes;
 }
 
 // What a player's heroes are worth: every copy (board and bench) at its price.

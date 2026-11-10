@@ -51,6 +51,14 @@ export { WEAPON_MASTER } from './weaponMaster';
 // Every trait in the game. A new trait is a new module plus one entry here.
 export const TRAITS: Record<string, TraitDef> = Object.fromEntries([stargazer, hunter, dragonAltar, skybringer, deadeye, phasewarper, storyweaver, scavenger, gustiwana, mooneater, cultOfFire, mage, astral, defender, weaponMaster, fighter, dauntless, necromancer, mistbender, spectre].map((t) => [t.id, t]));
 
+// The factions and roles a random orb reward can be (Box round, Prime Selection, Legacy of Valor, Mist Shop random
+// orbs and the prizes built on them, Zhu Yong's treasure): only those that reach a 6 breakpoint, so never a small
+// trait like Phasewarper, Scavenger, Storyweaver, Mooneater or Mistbender. `kind`: just factions, or just roles.
+export const orbTraits = (kind?: 'faction' | 'role'): string[] =>
+  Object.values(TRAITS)
+    .filter((t) => (kind ? t.kind === kind : t.kind === 'faction' || t.kind === 'role') && t.breakpoints.includes(6))
+    .map((t) => t.id);
+
 // Trait id -> active level (1 = first breakpoint). Inactive traits are absent.
 export type TraitLevels = Record<string, number>;
 

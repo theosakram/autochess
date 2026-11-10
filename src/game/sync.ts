@@ -13,6 +13,7 @@ import { playerTraits, TRAITS } from './traits';
 import type { GameState, Player } from './types';
 import type { StackReward } from './traits/types';
 import { UNIT_BY_ID } from './units';
+import { syncRitual } from './ritual';
 
 // Run after anything that changes a player's units, and at round start: items, counters, rewards.
 export function syncPlayer(state: GameState, p: Player): void {
@@ -21,6 +22,7 @@ export function syncPlayer(state: GameState, p: Player): void {
   syncMirrorBar(p);
   payTwilight(p);
   syncMarks(p);
+  syncRitual(state, p); // Moscow: the altar names its heroes
   syncItems(state, p);
   checkChestTriggers(state, p); // Counter Action, Apex Weaponry, Trust Fund, Neon Zenith
   syncRift(state, p); // Emergency Rift
@@ -42,7 +44,9 @@ export function syncPlayer(state: GameState, p: Player): void {
   syncMistOrbs(p);
 }
 
-// Lets active traits react to this player's merges (free units, unlocks), then hands out gifts.
+// Lets traits react to this player's merges (free units, unlocks), then hands out gifts. A merge the trait
+// would reward only at a higher level than it has now waits (promotionsWaiting) and is paid once the trait gets
+// there, if the hero is still owned at that star: two-star a 3-gold Spectre at 2 Spectres, reach 4, get the gift.
 // A gift can complete another merge, so this runs until nothing new happens.
 export function handlePromotions(state: GameState, p: Player): void {
   for (let guard = 0; guard < 50; guard++) {
@@ -53,22 +57,43 @@ export function handlePromotions(state: GameState, p: Player): void {
       if (star === 2) onTwoStar(p);
       if (star === 3 && starGiftOf(p)) giveTwoStar(state, p, defId);
       allyCall(state, p, defId); // Ally's Call
-      const def = UNIT_BY_ID[defId];
-      for (const [id, level] of Object.entries(levels)) {
-        if (!def.traits.includes(id)) continue;
-        const out = TRAITS[id].onPromote?.(level, def, star);
-        if (out?.unlock && !(p.unlocked ??= []).includes(out.unlock)) p.unlocked.push(out.unlock);
-        const options = (out?.gift ?? []).filter((g) => (state.pool[g] ?? 0) > 0);
-        if (options.length) {
-          const gift = options[nextInt(state, options.length)];
-          state.pool[gift]--;
-          (p.gifts ??= []).push(gift);
-        }
+      for (const id of UNIT_BY_ID[defId].traits) {
+        const trait = TRAITS[id];
+        if (!trait?.onPromote) continue;
+        const out = trait.onPromote(levels[id] ?? 0, UNIT_BY_ID[defId], star);
+        if (out) payPromotion(state, p, out);
+        else if (trait.onPromote(trait.breakpoints.length, UNIT_BY_ID[defId], star)) (p.promotionsWaiting ??= []).push({ trait: id, defId, star });
       }
     }
+    payWaiting(state, p, levels);
     deliverGifts(state, p);
     if (!p.promotions?.length) return;
   }
+}
+
+// What a trait hands out for a merge: an unlock, and one of its gifts still in the pool.
+function payPromotion(state: GameState, p: Player, out: { gift?: string[]; unlock?: string }): void {
+  if (out.unlock && !(p.unlocked ??= []).includes(out.unlock)) p.unlocked.push(out.unlock);
+  const options = (out.gift ?? []).filter((g) => (state.pool[g] ?? 0) > 0);
+  if (!options.length) return;
+  const gift = options[nextInt(state, options.length)];
+  state.pool[gift]--;
+  (p.gifts ??= []).push(gift);
+}
+
+// Waiting merges whose trait has now reached a level that rewards them. One whose hero is gone (sold, or no
+// copy left at that star) is dropped.
+function payWaiting(state: GameState, p: Player, levels: Record<string, number>): void {
+  if (!p.promotionsWaiting?.length) return;
+  const owned = (defId: string, star: number) => [...p.board, ...p.bench].some((u) => u?.defId === defId && u.star >= star);
+  p.promotionsWaiting = p.promotionsWaiting.filter(({ trait, defId, star }) => {
+    if (!owned(defId, star)) return false;
+    const out = TRAITS[trait].onPromote!(levels[trait] ?? 0, UNIT_BY_ID[defId], star);
+    if (!out) return true;
+    payPromotion(state, p, out);
+    return false;
+  });
+  if (!p.promotionsWaiting.length) p.promotionsWaiting = undefined;
 }
 
 // Waiting free units go to the bench while there's room, merging as they land.

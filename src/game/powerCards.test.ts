@@ -32,6 +32,65 @@ test('power card rerolls: one per card, shared, so one card can take them all', 
   expect(a.powerOffer.cards[0]).toBe(pinned);
 });
 
+describe('power card offers', () => {
+  const SEATS = [0, 1, 2, 3].map((i) => ({ id: `p${i}`, name: `P${i}`, isBot: false, commander: 'lukas' }));
+  function atPowerRound(): GameState {
+    const state = createGame(11, SEATS);
+    while (state.round < POWER_CARD_ROUNDS[0]) {
+      resolveCombat(state);
+      startRound(state);
+    }
+    return state;
+  }
+
+  test('every player at the tier is offered the same cards', () => {
+    const state = atPowerRound();
+    const [first, ...rest] = state.players;
+    expect(first.powerOffer!.cards).toHaveLength(2);
+    for (const p of rest) expect(p.powerOffer!.cards).toEqual(first.powerOffer!.cards);
+  });
+
+  test('rerolls: a card once shown never comes back, and rerolls follow the same deck for everyone', () => {
+    const state = atPowerRound();
+    const [a, b] = state.players;
+    const shown = new Set(a.powerOffer!.cards);
+    for (let k = 0; k < 2; k++) {
+      expect(applyAction(state, a.id, { type: 'rerollPower', slot: 0 }).ok).toBe(true);
+      expect(shown.has(a.powerOffer!.cards[0])).toBe(false); // never one shown before, in either slot
+      shown.add(a.powerOffer!.cards[0]);
+    }
+    // B rerolling the same way sees the same cards.
+    applyAction(state, b.id, { type: 'rerollPower', slot: 0 });
+    applyAction(state, b.id, { type: 'rerollPower', slot: 0 });
+    expect(b.powerOffer!.cards).toEqual(a.powerOffer!.cards);
+  });
+
+  test('the deck skips a card the player already holds, and runs dry with no repeats', () => {
+    const state = atPowerRound();
+    const [a, b] = state.players;
+    const [top, second] = b.powerOffer!.cards;
+    // A, holding the deck's top card, is dealt fresh: it's skipped, the rest of the order kept.
+    a.powerCards = [{ id: top, tier: 'blue' }];
+    a.powerOffer = undefined;
+    a.powerQueue = [{ tier: b.powerOffer!.tier, round: POWER_CARD_ROUNDS[0] }];
+    applyAction(state, b.id, { type: 'pickPower', card: top });
+    // Deal A's queued round through a pick-free path: drop in an offer and pick from it.
+    a.powerOffer = { tier: 'blue', cards: ['payday'], rerolls: 0, round: -1 };
+    applyAction(state, a.id, { type: 'pickPower', card: 'payday' });
+    expect(a.powerOffer!.cards).not.toContain(top);
+    expect(a.powerOffer!.cards[0]).toBe(second); // the deck's next card
+    // Small deck: rerolls stop once every card has been shown.
+    const offer = a.powerOffer!;
+    offer.rerolls = -100; // unlimited, to drain it
+    const seen = new Set(offer.cards);
+    while (applyAction(state, a.id, { type: 'rerollPower', slot: 0 }).ok) {
+      expect(seen.has(offer.cards[0])).toBe(false);
+      seen.add(offer.cards[0]);
+    }
+    expect(seen.size).toBe(powerPool(offer.tier, a).length); // every card it can take, each once
+  });
+});
+
 describe('Magic Immersion', () => {
   // Mana after the first basic attack, for a hero with or without an item, with or without the card.
   const firstAttackMana = (item: boolean, tier: PowerTier | null) => {
@@ -78,7 +137,7 @@ describe('Magic Immersion', () => {
       expect(a.powerCards ?? []).toEqual([]);
     }
     expect(a.powerOffer).toBe(offer);
-    expect(a.powerQueue).toEqual([state.powerTiers![1]]);
+    expect(a.powerQueue).toEqual([{ tier: state.powerTiers![1], round: POWER_CARD_ROUNDS[1] }]);
     const first = offer!.cards[1];
     expect(applyAction(state, a.id, { type: 'pickPower', card: first }).ok).toBe(true);
     expect(a.powerCards).toEqual([{ id: first, tier: state.powerTiers![0] }]);
@@ -1659,7 +1718,7 @@ describe('gold cards', () => {
     // Back next round.
     for (const pl of state.players) pl.powerOffer = undefined;
     startRound(state);
-    expect(a.freeBuy).toBe(true);
+    expect(a.freeBuy).toBe(1);
   });
 
   test('Vault Upgrade: interest up to 8 (at 40 banked), and 18 gold', () => {

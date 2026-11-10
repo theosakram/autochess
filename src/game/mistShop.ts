@@ -1,7 +1,7 @@
 import { canClaim, gainUnit, type Result } from './actions';
 import { MIRROR } from './mirror';
 import { nextFloat, nextInt } from './rng';
-import { TRAITS } from './traits';
+import { orbTraits } from './traits';
 import type { GameState, Player } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -68,7 +68,6 @@ const randomUnit = (tier: 4 | 5, price: number): MistWare => ({
   },
 });
 
-const traitIds = (kind: 'faction' | 'role') => Object.values(TRAITS).filter((t) => t.kind === kind).map((t) => t.id);
 const orb = (kind: 'faction' | 'role', pick: boolean): MistWare => ({
   id: `${pick ? 'pick' : 'random'}${kind}orb`,
   name: pick ? `${kind === 'faction' ? 'Faction' : 'Role'} Orb` : `Random ${kind === 'faction' ? 'Faction' : 'Role'} Orb`,
@@ -80,7 +79,8 @@ const orb = (kind: 'faction' | 'role', pick: boolean): MistWare => ({
   weight: pick ? 0.5 : 1,
   ...(pick && { choose: kind }),
   apply(state, p, choice) {
-    const options = traitIds(kind);
+    // Random or chosen, only traits that reach 6.
+    const options = orbTraits(kind);
     const trait = pick ? choice : options[nextInt(state, options.length)];
     if (!trait || !options.includes(trait)) return `Pick a ${kind}`;
     (p.mistOrbs ??= []).push({ uid: state.nextUid++, trait, holder: null });

@@ -1,4 +1,5 @@
 import { roundLabel } from '../config';
+import { list, term } from './terms';
 import type { AltarPower, CommanderDef } from './types';
 
 // Tune with `bun run balance`.
@@ -11,25 +12,45 @@ export const DYROTH = {
 const a = DYROTH.altar;
 const b = DYROTH.secondAltar;
 
+const ABYSS = term('abyssAltar', `${b.icon} ${b.name}`);
+
 export const dyroth: CommanderDef = {
   id: 'dyroth',
   name: 'Dyroth',
   icon: '👿',
   title: 'Lord of the Greater Demon Altar',
   desc:
-    `A ${a.icon} ${a.name} opens beside your board. From round ${roundLabel(a.first)} it earns a use every ${a.every} rounds (unused ones stack). ` +
-    `Offer it a 1-star hero: it's gone, and you get two 1-star heroes of the next cost up, one sharing its faction and one sharing its role, plus ${a.xp} XP.`,
+    `A ${term('demonAltar', `${a.icon} ${a.name}`)} opens beside your board, earning a use every ${a.every} rounds. ` +
+    `Offer it a 1-star hero for two heroes of the next cost up, plus ${a.xp} XP.`,
   innate: { altar: DYROTH.altar },
   card: {
     name: b.name,
     icon: b.icon,
-    selfDesc:
-      `A second altar, the ${b.icon} ${b.name}, opens beside the first. It earns a use now and every ${b.every} rounds after (unused ones stack): ` +
-      `offer it a 1-star hero for a random 1-star hero of the next cost up, plus ${b.xp} XP.`,
+    selfDesc: `A second altar, the ${ABYSS}, opens beside the first: offer it a 1-star hero for a random one of the next cost up.`,
     self: { secondAltar: DYROTH.secondAltar },
-    otherDesc:
-      `The ${b.icon} ${b.name} opens beside your board. It earns a use now and every ${b.every} rounds after (unused ones stack): ` +
-      `offer it a 1-star hero for a random 1-star hero of the next cost up, plus ${b.xp} XP.`,
+    otherDesc: `The ${ABYSS} opens beside your board: offer it a 1-star hero for a random one of the next cost up.`,
     other: { altar: DYROTH.secondAltar },
+  },
+  terms: {
+    demonAltar: {
+      icon: a.icon,
+      title: a.name,
+      body: list(
+        `Earns its first use on round ${roundLabel(a.first)}, then one every ${a.every} rounds. Unused uses stack.`,
+        "Offer it a 1-star hero: that hero is gone.",
+        'You get two 1-star heroes of the next cost up: one sharing its faction, one sharing its role.',
+        `Plus ${a.xp} XP.`,
+      ),
+    },
+    abyssAltar: {
+      icon: b.icon,
+      title: b.name,
+      body: list(
+        `Earns a use as soon as you get it, then one every ${b.every} rounds. Unused uses stack.`,
+        "Offer it a 1-star hero: that hero is gone.",
+        'You get a random 1-star hero of the next cost up.',
+        `Plus ${b.xp} XP.`,
+      ),
+    },
   },
 };

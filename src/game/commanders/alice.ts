@@ -1,5 +1,6 @@
 import { roundAt, roundLabel } from '../config';
 import { pct } from '../traits/format';
+import { list, term } from './terms';
 import type { BloodPower, CommanderDef } from './types';
 
 // Tune with `bun run balance`.
@@ -16,15 +17,28 @@ export const alice: CommanderDef = {
   icon: '🧛',
   title: 'The Crimson Countess',
   desc:
-    `You get a Blood Pact on rounds ${b.rounds.map(roundLabel).join(', ')} (unused ones wait). Use it on a hero: you get one more copy of it, ` +
-    'and from then on its copies pile into that one hero instead of merging three at a time, every copy raising its stats ' +
-    `(1 copy 1 star, 3 copies 2 stars, 9 copies 3 stars). Past 3 stars it takes 4 more copies, each +${pct(b.perCopy)} attack, magic attack and max HP ` +
-    '(13 copies: 4 red stars). Each Pact goes on a different hero.',
+    `You get a ${term('bloodPact', 'Blood Pact')} on rounds ${b.rounds.map(roundLabel).join(', ')} (unused ones wait). Use it on a hero: ` +
+    'you get one more copy, and from then on its copies pile into that one hero, up to 4 red stars.',
   innate: { bloodPact: ALICE.bloodPact },
   card: {
     name: 'Blood Feast',
     icon: '🍷',
     selfDesc: `Gain ${ALICE.card.xp} XP now. Every hero under your Blood Pact gets +${pct(ALICE.card.hybridAtk)} attack and magic attack.`,
     self: { pickXp: ALICE.card.xp, bloodAtk: ALICE.card.hybridAtk },
+  },
+  terms: {
+    bloodPact: {
+      icon: '🩸',
+      title: 'Blood Pact',
+      body:
+        list(
+          'Use it on a hero: you get one more copy of it.',
+          'From then on its copies pile into that one hero instead of merging three at a time, every copy raising its stats.',
+          `Past 3 stars, each of 4 more copies gives +${pct(b.perCopy)} attack, magic attack and max HP.`,
+          'Each Pact goes on a different hero.',
+        ) +
+        '<table class="bonus-table"><tbody><tr><td>Copies</td><td class="bonus-val">1</td><td class="bonus-val">3</td><td class="bonus-val">9</td><td class="bonus-val">13</td></tr>' +
+        '<tr><td>Stars</td><td>1★</td><td>2★</td><td>3★</td><td>4 red ★</td></tr></tbody></table>',
+    },
   },
 };

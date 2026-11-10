@@ -3,6 +3,7 @@ import { gloveBlock } from './gloves';
 import { interestCapOf } from './powerCards';
 import { bloodBlock } from './blood';
 import { claimable } from './freya';
+import { ritualCopyBlock, ritualOfferBlock } from './ritual';
 import { blessBlock } from './twilight';
 import { applyAction } from './actions';
 import { ALTAR_KEYS, altarStatus, offerBlock } from './altar';
@@ -42,6 +43,8 @@ function easyBot(state: GameState, p: Player): void {
   playAltars(state, p);
   playTwilight(state, p);
   playBlood(state, p);
+  playHarley(state, p);
+  playRitual(state, p);
 
   for (let i = 0; i < p.shop.length; i++) {
     const id = p.shop[i];
@@ -120,6 +123,24 @@ export function useOrb(state: GameState, p: Player): void {
     }
   }
   if (best) applyAction(state, p.id, { type: 'useOrb', unit: best.unit, trait: best.trait });
+}
+
+// Moscow: offer any hero the Shadow Altar asks for (a benched copy first), then put the charge on the dearest
+// fielded 1-star hero.
+export function playRitual(state: GameState, p: Player): void {
+  if (!powersOf(p).ritual) return;
+  for (const u of [...p.bench, ...p.board]) if (u && !ritualOfferBlock(p, u)) applyAction(state, p.id, { type: 'ritualOffer', unit: u.uid });
+  if (!p.ritual?.charges) return;
+  const best = p.board
+    .filter((u): u is NonNullable<typeof u> => !!u && u.star === 1 && !ritualCopyBlock(p, u))
+    .sort((a, b) => UNIT_BY_ID[b.defId].tier - UNIT_BY_ID[a.defId].tier)[0];
+  if (best) applyAction(state, p.id, { type: 'ritualCopy', unit: best.uid });
+}
+
+// Harley: spend a Full House charge each turn, before buying (the dearer one first).
+export function playHarley(state: GameState, p: Player): void {
+  const tier = Object.keys(p.fullHouse ?? {}).map(Number).filter((t) => p.fullHouse![t] > 0).sort((a, b) => b - a)[0];
+  if (tier) applyAction(state, p.id, { type: 'fullHouse', tier });
 }
 
 // Freya: bless the role with the most fielded units (ties: the one blessed already, then table order),

@@ -14,7 +14,7 @@ import { Stage, type Playback } from './stage/stage';
 import {
   armoryHtml,
   boxHtml,
-  specialBonusHtml,
+  termPopupHtml,
   bearerDetailHtml,
   galleryHtml,
   type GalleryTab,
@@ -28,6 +28,7 @@ import {
   poolHtml,
   johnnieOfferHtml,
   altarPickHtml,
+  ritualPickHtml,
   blessPickHtml,
   essenceAltarHtml,
   essencePickHtml,
@@ -88,7 +89,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let enhancerOpen = false;
   let gloveOpen: string | null = null;
   let poolOpen = false; // the shop pool modal
-  let bonusOpen = false; // Freya's Special Bonus popup
+  let termOpen: string | null = null; // a commander's glossary term popup (the underlined links in its texts)
   // The Box round: picks shown so far (bots' picks are revealed one at a time), and the timer showing the next.
   let boxShown = 0;
   let boxTimer = 0;
@@ -97,6 +98,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let fightTick: number | null = null; // the fight replay's clock, for the round timer (null: shopping)
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
+  let ritualOpen: 'offer' | 'copy' | null = null; // Moscow's Shadow Altar picker
   let blessOpen = false; // Lunox's blessing picker
   let essenceOpen = false; // Luo Yi's altar picker
   let cardsHidden = false; // the card pick, minimized
@@ -311,18 +313,19 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       enhancerOpen && p.enhancers ? enhancerPickHtml(p) : '',
       gloveOpen && p.gloves?.includes(gloveOpen) ? glovePickHtml(p, gloveOpen) : '',
       altarOpen ? altarPickHtml(p, altarOpen) : '',
+      ritualOpen ? ritualPickHtml(p, ritualOpen) : '',
       blessOpen && p.twilight?.holder === null ? blessPickHtml(p) : '',
       essenceOpen && powersOf(p).essence ? essencePickHtml(p) : '',
       bloodOpen && p.blood?.uses ? bloodPickHtml(p) : '',
       !p.commander ? commanderPickHtml(commanderPreview) : '',
       p.johnnie?.offer.length && !combat && !denHidden ? johnnieOfferHtml(p) : '',
       p.commander && p.cardOffer?.length && !combat && !cardsHidden ? cardOfferHtml(p) : '',
-      p.commander && p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? powerOfferHtml(p) : '',
+      p.commander && p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? powerOfferHtml(state, p) : '',
       p.commander && p.factionOrbOffer?.length && !p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? factionOrbOfferHtml(p) : '',
       // One pick at a time: the basic item after the commander card.
       p.commander && ((!p.cardOffer?.length && !p.powerOffer && !p.factionOrbOffer?.length) || cardsHidden) && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
       boxOpen() ? boxHtml(state, p, boxShown, boxSelected, boxFresh) : '',
-      bonusOpen ? specialBonusHtml() : '', // over whatever text opened it
+      termOpen ? termPopupHtml(termOpen) : '', // over whatever text opened it
       over ? gameOverHtml(p, state.players.length) : '',
     ].join('');
     // Show the next Box round pick after a beat.
@@ -543,8 +546,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'openEnhancer' || a === 'closeEnhancer') {
         enhancerOpen = a === 'openEnhancer';
         render();
-      } else if (a === 'openBonus' || a === 'closeBonus') {
-        bonusOpen = a === 'openBonus';
+      } else if (a === 'openTerm' || a === 'closeTerm') {
+        termOpen = a === 'openTerm' ? (btn.dataset.term ?? null) : null;
         render();
       } else if (a === 'openPool' || a === 'closePool') {
         poolOpen = a === 'openPool';
@@ -599,6 +602,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         const altar = altarOpen!;
         altarOpen = null;
         dispatch({ type: 'offer', altar, unit: Number(btn.dataset.unit) });
+      } else if (a === 'openRitual' || a === 'closeRitual') {
+        ritualOpen = a === 'openRitual' ? (btn.dataset.mode as 'offer' | 'copy') : null;
+        render();
+      } else if (a === 'ritualOffer' || a === 'ritualCopy') {
+        ritualOpen = null;
+        dispatch({ type: a, unit: Number(btn.dataset.unit) });
       } else if (a === 'rollDice' || a === 'openTrove') {
         dispatch({ type: a });
       } else if (a === 'closeMistPick') {
@@ -641,6 +650,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'skip') skip();
       else if (a === 'newGame') location.reload();
       else if (a === 'reroll' || a === 'levelUp' || a === 'toggleLock') dispatch({ type: a });
+      else if (a === 'fullHouse') dispatch({ type: 'fullHouse', tier: Number(btn.dataset.tier) });
       else if (a === 'pickCommander') dispatch({ type: 'pickCommander', commander: btn.dataset.commander! });
       else if (a === 'enhance') dispatch({ type: 'enhance', trait: btn.dataset.enhance! });
       else if (a === 'claimEnhance') dispatch({ type: 'claimEnhance', level: Number(btn.dataset.level) });
@@ -711,8 +721,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       incomeOpen = false;
       return render();
     }
-    if (e.key === 'Escape' && bonusOpen) {
-      bonusOpen = false;
+    if (e.key === 'Escape' && termOpen) {
+      termOpen = null;
       return render();
     }
     if (e.key === 'Escape' && openUnitInfo) {

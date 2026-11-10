@@ -1,5 +1,8 @@
 import { MAX_LEVEL } from '../game/config';
 import { skillIcon } from './skillIcons';
+import { raisedTier } from '../game/treasure';
+import { nextFullHouses } from '../game/tierShop';
+import { ritualCopyBlock, ritualLeft, ritualOfferBlock } from '../game/ritual';
 import { coreHolder, ESSENCE_ROLES, essenceBlock, essenceMods, essenceRoles } from '../game/essence';
 import { ESSENCE_CORE, baseItemOf, canEnhance, enhancedId } from '../game/items';
 import type { TraitLevels } from '../game/traits';
@@ -8,8 +11,8 @@ import { blessBlock, blessedUnit } from '../game/twilight';
 import { rewardText } from '../game/traits/format';
 import { claimable } from '../game/freya';
 import { shopPrice } from '../game/shop';
-import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, FREYA, MARKS, markedUid, markKinds, PACQUIAO, powersOf, type MarkKind } from '../game/commanders';
-import { cardTiers, DEATH_ORACLE, TURRET_OF_GUARDIANS, interestCapOf, offeringShareOf, POWER_CARDS, powerCardName, powerPool, ROGUE_MERCENARY, shopOdds, SIGNATURE } from '../game/powerCards';
+import { autoHalo, beastOf, cardFace, COMMANDERS, enhanceValues, FREYA, MARKS, TERMS, markedUid, markKinds, PACQUIAO, powersOf, type MarkKind } from '../game/commanders';
+import { cardTiers, DEATH_ORACLE, TURRET_OF_GUARDIANS, interestCapOf, offeringShareOf, POWER_CARDS, canRerollPower, powerCardName, ROGUE_MERCENARY, shopOdds, SIGNATURE } from '../game/powerCards';
 import { COMMANDER_CARD_ROUND, POWER_CARD_ROUNDS, POWER_TIERS, BASE_REWARD, baseReward, POOL_SIZE, CREEP_ROUND, MAX_INTEREST, stageOf, WIN_GOLD, isMonsterRound, REROLL_COST, roman, roundAt, roundLabel, STAGE_ONE_ROUNDS, STAGE_ROUNDS, stageRound, START_HP, TICKS_PER_SECOND, MAX_COMBAT_TICKS, OVERTIME_TICKS } from '../game/config';
 import { type AuraGrant, auraGrants, effectiveTier, fieldLeaders, fieldStats, heldBy, leadsOf } from '../game/inventory';
 import { cardItem, EQUIPMENT_GROUPS, giftDamage, isItemCard, ITEMS, plunderDamage, type ItemDef } from '../game/items';
@@ -25,8 +28,8 @@ import { copiesOf, findCopies, mergeSize } from '../game/merge';
 import { MAX_ITEMS_PER_UNIT } from '../game/config';
 import { boardCount, freeSlotCount, heroCapOf, interest, paydayGold, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
 import { adaptiveType, attackInterval, type DamageType, type StatKey, type StatMod, type Stats } from '../game/stats';
-import { fieldedMistOrbs, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
-import type { BotLevel, BoxPrize, GameState, Item, Player, PowerTier, UnitDef } from '../game/types';
+import { fieldedMistOrbs, orbTraits, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
+import type { BotLevel, BoxPrize, GameState, Item, Player, PowerTier, Unit, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS, unitPrice } from '../game/units';
 import { portraitHtml } from './portraits';
 import { bearerBadgeHtml, traitBadgeHtml } from './traitBadges';
@@ -313,9 +316,7 @@ export function mistChoiceHtml(p: Player, slot: number): string {
       ? [...p.board, ...p.bench]
           .flatMap((u) => (u && UNIT_BY_ID[u.defId].shop !== false ? [u] : []))
           .map((u) => `<button class="chip" data-action="mistPick" data-choice="${u.uid}">${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}</button>`)
-      : Object.values(TRAITS)
-          .filter((t) => t.kind === w.choose)
-          .map((t) => `<button class="chip" data-action="mistPick" data-choice="${t.id}">${traitBadgeHtml(t.id)} ${t.name}</button>`);
+      : orbTraits(w.choose).map((t) => `<button class="chip" data-action="mistPick" data-choice="${t}">${traitBadgeHtml(t)} ${TRAITS[t].name}</button>`);
   return modalHtml(
     'closeMistPick',
     'trait-popup',
@@ -528,17 +529,32 @@ function heroGalleryHtml(): string {
   );
 }
 
-// Freya's Special Bonus: what blessing each role adds at its 2/4/6, and who gets it.
-export function specialBonusHtml(): string {
-  const rows = Object.entries(FREYA.enhance.traits)
-    .map(([id, t]) => `<tr><td>${traitBadgeHtml(id)} <b>${TRAITS[id].name}</b></td><td class="bonus-val">${enhanceValues(t.mods[0])}</td><td>${t.text}</td><td class="bonus-who">${t.members ? `${TRAITS[id].name}s` : 'All allies'}</td></tr>`)
-    .join('');
+// Tables the UI adds under a glossary term's body (they need trait badges, which the game layer can't draw).
+export const TERM_TABLES: Record<string, () => string> = {
+  // Freya: what blessing each role adds at its 2/4/6, and who gets it.
+  specialBonus: () =>
+    Object.entries(FREYA.enhance.traits)
+      .map(([id, t]) => `<tr><td>${traitBadgeHtml(id)} <b>${TRAITS[id].name}</b></td><td class="bonus-val">${enhanceValues(t.mods[0])}</td><td>${t.text}</td><td class="bonus-who">${t.members ? `${TRAITS[id].name}s` : 'All allies'}</td></tr>`)
+      .join(''),
+  // Luo Yi: the Enhancement Effect each role of the hero on the altar lends the core's holder.
+  essenceCore: () =>
+    `<tr><td colspan="2"><b>Enhancement Effects</b></td></tr>` +
+    Object.entries(ESSENCE_ROLES)
+      .map(([id, r]) => `<tr><td>${traitBadgeHtml(id)} <b>${TRAITS[id].name}</b></td><td>${r.text}</td></tr>`)
+      .join(''),
+};
+
+// A commander's glossary term (the underlined links in its texts), over whatever text opened it.
+export function termPopupHtml(id: string): string {
+  const t = TERMS[id];
+  if (!t) return '';
+  const table = TERM_TABLES[id]?.();
   return modalHtml(
-    'closeBonus',
-    'bonus-popup',
-    `<h2 class="trait-title">🌸 Special Bonus</h2>
-    <p class="meta">A blessed role's extra, at its 2 / 4 / 6.</p>
-    <table class="bonus-table"><tbody>${rows}</tbody></table>`,
+    'closeTerm',
+    'term-popup',
+    `<h2 class="trait-title">${t.icon} ${t.title}</h2>
+    <div class="term-body">${t.body}</div>
+    ${table ? `<table class="bonus-table"><tbody>${table}</tbody></table>` : ''}`,
   );
 }
 
@@ -712,6 +728,7 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
       ? `<button class="dock-icon level" disabled title="${p.levelCap && p.level < MAX_LEVEL ? `Capped at level ${p.levelCap} (Territory Agreement)` : 'Max level'}">${dockIcon('levelUp')}<small>Max</small></button>`
       : `<button class="dock-icon level" data-action="levelUp" title="Level up: ${levelCost}g (F)" ${locked || p.gold < levelCost ? 'disabled' : ''}>${dockIcon('levelUp')}<small>${levelCost}g</small><kbd>F</kbd></button>`;
   const lockTitle = p.shopLocked ? 'Locked: keeps this shop next round (click to unlock)' : 'Lock: keep this shop next round';
+  const frozen = !!powersOf(p).frost && p.boughtRound !== round; // Aurora: the round is still idle
   const income = roundIncome(p, round);
   const streak = p.streak ?? 0;
   const streakText = streak > 0 ? `${streak} win${streak === 1 ? '' : 's'} in a row` : streak < 0 ? `${-streak} loss${streak === -1 ? '' : 'es'} in a row` : 'no streak';
@@ -726,10 +743,11 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
         ${levelBtn}
         <button class="dock-icon reroll${p.freeRerolls ? ' free' : ''}" data-action="reroll" title="${p.freeRerolls ? `Reroll: free (${p.freeRerolls} banked)` : bloodRoll ? `Reroll: ${DEATH_ORACLE.hp} HP (Death Oracle, ${p.bloodRefreshes} left)` : `Reroll: ${REROLL_COST}g`} (D)" ${locked ? 'disabled' : ''}>${dockIcon('reroll')}<small>${p.freeRerolls ? `Free×${p.freeRerolls}` : bloodRoll ? `${DEATH_ORACLE.hp}HP×${p.bloodRefreshes}` : `${REROLL_COST}g`}</small><kbd>D</kbd></button>
         <button class="dock-icon lock${p.shopLocked ? ' on' : ''}" data-action="toggleLock" title="${lockTitle}">${dockIcon(p.shopLocked ? 'locked' : 'unlocked')}<small>${p.shopLocked ? 'Locked' : 'Lock'}</small></button>
+        ${fullHouseButtonsHtml(p, locked)}
         <button class="dock-icon pool" data-action="openPool" title="Shop pool: how many copies of every hero are left">${dockIcon('pool')}<small>Pool</small></button>
       </div>
     </div>
-    <div class="shop-cards${p.shopLocked ? ' locked' : ''}">${shopCardsHtml(p, locked, chosen, pool)}</div>
+    <div class="shop-cards${p.shopLocked ? ' locked' : ''}${frozen ? ' frozen' : ''}"${frozen ? ` title="Frozen: buy no hero this round for ${powersOf(p).frost!.gain} Frost Energy"` : ''}>${shopCardsHtml(p, locked, chosen, pool)}</div>
     ${
       locked
         ? `<button data-action="skip" class="fight-btn skip">Skip <kbd>Space</kbd></button>`
@@ -945,8 +963,11 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
   });
   const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, dupChip, enhChip, ...gloveChips, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
 
+  // Geared heroes first (an item or a faction/role orb), then by star, then by cost; ties keep board order.
+  const geared = (u: Unit) => p.items.some((it) => it.holder === u.uid) || (p.mistOrbs ?? []).some((o) => o.holder === u.uid);
   const heroes = p.board
     .flatMap((u) => (u && !UNIT_BY_ID[u.defId].piece ? [u] : []))
+    .sort((a, b) => Number(geared(b)) - Number(geared(a)) || b.star - a.star || UNIT_BY_ID[b.defId].tier - UNIT_BY_ID[a.defId].tier)
     .map((u) => {
       const def = UNIT_BY_ID[u.defId];
       const mist = (p.mistOrbs ?? []).find((o) => o.holder === u.uid);
@@ -963,24 +984,21 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
       ]);
       while (slots.length < MAX_ITEMS_PER_UNIT) slots.push(`<div class="gear-slot" data-gear-unit="${u.uid}"></div>`);
       return `<li class="gear-hero tier-${def.tier}">
-        <button class="gear-who" data-select-unit="${u.uid}" title="${def.name}">
-          ${portraitHtml(def.id, 'gear-face')}
-          <span class="gear-name">${def.name}<i class="unit-star">${starsHtml(u)}</i></span>
-        </button>
-        <div class="gear-slot orb-slot" data-orb-unit="${u.uid}" title="Magic, faction or role orb">${orb}</div>
-        <div class="gear-slots">${slots.join('')}</div>
+        <div class="gear-row">
+          <button class="gear-face-btn" data-select-unit="${u.uid}" title="${def.name} ${'★'.repeat(u.star)}" aria-label="${def.name}, ${u.star} star">${portraitHtml(def.id, 'gear-face')}<i class="gear-stars">${starsHtml(u)}</i></button>
+          <div class="gear-slot orb-slot" data-orb-unit="${u.uid}" title="Magic, faction or role orb">${orb}</div>
+          <div class="gear-slots">${slots.join('')}</div>
+        </div>
       </li>`;
     })
     .join('');
 
   const moving = picked ?? dragging;
   return `<section class="armory${moving ? ` picking-${moving.kind}` : ''}">
-    <div class="armory-stash">
-      <h3>Equipment</h3>
-      ${stash ? `<div class="armory-items">${stash}</div>` : '<p class="traits-empty">No equipment yet.</p>'}
+    <div class="armory-stash" aria-label="Equipment"><div class="armory-items">${stash}</div></div>
+    <div class="armory-heroes" aria-label="Heroes">
+      ${heroes ? `<ul class="gear-heroes">${heroes}</ul>` : '<p class="traits-empty">Deploy heroes to equip them.</p>'}
     </div>
-    <h3>Heroes</h3>
-    ${heroes ? `<ul class="gear-heroes">${heroes}</ul><p class="traits-empty">Click an item to see what it does. Drag it into a slot to equip it; back up top takes it off.</p>` : '<p class="traits-empty">Deploy heroes to equip them.</p>'}
   </section>`;
 }
 
@@ -1059,7 +1077,7 @@ export function hudHtml(state: GameState, p: Player, opponentName: string | null
   return `<header class="hud">
     <div class="hud-side hud-left">
     ${stat('Level', `<b>${p.level}</b> ${xp}`, need === null ? 'Max level' : `${p.xp}/${need} XP to level ${p.level + 1}`)}
-    ${stat('Heroes', `<b>${boardCount(p)}/${cap}${freeSlotCount(p) ? ` +${freeSlotCount(p)}` : ''}</b>${free < 0 ? `<small class="warn">${-free} too many: the weakest leave at the fight</small>` : free > 0 && benched ? `<small class="warn">${free} free slot${free === 1 ? '' : 's'}</small>` : ''}`, 'Heroes on the board / how many you may field. Past the limit, the weakest go to the bench (or are sold if it is full) when the fight starts.')}
+    ${stat('Heroes', `<b${free < 0 ? ' class="over"' : ''}>${boardCount(p)}/${cap}${freeSlotCount(p) ? ` +${freeSlotCount(p)}` : ''}</b>${free < 0 ? `<small class="warn">${-free} too many: the weakest leave at the fight</small>` : free > 0 && benched ? `<small class="warn">${free} free slot${free === 1 ? '' : 's'}</small>` : ''}`, 'Heroes on the board / how many you may field. Past the limit, the weakest go to the bench (or are sold if it is full) when the fight starts.')}
     ${p.orbs.length ? stat('Orbs', `🔮 <b>${p.orbs.length}</b>`, 'Magic Orb ready: put it on a hero in the Equipment panel') : ''}
     </div>
     ${stageLegendHtml(state.round, p.streak ?? 0, state.powerTiers, !!state.box)}
@@ -1483,9 +1501,9 @@ export function cardOfferHtml(p: Player): string {
 }
 
 // A power card pick, at the tier the match rolled for this round.
-export function powerOfferHtml(p: Player): string {
+export function powerOfferHtml(state: GameState, p: Player): string {
   const offer = p.powerOffer!;
-  const others = powerPool(offer.tier).length > offer.cards.length;
+  const others = canRerollPower(state, p); // a card not shown in this offer yet
   const left = offer.cards.length - offer.rerolls; // one per card, spent on any of them
   const cards = offer.cards.map((id, slot): PickCard => {
     const c = POWER_CARDS[id];
@@ -1498,11 +1516,12 @@ export function powerOfferHtml(p: Player): string {
       desc: c.desc(offer.tier),
       take: `data-action="pickPower" data-card="${id}"`,
       reroll: left === 0 || !others ? null : `data-action="rerollPower" data-slot="${slot}"`,
-      rerollWhy: others ? 'No rerolls left' : 'No other power cards yet',
+      rerollWhy: others ? 'No rerolls left' : 'No other power cards left',
       rerollTitle: `Reroll this card (${left} left, shared by both cards)`,
     };
   });
-  return pickDialogHtml('Choose a power card', 'Yours for the rest of the game. No time limit: it waits until you pick, but nothing comes if the game ends first.', cards);
+  const raised = offer.from ? ` 🐉 Raised from ${offer.from[0].toUpperCase()}${offer.from.slice(1)} by Zhu Yong.` : '';
+  return pickDialogHtml('Choose a power card', `Yours for the rest of the game. No time limit: it waits until you pick, but nothing comes if the game ends first.${raised}`, cards);
 }
 
 // Prime Selection: choose a faction or role orb. Each option shows how many of the player's heroes are in it.
@@ -1622,7 +1641,7 @@ export function boxHtml(state: GameState, me: Player, shown: number, selected: n
         tag: n ? `${n} of your heroes` : '',
       };
     }
-    return { icon: '<span class="box-orb capacity">＋</span>', title: 'Capacity Orb', sub: '+1 hero slot, for good', text: '', tag: '' };
+    return { icon: '<span class="box-orb capacity" aria-label="+1"><i class="plus"></i></span>', title: 'Capacity Orb', sub: '+1 hero slot, for good', text: '', tag: '' };
   };
   const card = (i: number) => {
     const prize = box.prizes[i];
@@ -1696,6 +1715,7 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
   if (!p.commander) return '';
   const c = COMMANDERS[p.commander];
   const card = p.commanderCard ? COMMANDERS[p.commanderCard] : null;
+  tiers = tiers?.map((t) => raisedTier(p, t).tier); // Zhu Yong: the tier this player will be offered
   // HP in red, the shield in white after it; past full, the bar rescales to fit both.
   const full = Math.max(START_HP, hp + shield);
   const share = Math.max(0, hp / full);
@@ -1717,7 +1737,7 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
       return `<button class="card-slot filled tier-${have.tier}${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" data-card-slot="${i}" title="${powerCardName(have.id, have.tier)}">
         <span>${POWER_CARDS[have.id].icon}</span><small>${powerCardName(have.id, have.tier)}</small></button>`;
     }
-    const waiting = p.powerOffer ? [p.powerOffer.tier, ...(p.powerQueue ?? [])][i - 1 - (p.powerCards?.length ?? 0)] : undefined;
+    const waiting = p.powerOffer ? [p.powerOffer, ...(p.powerQueue ?? [])][i - 1 - (p.powerCards?.length ?? 0)]?.tier : undefined;
     if (waiting) {
       return `<button class="card-slot waiting tier-${waiting}" data-action="showCards" data-card-slot="${i}" title="Pick your power card"><span>★</span><small>Pick</small></button>`;
     }
@@ -1753,12 +1773,17 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
     ${p.johnnie?.offer.length ? `<button class="den-open" data-action="showDen">🎩 Johnnie's Den: pick one</button>` : ''}
     ${p.johnnie?.defId ? `<p class="commander-card-line">🎩 Your Johnnie: ${portraitHtml(p.johnnie.defId, 'tiny')} ${UNIT_BY_ID[p.johnnie.defId].traits.map((t) => `${traitBadgeHtml(t)} ${TRAITS[t].name}`).join(' · ')}</p>` : ''}
     ${cyclopsLineHtml(p)}
+    ${treasureLineHtml(p)}
+    ${frostLineHtml(p, round)}
+    ${fullHouseLineHtml(p, round)}
     ${freyaHtml(p)}
     ${mirrorBarLineHtml(p)}
     ${bloodLineHtml(p)}
     ${bountyLineHtml(p)}
     ${groveHtml(p, round)}
     ${altarsHtml(p, round)}
+    ${ritualHtml(p)}
+    ${ladderLineHtml(p)}
   </section>`;
 }
 
@@ -1777,6 +1802,49 @@ function cyclopsLineHtml(p: Player): string {
   const share = (pw.heirShare ?? 0) + (pw.heirShareCard ?? 0);
   if (share) lines.push(`<p class="commander-card-line">🍖 Knockouts: ${Math.round(share * 100)}% of their heroes' value · <b>${p.heirGold ?? 0}</b> gold so far</p>`);
   return lines.join('');
+}
+
+// Harley: each Full House's charges and a countdown to its next charge (his own, his card's).
+function fullHouseLineHtml(p: Player, round: number): string {
+  return nextFullHouses(p, round + 1)
+    .map((n) => {
+      const wait = n.round - round;
+      const have = p.fullHouse?.[n.tier] ?? 0;
+      return `<p class="commander-card-line">${n.card ? '🎴' : '🃏'} ${n.tier}-gold Full House: <b>${have}</b> charge${have === 1 ? '' : 's'} · next in <b>${wait} round${wait === 1 ? '' : 's'}</b> (${roundLabel(n.round)})</p>`;
+    })
+    .join('');
+}
+
+// Harley: a dock button per Full House power, by the shop. Disabled with no charge, or during a fight.
+function fullHouseButtonsHtml(p: Player, fighting: boolean): string {
+  return nextFullHouses(p, 1)
+    .map(({ tier, card }) => {
+      const have = p.fullHouse?.[tier] ?? 0;
+      const title = have ? `Full House: fill the shop with ${tier}-gold heroes, and your next hero is free (${have} charge${have === 1 ? '' : 's'})` : `Full House (${tier}-gold): no charge yet`;
+      return `<button class="dock-icon full-house${have ? ' ready' : ''}" data-action="fullHouse" data-tier="${tier}" title="${title}" aria-label="${title}" ${fighting || !have ? 'disabled' : ''}><span class="full-house-icon">${card ? '🎴' : '🃏'}</span><small>${tier}g×${have}</small></button>`;
+    })
+    .join('');
+}
+
+// Aurora: Frost Energy toward the next prize, her card's prizes (capped on another commander), whether this round
+// is still idle, and the latest prize.
+function frostLineHtml(p: Player, round: number): string {
+  const pw = powersOf(p);
+  if (!pw.frost && !pw.idlePrize) return '';
+  const f = p.frost ?? { energy: 0, prizes: 0, last: null };
+  const lines: string[] = [];
+  if (pw.frost) lines.push(`<p class="commander-card-line">❄️ Frost Energy: <b>${f.energy}/${pw.frost.need}</b></p>`);
+  if (pw.idlePrize?.times) lines.push(`<p class="commander-card-line">🧊 Permafrost prizes: <b>${f.prizes}/${pw.idlePrize.times}</b></p>`);
+  if (round > 0) lines.push(`<p class="commander-card-line">${p.boughtRound === round ? '🛒 Bought a hero this round: no Frost for it' : '❄️ No hero bought this round yet'}</p>`);
+  if (f.last) lines.push(`<p class="commander-card-line">🎁 Last prize: <b>${f.last}</b></p>`);
+  return lines.join('');
+}
+
+// Zhu Yong: the Black Dragon Treasures opened so far, the latest first.
+function treasureLineHtml(p: Player): string {
+  if (!p.treasures?.length) return '';
+  const [last, ...rest] = [...p.treasures].reverse();
+  return `<p class="commander-card-line">🐉 Treasure: <b>${last}</b>${rest.length ? ` <small>(${p.treasures.length} opened)</small>` : ''}</p>`;
 }
 
 // Freya's blessing: the roles to bless (the blessed one lit), its extra, and any reward waiting to be claimed.
@@ -1941,6 +2009,62 @@ function altarsHtml(p: Player, round: number): string {
     ? `<p class="commander-text">Last offering: ${UNIT_BY_ID[p.altarLast.offered].name} → <b>${p.altarLast.gifts.map((id) => UNIT_BY_ID[id].name).join(', ') || 'nothing left in the pool'}</b></p>`
     : '';
   return rows.join('') + (rows.length ? last : '');
+}
+
+// Moscow's Shadow Altar: the named heroes (offered ones ticked), then the charge once the ritual is over.
+function ritualHtml(p: Player): string {
+  if (!powersOf(p).ritual || !p.ritual) return '';
+  const r = p.ritual;
+  const left = ritualLeft(p);
+  const slots = r.want
+    .map((id) => {
+      const done = r.offered.includes(id);
+      return `<span class="ritual-slot${done ? ' done' : ''}" title="${UNIT_BY_ID[id].name} (${UNIT_BY_ID[id].tier} gold)${done ? ': offered' : ''}">${portraitHtml(id, 'tiny')}<small>${done ? '✔' : `${UNIT_BY_ID[id].tier}g`}</small></span>`;
+    })
+    .join('');
+  const canOffer = [...p.board, ...p.bench].some((u) => u && !ritualOfferBlock(p, u));
+  const action = left.length
+    ? `<button class="grove-btn" data-action="openRitual" data-mode="offer" ${canOffer ? '' : 'disabled'} title="${canOffer ? 'Offer a hero the altar asks for' : 'You own none of the heroes it asks for'}">🌑 Offer a hero</button>`
+    : `<button class="grove-btn" data-action="openRitual" data-mode="copy" ${r.charges ? '' : 'disabled'}>🌑 Use Shadow charge${r.charges ? ` (${r.charges})` : ': spent'}</button>`;
+  const last = r.last ? `<p class="commander-text">Last copied: <b>${UNIT_BY_ID[r.last].name}</b></p>` : '';
+  return `<div class="altar">
+    <p class="commander-text altar-line"><span>🌑 <b>Shadow Altar</b> · ${left.length ? `${r.offered.length}/${r.want.length} offered` : 'ritual complete'}</span></p>
+    <div class="ritual-slots">${slots}</div>
+    ${action}${last}
+  </div>`;
+}
+
+// Moscow's card: the heroes given so far, the latest, and the next cost.
+function ladderLineHtml(p: Player): string {
+  const ladder = powersOf(p).ladder;
+  if (!ladder || !p.ladder) return '';
+  const { given, last } = p.ladder;
+  const next = given < ladder.tiers.length ? ` · next round: a ${ladder.tiers[given]}-gold hero` : '';
+  return `<p class="commander-card-line">🌘 Shadow Procession: <b>${given}/${ladder.tiers.length}</b>${last ? ` · last ${portraitHtml(last, 'tiny')} ${UNIT_BY_ID[last].name}` : ''}${next}</p>`;
+}
+
+// Moscow's picker: the heroes the altar would take, or every hero the charge could copy (with what it makes).
+export function ritualPickHtml(p: Player, mode: 'offer' | 'copy'): string {
+  const copies = powersOf(p).ritual?.copies ?? 0;
+  const units = [...p.board, ...p.bench].flatMap((u) => (u ? [u] : []));
+  const options = units
+    .filter((u) => !(mode === 'offer' ? ritualOfferBlock(p, u) : ritualCopyBlock(p, u)))
+    .map((u) => {
+      const def = UNIT_BY_ID[u.defId];
+      const note = mode === 'offer' ? `${def.tier}g` : `+${copies} copies`;
+      return `<button class="chip" data-action="${mode === 'offer' ? 'ritualOffer' : 'ritualCopy'}" data-unit="${u.uid}" title="${traitNames(def.traits)}">${def.name} ${starsHtml(u)} <small>${note}</small></button>`;
+    });
+  const desc =
+    mode === 'offer'
+      ? 'The hero is gone: its copies go back to the pool, its items to your inventory. Offer all the heroes the altar names to end the ritual.'
+      : `Gain ${copies} 1-star copies of the hero, made from nothing. A lone 1-star hero turns 2-star at once.`;
+  return modalHtml(
+    'closeRitual',
+    'trait-popup',
+    `<h2 class="trait-title">🌑 ${mode === 'offer' ? 'Shadow Altar' : 'Shadow charge'}</h2>
+    <p class="trait-desc">${desc}</p>
+    <div class="orb-options">${options.join('') || `<p class="meta">${mode === 'offer' ? 'No hero the altar asks for.' : 'No hero to copy (or no room).'}</p>`}</div>`,
+  );
 }
 
 // The hero picker for one of Dyroth's altars: every unit it would take, with what cost it turns into.

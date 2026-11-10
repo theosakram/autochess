@@ -5,7 +5,8 @@ import { orbOptions } from '../game/orb';
 import { auraGrants, fieldStats } from '../game/inventory';
 import { playerTraits } from '../game/traits';
 import { traitBadgeHtml } from './traitBadges';
-import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, homeGalleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, poolHtml, roundTimerHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { armoryHtml, shopDockHtml, bearerDetailHtml, galleryHtml, homeGalleryHtml, itemDetailHtml, graveHtml, orbChoiceHtml, playersHtml, poolHtml, roundTimerHtml, TERM_TABLES, termPopupHtml, traitsPanelHtml, unitDetailHtml, unitInfoHtml } from './views';
+import { COMMANDERS, TERMS } from '../game/commanders';
 import { UNITS } from '../game/units';
 import { POOL_SIZE } from '../game/config';
 import { SKILLS } from '../game/skills';
@@ -405,4 +406,30 @@ test('round timer: none while shopping; a fight counts down from 40s, red in the
   expect(roundTimerHtml(32 * 10)).toContain('round-timer overtime');
   expect(roundTimerHtml(32 * 10)).toContain('0:08');
   expect(roundTimerHtml(99999)).toContain('0:00');
+});
+
+describe('commander glossary terms', () => {
+  const linked = (html: string) => [...html.matchAll(/data-term="([^"]+)"/g)].map((m) => m[1]);
+
+  test('every term link in a commander text opens a defined term', () => {
+    for (const c of Object.values(COMMANDERS)) {
+      const texts = [c.desc, c.card.selfDesc, c.card.otherDesc ?? '', ...Object.values(c.terms ?? {}).map((t) => t.body)];
+      for (const id of texts.flatMap(linked)) expect(TERMS[id], `${c.id} links to ${id}`).toBeDefined();
+    }
+  });
+
+  test('term ids are unique across commanders', () => {
+    const ids = Object.values(COMMANDERS).flatMap((c) => Object.keys(c.terms ?? {}));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test('every UI table belongs to a term, and every term renders', () => {
+    for (const id of Object.keys(TERM_TABLES)) expect(TERMS[id], id).toBeDefined();
+    for (const [id, t] of Object.entries(TERMS)) {
+      const html = termPopupHtml(id);
+      expect(html).toContain(t.title);
+      expect(html).toContain('closeTerm');
+    }
+    expect(termPopupHtml('nope')).toBe('');
+  });
 });

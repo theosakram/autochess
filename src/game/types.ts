@@ -93,6 +93,7 @@ export interface Player {
   rewards?: Record<string, number>; // trait id -> how many of its stack rewards were handed out
   rewardUnit?: Record<string, string>; // trait id -> the reward unit rolled for this player (see stacks.rewardUnits)
   promotions?: { defId: string; star: Star }[]; // merges since the last sync, for traits that react to them
+  promotionsWaiting?: { trait: string; defId: string; star: Star }[]; // merges a trait rewards only at a higher level than it had: paid once it gets there
   gifts?: string[]; // free units already taken from the pool, waiting for bench room
   unlocked?: string[]; // locked unit ids this player's shop may now offer
   mistShop?: string[]; // the Mist Shop's 3 wares on offer (see mistShop.ts), once it has opened
@@ -119,8 +120,8 @@ export interface Player {
   shield?: number; // commander shield (Rock Solid): soaks hp damage first
   factionOrbOffer?: string[]; // Prime Selection: faction orbs to choose one from (faction trait ids)
   freeRerolls?: number; // banked free shop refreshes (Premium Client), used before gold
-  powerOffer?: { tier: PowerTier; cards: string[]; rerolls: number }; // waiting for a pick (no time limit); rerolls spent, shared by every slot
-  powerQueue?: PowerTier[]; // later power card rounds' tiers, offered one by one once powerOffer is picked
+  powerOffer?: PowerOffer; // waiting for a pick (no time limit)
+  powerQueue?: PowerDeal[]; // later power card rounds, offered one by one once powerOffer is picked
   itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
   offerFrom?: 'basic' | 'loot' | 'chest'; // where the current itemOffer comes from
   basicPending?: boolean; // the basic item pick, waiting behind another item offer
@@ -148,9 +149,15 @@ export interface Player {
   freya?: { trait: string | null; claimed: number[] };
   rallied?: { trait: string | null; heroes: string[] }; // Cyclops's low-hp rally, once given: the trait and heroes it gave
   heirGold?: number;
+  treasures?: string[]; // Zhu Yong: what each Black Dragon Treasure gave, in order
+  boughtRound?: number; // the last round this player bought a hero from the shop (Aurora)
+  fullHouse?: Record<number, number>; // Harley: Full House charges banked, by hero cost
+  ritual?: { want: string[]; offered: string[]; charges: number; last?: string }; // Moscow: the heroes the altar names, those offered, charges, the latest copied
+  ladder?: { given: number; round: number; last?: string }; // Moscow's card: heroes given so far, the round of the latest, and which
+  frost?: { energy: number; prizes: number; last: string | null }; // Aurora: Frost Energy, the card's prizes paid, and the latest prize of either
   boxCap?: number; // +1 hero capacity prizes taken from Box rounds
   freeSlot?: number | null; // the shop slot whose hero is free this round (Guiness), until bought or refreshed
-  freeBuy?: true; // Opening Promotion: this round's first hero bought costs nothing
+  freeBuy?: number; // heroes still free to buy this round: Opening Promotion's first, Harley's Full House
   freeHeroes?: number; // Guiness's card: after-fight shops left that get a free hero // gold Cyclops's powers paid from knockouts so far // Freya: the blessed role, and the reward levels (1-3) claimed
   survivorGold?: number; // gold paid so far by Ruby's card
   streak?: number; // fights against players: +n won in a row, -n lost in a row
@@ -180,6 +187,7 @@ export interface GameState {
   players: Player[];
   chosen: Record<string, string>; // trait id -> unit def id it picked for the whole game, same for everyone
   powerTiers?: PowerTier[]; // the power card tier on each POWER_CARD_ROUNDS round, rolled once per match
+  powerDecks?: Record<string, string[]>; // each power card round's shuffled cards per tier ("round:tier"), the same for every player
   box?: Box; // the Box round under way (see box.ts), between a stage's last fight and the next round
 }
 
@@ -193,6 +201,21 @@ export interface Box {
 }
 
 export type PowerTier = 'blue' | 'purple' | 'gold';
+
+// A power card round's deal for one player: its tier, the round (whose shared deck it draws from) and, when
+// Zhu Yong raised it, the round's own tier.
+export interface PowerDeal {
+  tier: PowerTier;
+  round?: number;
+  from?: PowerTier;
+}
+
+// `rerolls`: spent, shared by every slot. `seen`: every card shown in this offer, never shown again.
+export interface PowerOffer extends PowerDeal {
+  cards: string[];
+  rerolls: number;
+  seen?: string[];
+}
 
 export type Area = 'bench' | 'board';
 

@@ -92,7 +92,11 @@ describe('Mist Shop', () => {
     p.board[2] = { uid: 9003, defId: 'phove', star: 1 };
     p.mistShop = ['pickfactionorb', 'pickfactionorb', 'randomroleorb'];
     expect(buy(state, p, 0, 'fighter').ok).toBe(false); // a role isn't a faction
-    expect(buy(state, p, 0, 'mistbender').ok).toBe(true);
+    expect(buy(state, p, 0, 'mistbender').ok).toBe(false); // never reaches 6: not on offer
+    expect(buy(state, p, 0, 'spectre').ok).toBe(true);
+    expect(p.mistOrbs![0].trait).toBe('spectre');
+    // A Mistbender orb (from before the rule) still works like any other.
+    p.mistOrbs = [{ uid: state.nextUid++, trait: 'mistbender', holder: null }];
     const orb = p.mistOrbs![0];
     expect(orb).toMatchObject({ trait: 'mistbender', holder: null });
     expect(playerTraitCounts(p).mistbender).toBe(2); // in the inventory: nothing yet
@@ -105,8 +109,7 @@ describe('Mist Shop', () => {
     expect(orb.holder).toBe(9002);
     expect(playerTraitCounts(p).mistbender).toBe(3);
     // One per unit; not on the Magic Orb's unit type.
-    p.mistShop[1] = 'pickfactionorb';
-    buy(state, p, 1, 'mistbender');
+    p.mistOrbs.push({ uid: state.nextUid++, trait: 'mistbender', holder: null });
     const second = p.mistOrbs![1];
     expect(equip(9002, second.uid)).toEqual({ ok: false, error: 'It already holds a faction or role orb' });
     p.orb = { defId: 'phove', trait: 'spectre' };
