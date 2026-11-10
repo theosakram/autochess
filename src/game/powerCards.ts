@@ -1072,18 +1072,18 @@ export function offerPowerCards(state: GameState, p: Player): void {
 }
 
 function dealPowerOffer(state: GameState, p: Player, tier: PowerTier): void {
-  p.powerOffer = { tier, cards: shuffle(state, powerPool(tier, p)).slice(0, CARD_OFFER_SIZE), rerolled: [] };
+  p.powerOffer = { tier, cards: shuffle(state, powerPool(tier, p)).slice(0, CARD_OFFER_SIZE), rerolls: 0 };
 }
 
 // Swaps one offered power card for another not on offer. Each slot gets one reroll.
 export function rerollPowerCard(state: GameState, p: Player, slot: number): string | null {
   const offer = p.powerOffer;
   if (!offer?.cards[slot]) return 'No card there';
-  if (offer.rerolled[slot]) return 'That card was already rerolled';
+  if (offer.rerolls >= offer.cards.length) return 'No rerolls left';
   const pool = powerPool(offer.tier, p).filter((id) => !offer.cards.includes(id));
   if (pool.length === 0) return 'No other cards left';
   offer.cards[slot] = pool[nextInt(state, pool.length)];
-  offer.rerolled[slot] = true;
+  offer.rerolls++;
   return null;
 }
 

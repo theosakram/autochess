@@ -28,9 +28,8 @@ export function enhanceValues(mod: { stat: string; add?: number[]; pct?: number[
   return '+' + v.map((n) => (asPct ? pct(n) : String(n))).join('/');
 }
 
-const lines = Object.entries(FREYA.enhance.traits)
-  .map(([id, t]) => `<br>• <b>${id[0].toUpperCase()}${id.slice(1)}</b> ${enhanceValues(t.mods[0])} ${t.text} (${t.members ? `${id}s only` : 'all allies'})`)
-  .join('');
+// The per-role bonuses sit behind this link (the UI opens them in a popup: data-action="openBonus").
+const SPECIAL_BONUS = '<button class="text-link" data-action="openBonus" data-bonus="freya">Special Bonus</button>';
 
 export const freya: CommanderDef = {
   id: 'freya',
@@ -38,9 +37,8 @@ export const freya: CommanderDef = {
   icon: '🌸',
   title: 'Lady of the Blessed Fields',
   desc:
-    `Bless a role (change it whenever you like): at its 2/4/6 it works harder, on top of its usual bonus.${lines}<br>` +
-    `When the blessed role reaches 2, 4 and 6 you may claim a reward (when you choose): 2 random heroes of it worth ` +
-    `${FREYA.enhance.rewardGold.join('/')} gold together. Each reward once a game.`,
+    `Bless a role (change it any time): at 2/4/6 it gets a ${SPECIAL_BONUS} on top of its usual one. ` +
+    `At each of those, claim once: 2 random heroes of it worth ${FREYA.enhance.rewardGold.join('/')} gold together.`,
   innate: { enhance: FREYA.enhance },
   card: {
     name: 'Harvest Blessing',

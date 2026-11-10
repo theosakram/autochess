@@ -25,7 +25,7 @@ export const angela: CommanderDef = {
     name: 'Choir of Wings',
     icon: '🕊️',
     selfDesc:
-      `Every hero you protect fires a Love Beam every ${b.every}s: a straight line through its target to the edge of the board. ` +
+      `Every hero you protect fires a Love Beam every ${b.every}s: a line through its target to the edge of the board, 2 rows wide. ` +
       `Allies in its path are healed ${pct(b.heal)} of their max HP; enemies in it take ${b.damage.join('/')} magic damage ` +
       `(stage I/II/III/IV and later).`,
     self: { loveBeam: ANGELA.loveBeam },

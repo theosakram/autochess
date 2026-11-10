@@ -1,4 +1,4 @@
-import { GRID_H, GRID_W, type Point } from '../grid';
+import { dist, GRID_H, GRID_W, type Point } from '../grid';
 import type { SkillApi, SkillFighter } from './types';
 
 // The 3x1 row centered on a cell: it and the cells directly left and right (on the board).
@@ -41,15 +41,32 @@ export function lineThrough(from: Point, to: Point): Point[] {
   }
 }
 
+// The dash line (any angle, at most `length` cells) aimed through the living enemy that puts the most
+// enemies on it. Ties go to the nearest aim, or the farthest with `far`. Empty when there's no one to aim at.
+export function bestLine(api: SkillApi, f: SkillFighter, length: number, far = false): Point[] {
+  let best: Point[] = [];
+  let most = -1;
+  let bestD = 0;
+  for (const e of api.enemiesOf(f)) {
+    if (e.x === f.x && e.y === f.y) continue;
+    const line = lineThrough(f, e).slice(0, length);
+    const n = enemiesOn(api, f, line).length;
+    const d = dist(f, e);
+    if (n > most || (n === most && (far ? d > bestD : d < bestD))) [best, most, bestD] = [line, n, d];
+  }
+  return best;
+}
+
 // lineThrough, `width` cells wide: each of its cells plus its neighbours across the line (sideways for a
-// mostly-vertical line, up and down for a mostly-horizontal one). `to` is always in it.
-export function wideLine(from: Point, to: Point, width = 3): Point[] {
+// mostly-vertical line, up and down for a mostly-horizontal one). `to` is always in it. An even width
+// leans to the left/up side; `shift` 1 moves it one over to the right/down.
+export function wideLine(from: Point, to: Point, width = 3, shift = 0): Point[] {
   const vertical = Math.abs(to.y - from.y) >= Math.abs(to.x - from.x);
   const half = Math.floor(width / 2);
   const seen = new Set<string>();
   const cells: Point[] = [];
   for (const c of lineThrough(from, to)) {
-    for (let o = -half; o <= half; o++) {
+    for (let o = shift - half; o < shift - half + width; o++) {
       const p = vertical ? { x: c.x + o, y: c.y } : { x: c.x, y: c.y + o };
       const k = `${p.x},${p.y}`;
       if (p.x < 0 || p.y < 0 || p.x >= GRID_W || p.y >= GRID_H || seen.has(k)) continue;
@@ -58,6 +75,21 @@ export function wideLine(from: Point, to: Point, width = 3): Point[] {
     }
   }
   return cells;
+}
+
+// Angela's Love Beam (her skill and her commander card): a line through `to` to the board's edge, 2 wide,
+// the second row (or column) on whichever side holds more enemies. Shows the beam; returns its cells.
+export function loveBeam(api: SkillApi, f: SkillFighter, to: Point): Point[] {
+  const [a, b] = [wideLine(f, to, 2), wideLine(f, to, 2, 1)];
+  const right = enemiesOn(api, f, b).length > enemiesOn(api, f, a).length;
+  const line = lineThrough(f, to);
+  const end = line[line.length - 1] ?? to;
+  // Drawn down the middle of the two rows.
+  const o = right ? 0.5 : -0.5;
+  const vertical = Math.abs(to.y - f.y) >= Math.abs(to.x - f.x);
+  const mid = (p: Point) => (vertical ? { x: p.x + o, y: p.y } : { x: p.x, y: p.y + o });
+  api.showProjectile(mid(f), mid(end), 0.3, 'lovebeam');
+  return right ? b : a;
 }
 
 // The cell `n` steps past `to`, carrying on the line from `from` through it (stopped at the board's edge).

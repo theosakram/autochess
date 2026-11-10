@@ -85,12 +85,15 @@ export function rollFreeHero(state: GameState, p: Player): void {
 }
 
 // While a trait with items is active, a slot may offer a free upgrade for one of its owned items.
-// Only rolls when there's something to upgrade, so other games replay exactly as before.
+// Only rolls when there's something to upgrade, so other games replay exactly as before. At most one card
+// per item in a shop: a second could rarely be bought (the first may take it to the cap).
 function upgradeCard(state: GameState, p: Player): string | null {
   for (const id of Object.keys(playerTraits(p))) {
     const rule = TRAITS[id].items;
     if (!rule) continue;
-    const upgradable = p.items.filter((it) => rule.pool.includes(baseItemOf(it.id)) && it.tier < rule.maxShopTier);
+    const upgradable = p.items.filter(
+      (it) => rule.pool.includes(baseItemOf(it.id)) && it.tier < rule.maxShopTier && !p.shop.includes(itemCard(baseItemOf(it.id))),
+    );
     // The card names the base item (an enhanced one is upgraded through it).
     if (upgradable.length > 0 && nextFloat(state) < rule.shopChance) return itemCard(baseItemOf(upgradable[nextInt(state, upgradable.length)].id));
   }

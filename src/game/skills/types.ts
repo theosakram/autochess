@@ -25,7 +25,8 @@ export interface SkillApi {
   hit(source: SkillFighter, target: SkillFighter, raw: number, type: DamageType, effect: string): boolean;
   basicHit(source: SkillFighter, target: SkillFighter, raw: number, type: DamageType, effect: string): boolean;
   safestCell(f: SkillFighter): Point; // free cell farthest from every living enemy
-  dashTo(f: SkillFighter, to: Point): void;
+  // `show`: how many seconds the move animates (default: a quick dash), or false to not animate it (a showLeap draws it).
+  dashTo(f: SkillFighter, to: Point, show?: number | false): void;
   guard(f: SkillFighter, seconds: number, reduction: number): void; // takes less damage for a while
   // Absorbs the next `amount` damage (after armor/mr) for `seconds`. Replaces any shield it had.
   // Adds a shield layer from `effect` on top of any others: damage eats the newest layer first. A new
@@ -93,6 +94,8 @@ export interface SkillApi {
   burn(source: SkillFighter, cells: Point[], perSecond: number, type: DamageType, seconds: number, effect: string): void;
   // Purely cosmetic: tells the UI to draw `count` orbs circling `f` for `seconds`.
   showOrbit(f: SkillFighter, count: number, seconds: number, effect: string): void;
+  // Purely cosmetic: `f` leaps in an arc to `to` over `seconds` (it doesn't move; dashTo does that).
+  showLeap(f: SkillFighter, to: Point, seconds: number): void;
   // Purely cosmetic: a projectile flying from one cell to another over `seconds`.
   showProjectile(from: Point, to: Point, seconds: number, effect: string): void;
   // What its basic attacks hit with: attack as physical, or magic attack as magic for magic attackers.

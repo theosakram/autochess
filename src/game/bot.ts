@@ -193,7 +193,7 @@ export function playAltars(state: GameState, p: Player): void {
   for (const key of ALTAR_KEYS) {
     for (let uses = altarStatus(p, key, state.round).uses; uses > 0; uses--) {
       const unit = p.bench
-        .filter((u) => u !== null && !offerBlock(UNIT_BY_ID[u.defId]))
+        .filter((u) => u !== null && !offerBlock(u))
         .sort((a, b) => UNIT_BY_ID[b!.defId].tier - UNIT_BY_ID[a!.defId].tier)[0];
       if (!unit || !applyAction(state, p.id, { type: 'offer', altar: key, unit: unit.uid }).ok) break;
     }

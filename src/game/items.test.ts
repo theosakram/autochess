@@ -4,10 +4,11 @@ import { simulateCombat } from './combat';
 import { TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { effectiveTier, fieldStats, syncItems } from './inventory';
-import { BLANGKON, itemCard, ITEMS, JIMAT, KERIS, OFFERING } from './items';
-import { returnShop } from './shop';
-import { CULT_OF_FIRE, GUSTIWANA, traitCounts } from './traits';
+import { BLANGKON, isItemCard, itemCard, ITEMS, JIMAT, KERIS, OFFERING } from './items';
+import { refreshShop, returnShop } from './shop';
+import { CULT_OF_FIRE, DRAGON_ALTAR, GUSTIWANA, traitCounts } from './traits';
 import type { GameState, Player, Star } from './types';
+import { UNIT_BY_ID } from './units';
 
 const GW_UNITS = ['dyroth', 'angela', 'frank', 'kari', 'lunox', 'lance'];
 
@@ -90,6 +91,36 @@ describe('Gustiwana items', () => {
     const pool = { ...state.pool };
     returnShop(state, p);
     expect(state.pool).toEqual(pool);
+  });
+
+  test('buying an upgrade card puts a hero in its slot', () => {
+    const state = newGame();
+    const p = state.players[0];
+    gwBoard(p, 2);
+    syncItems(state, p);
+    returnShop(state, p);
+    p.shop[0] = itemCard(p.items[0].id);
+    expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    expect(p.shop[0] && !isItemCard(p.shop[0])).toBe(true);
+  });
+
+  test('a shop never offers two upgrade cards for the same item', () => {
+    const state = newGame();
+    const p = state.players[0];
+    gwBoard(p, 2);
+    syncItems(state, p);
+    const chance = GUSTIWANA.items.shopChance;
+    GUSTIWANA.items.shopChance = 1;
+    try {
+      for (let i = 0; i < 20; i++) {
+        refreshShop(state, p);
+        const cards = p.shop.filter((id): id is string => !!id && isItemCard(id));
+        expect(new Set(cards).size).toBe(cards.length);
+        expect(cards.length).toBeLessThanOrEqual(p.items.length);
+      }
+    } finally {
+      GUSTIWANA.items.shopChance = chance;
+    }
   });
 
   test('a unit holds at most 3 items; selling it returns them', () => {
@@ -277,5 +308,21 @@ describe('Cult of Fire and the Pyre Offering', () => {
     const item = { uid: 1, id: 'offering', tier: 1, holder: null };
     expect(effectiveTier(item, { cultoffire: 3 })).toBe(3);
     expect(effectiveTier(item, {})).toBe(0);
+  });
+});
+
+describe('orbs', () => {
+  test("an orb's synergy gives its holder the member bonus (Balang with a Dragon Altar orb, on an altar)", () => {
+    const state = newGame();
+    const p = state.players[0];
+    const altar = DRAGON_ALTAR.tiles[0][0];
+    p.board[altar] = { uid: 1, defId: 'balang', star: 1 };
+    const levels = { dragonaltar: 1 };
+    const plain = fieldStats(p, levels).get(1)!;
+    p.orb = { defId: 'balang', trait: 'dragonaltar' };
+    const orbed = fieldStats(p, levels).get(1)!;
+    const base = UNIT_BY_ID.balang.hp;
+    expect(plain.hp).toBeCloseTo(base * (1 + DRAGON_ALTAR.allyBonus[0]), 0);
+    expect(orbed.hp).toBeCloseTo(base * (1 + DRAGON_ALTAR.memberBonus[0]), 0);
   });
 });

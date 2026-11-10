@@ -2,6 +2,7 @@ import { powersOf, type MarkKind } from '../game/commanders';
 import { applyAction, type Action } from '../game/actions';
 import type { CombatEvent } from '../game/combat';
 import { isGameOver, resolveCombat, startRound, type Fight } from '../game/game';
+import { closeBox } from '../game/box';
 import { isAlive } from '../game/player';
 import { TRAITS } from '../game/traits';
 import type { GameState, Loc, Player, PowerTier } from '../game/types';
@@ -12,6 +13,8 @@ import type { AltarKey } from '../game/altar';
 import { Stage, type Playback } from './stage/stage';
 import {
   armoryHtml,
+  boxHtml,
+  specialBonusHtml,
   bearerDetailHtml,
   galleryHtml,
   type GalleryTab,
@@ -53,6 +56,7 @@ import {
 } from './views';
 
 const TOAST_MS = 1800;
+const BOX_REVEAL_MS = 700; // between Box round picks shown
 
 // Owns UI state and input. The board and bench live on the Pixi stage; everything else is HTML,
 // re-rendered region by region after each action so the canvas is never torn down.
@@ -84,6 +88,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let enhancerOpen = false;
   let gloveOpen: string | null = null;
   let poolOpen = false; // the shop pool modal
+  let bonusOpen = false; // Freya's Special Bonus popup
+  // The Box round: picks shown so far (bots' picks are revealed one at a time), and the timer showing the next.
+  let boxShown = 0;
+  let boxTimer = 0;
+  let boxSelected: number | null = null; // the prize clicked, waiting for Take
+  let boxFresh: number | null = null; // the prize whose pick was just revealed (its stamp animates once)
   let fightTick: number | null = null; // the fight replay's clock, for the round timer (null: shopping)
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
@@ -141,6 +151,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   function dispatch(action: Action): void {
     // Only the shop lock can be toggled while a fight plays.
     if (combat && action.type !== 'toggleLock') return;
+    // Only the Box round's pick while it's open.
+    if (state.box && action.type !== 'pickBox') return;
     const free = me().freeRerolls ?? 0;
     const res = applyAction(state, playerId, action);
     if (!res.ok) toast(res.error);
@@ -309,8 +321,20 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       p.commander && p.factionOrbOffer?.length && !p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? factionOrbOfferHtml(p) : '',
       // One pick at a time: the basic item after the commander card.
       p.commander && ((!p.cardOffer?.length && !p.powerOffer && !p.factionOrbOffer?.length) || cardsHidden) && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
+      boxOpen() ? boxHtml(state, p, boxShown, boxSelected, boxFresh) : '',
+      bonusOpen ? specialBonusHtml() : '', // over whatever text opened it
       over ? gameOverHtml(p, state.players.length) : '',
     ].join('');
+    // Show the next Box round pick after a beat.
+    if (boxOpen() && boxShown < state.box!.picks.length && !boxTimer) {
+      boxTimer = window.setTimeout(() => {
+        boxTimer = 0;
+        boxFresh = state.box?.picks[boxShown] ?? null;
+        boxShown++;
+        render();
+      }, BOX_REVEAL_MS);
+    }
+    boxFresh = null; // animates on the render that revealed it only
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) {
       const at = scrolled.get(el.dataset.keepScroll!);
       if (at) [el.scrollTop, el.scrollLeft] = at;
@@ -319,8 +343,11 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (!combat) stage.showPrep({ player: p, chosen: state.chosen, selectedUid });
   }
 
+  // The Box round is on screen: after a stage's last fight, until Continue.
+  const boxOpen = () => !!state.box && !combat && isAlive(me());
+
   function endTurn(): void {
-    if (combat || !isAlive(me()) || isGameOver(state) || !me().commander) return;
+    if (combat || state.box || !isAlive(me()) || isGameOver(state) || !me().commander) return;
     hpBefore = new Map(state.players.map((p) => [p.id, p.hp]));
     shieldBefore = me().shield ?? 0;
     const fights = resolveCombat(state);
@@ -355,6 +382,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     combat = null;
     hpBefore = null;
     denHidden = false;
+    // A stage's last fight: the Box round first (Continue comes back here).
+    if (boxOpen()) {
+      boxShown = 0;
+      boxSelected = null;
+      return render();
+    }
     const orbsBefore = me().orbs.length;
     const picks = (p: Player) => [p.cardOffer, p.powerOffer, p.factionOrbOffer];
     const picksBefore = picks(me());
@@ -510,6 +543,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'openEnhancer' || a === 'closeEnhancer') {
         enhancerOpen = a === 'openEnhancer';
         render();
+      } else if (a === 'openBonus' || a === 'closeBonus') {
+        bonusOpen = a === 'openBonus';
+        render();
       } else if (a === 'openPool' || a === 'closePool') {
         poolOpen = a === 'openPool';
         render();
@@ -628,6 +664,25 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         if (me().gold > gold) toast(`💰 +${me().gold - gold} gold`, 'info');
       }
       else if (a === 'pickItem') dispatch({ type: 'pickItem', item: btn.dataset.itemId! });
+      else if (a === 'boxSelect') {
+        const i = Number(btn.dataset.prize);
+        boxSelected = boxSelected === i ? null : i;
+        render();
+      } else if (a === 'pickBox' && boxSelected !== null) {
+        const prize = boxSelected;
+        boxSelected = null;
+        dispatch({ type: 'pickBox', prize });
+        // Your own pick shows at once, stamped.
+        if (state.box && state.box.picks[boxShown] === prize) {
+          boxShown++;
+          boxFresh = prize;
+          render();
+        }
+      }
+      else if (a === 'boxDone') {
+        closeBox(state);
+        nextRound();
+      }
       else if (a === 'mark') dispatch({ type: 'mark', kind: btn.dataset.kind as MarkKind, unit: Number(btn.dataset.unit) });
       else if (a === 'buy') dispatch({ type: 'buy', slot: Number(btn.dataset.slot) });
       else if (a === 'unequip') dispatch({ type: 'unequip', item: Number(btn.dataset.item) });
@@ -640,6 +695,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   });
 
   window.addEventListener('keydown', (e) => {
+    // Clickable non-buttons (a pick dialog's cards) take Enter and Space like buttons.
+    const el = e.target as HTMLElement;
+    if ((e.key === 'Enter' || e.key === ' ') && el.getAttribute?.('role') === 'button' && el.dataset.action) {
+      e.preventDefault();
+      return el.click();
+    }
     // Nothing else until a commander is picked.
     if (e.repeat || !me().commander) return;
     if (e.key === 'Escape' && skillOpen) {
@@ -648,6 +709,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     }
     if (e.key === 'Escape' && incomeOpen) {
       incomeOpen = false;
+      return render();
+    }
+    if (e.key === 'Escape' && bonusOpen) {
+      bonusOpen = false;
       return render();
     }
     if (e.key === 'Escape' && openUnitInfo) {

@@ -16,8 +16,8 @@ export function boardCount(p: Player): number {
 // Commander pieces (the Divine Beast) aren't units, so they're not counted here either.
 export const freeSlotCount = (p: Player) => p.board.filter((u) => u && UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece).length;
 
-// How many heroes the player may field: their level, plus Party's Opening.
-export const heroCapOf = (p: Player) => p.level + heroCapBonusOf(p);
+// How many heroes the player may field: their level, plus Party's Opening and Box round capacity.
+export const heroCapOf = (p: Player) => p.level + heroCapBonusOf(p) + (p.boxCap ?? 0);
 
 // The highest level the player can reach (Territory Agreement caps it).
 export const levelCapOf = (p: Player) => Math.min(MAX_LEVEL, p.levelCap ?? MAX_LEVEL);

@@ -1,6 +1,6 @@
 import { markIcons, powersOf } from '../../game/commanders';
 import type { Fighter } from '../../game/combat';
-import { leadsOf } from '../../game/inventory';
+import { fieldStats, leadsOf } from '../../game/inventory';
 import { Application, Container, Graphics, Text, type FederatedPointerEvent } from 'pixi.js';
 import type { CombatEvent } from '../../game/combat';
 import { BOARD_COLS, BOARD_ROWS, MOVE_TICKS, TICKS_PER_SECOND } from '../../game/config';
@@ -162,6 +162,8 @@ export class Stage {
 
     const crowned = new Set(Object.values(view.chosen));
     const levels = playerTraits(p);
+    // Board heroes' max hp as fielded (stars, items, traits, cards): fight-start shields and buffs aren't in it.
+    const stats = fieldStats(p, levels, view.chosen);
     for (const area of ['board', 'bench'] as const) {
       (area === 'board' ? p.board : p.bench).forEach((u, index) => {
         if (!u) return;
@@ -180,6 +182,8 @@ export class Stage {
           marks: markIcons(p, u.uid),
           itemIds: p.items.filter((i) => i.holder === u.uid).map((i) => i.id),
           selected: u.uid === view.selectedUid,
+          hpBar: area === 'board',
+          maxHp: area === 'board' ? stats.get(u.uid)?.hp : undefined,
         });
         const at = this.center(loc);
         token.root.position.set(at.x, at.y);
@@ -275,6 +279,7 @@ export class Stage {
         itemIds: f.items.map((i) => i.id),
         foe: f.side !== mySide,
         bars: true,
+        maxHp: f.maxHp,
       });
       const p = at(f);
       token.root.position.set(p.x, p.y);
@@ -285,11 +290,12 @@ export class Stage {
     };
     for (const f of result.fighters) addView(f);
 
-    const moveTo = (id: number, p: Point, ms: number) => {
+    // `lift`: pixels of arc at the midpoint, for a leap.
+    const moveTo = (id: number, p: Point, ms: number, lift = 0) => {
       const root = views.get(id)!.root;
       const from = { x: root.x, y: root.y };
       const to = at(p);
-      this.tweens.add(ms, (k) => root.position.set(lerp(from.x, to.x, k), lerp(from.y, to.y, k)), undefined, `move${id}`);
+      this.tweens.add(ms, (k) => root.position.set(lerp(from.x, to.x, k), lerp(from.y, to.y, k) - Math.sin(Math.PI * k) * lift), undefined, `move${id}`);
     };
     const flash = (id: number, color: number, ms = 250) => {
       const overlay = views.get(id)!.flash(color);
@@ -365,7 +371,7 @@ export class Stage {
           moveTo(e.id, e, MOVE_TICKS * TICK_MS);
           break;
         case 'dash':
-          moveTo(e.id, e, DASH_MS);
+          moveTo(e.id, e, e.seconds ? e.seconds * 1000 : DASH_MS, e.arc ? this.L.boardCell * 0.6 : 0);
           break;
         case 'attack':
         case 'cast':

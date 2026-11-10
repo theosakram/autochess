@@ -61,7 +61,7 @@ import { starfallAegis } from './starfallAegis';
 import type { SkillDef } from './types';
 
 export type { SkillApi, SkillDef, SkillFighter } from './types';
-export { dashLine, PHANTOM_EXECUTION } from './phantomExecution';
+export { PHANTOM_EXECUTION } from './phantomExecution';
 export { POWER_OF_CHAOS } from './powerOfChaos';
 export { COMET_LUNGE } from './cometLunge';
 export { BLADE_DESCENT } from './bladeDescent';
@@ -123,7 +123,7 @@ export { pickSpread, UNFOLDING_TALE } from './unfoldingTale';
 export { WANDERERS_VOLLEY } from './wanderersVolley';
 export { WYRM_FRENZY } from './wyrmFrenzy';
 export { ZODIAC_SLAM } from './zodiacSlam';
-export { pathTo, lineThrough, wideLine } from './areas';
+export { bestLine, loveBeam, pathTo, lineThrough, wideLine } from './areas';
 export { freeCellNextTo, pickEnemy } from './dashStrike';
 export { STARFALL_AEGIS } from './starfallAegis';
 

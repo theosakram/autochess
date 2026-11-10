@@ -20,6 +20,8 @@ export interface TokenSpec {
   foe?: boolean;
   selected?: boolean;
   bars?: boolean; // hp and mana bars, for combat
+  hpBar?: boolean; // just the hp bar, full: the preparation board, to compare who's tankier
+  maxHp?: number; // with bars or hpBar: a divider on the hp bar every HP_TICK hp
   copies?: number; // Alice's Blood Pact hero: red stars, the last one partly filled
   merc?: boolean; // Rogue Mercenary: a briefcase in the corner
   signature?: boolean; // a hero card's hero: a medal in the corner
@@ -55,6 +57,11 @@ function fit(label: Text, maxWidth: number): void {
   while (label.width > maxWidth && label.style.fontSize > 7) label.style.fontSize -= 0.5;
   while (label.width > maxWidth && label.text.length > 2) label.text = `${label.text.slice(0, -2)}…`;
 }
+
+// HP per divider on a combat hp bar: big units read as big. Too crowded (under HP_TICK_GAP px apart), each
+// divider stands for 5x more, drawn gold so a boss still reads as huge.
+const HP_TICK = 2000;
+const HP_TICK_GAP = 4;
 
 export function makeToken(s: TokenSpec): TokenView {
   const def = UNIT_BY_ID[s.defId];
@@ -104,7 +111,7 @@ export function makeToken(s: TokenSpec): TokenView {
 
   const hpH = Math.max(5, w * 0.07);
   const manaH = Math.max(3, w * 0.045);
-  const barSpace = s.bars ? hpH + manaH + 3 : 0;
+  const barSpace = s.bars ? hpH + manaH + 3 : s.hpBar ? hpH + 2 : 0;
 
   const nameSize = Math.max(9, w * 0.13);
   const name = new Text({ text: def.name, style: { fontFamily: FONT, fontSize: nameSize, fill: COLORS.text, fontWeight: '700', align: 'center', lineHeight: nameSize * 1.05 } });
@@ -193,13 +200,21 @@ export function makeToken(s: TokenSpec): TokenView {
     bars[bar].clear().rect(-barW / 2, barY[bar], barW, h).fill({ color: 0x000000, alpha: 0.5 });
     if (f > 0) bars[bar].rect(-barW / 2, barY[bar], barW * f * scale, h).fill(barColor[bar]);
     if (shield > 0) bars.hp.rect(-barW / 2 + barW * f * scale, barY.hp, barW * shield * scale, h).fill(COLORS.shield);
+    if (bar === 'hp' && s.maxHp) {
+      // Across hp and shield both: past max hp when the shield overflows it.
+      let step = HP_TICK;
+      while ((barW * scale * step) / s.maxHp < HP_TICK_GAP) step *= 5;
+      for (let hp = step; hp < s.maxHp * Math.max(1, f + shield); hp += step) bars.hp.rect(-barW / 2 + (barW * scale * hp) / s.maxHp - 1, barY.hp, 2, h);
+      bars.hp.fill(step === HP_TICK ? { color: 0x000000, alpha: 0.85 } : { color: COLORS.leader, alpha: 0.9 });
+    }
   };
   const setBar = (bar: 'hp' | 'mana' | 'shield', fraction: number) => {
     frac[bar] = Math.max(0, Math.min(1, fraction));
     draw(bar === 'mana' ? 'mana' : 'hp');
   };
-  if (s.bars) {
-    root.addChild(bars.hp, bars.mana);
+  if (s.bars || s.hpBar) {
+    root.addChild(bars.hp);
+    if (s.bars) root.addChild(bars.mana);
     setBar('hp', 1);
     setBar('mana', 0);
   }

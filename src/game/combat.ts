@@ -7,7 +7,7 @@ import { boardToGrid, dist, GRID_H, GRID_W, gridIndex, safestCell, stepToward, t
 import { activeItems, fieldStats, heldBy, heroTraits, leadsOf, slotsUsed } from './inventory';
 import { EQUIPMENT, ITEMS, type HealingSpring, type LowHpFury, type StackingPassive } from './items';
 import { nextFloat, nextInt, shuffle } from './rng';
-import { lineThrough, SKILLS, type SkillApi } from './skills';
+import { loveBeam, SKILLS, type SkillApi } from './skills';
 import { adaptivePower, adaptiveType, applyMods, attackInterval, BURN_SECONDS, type DamageType, type Stats, type StatKey, baseStats } from './stats';
 import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
@@ -83,7 +83,7 @@ export type CombatEvent =
   // A unit skill went off (its hits follow as effect events with `by`).
   | { t: number; type: 'skill'; id: number; skill: string }
   // An instant reposition, e.g. a dash; drawn as a quick slide rather than a walk.
-  | { t: number; type: 'dash'; id: number; x: number; y: number }
+  | { t: number; type: 'dash'; id: number; x: number; y: number; seconds?: number; arc?: boolean }
   // A lasting buff from `effect` (a trait or item id), e.g. Mooneater's column haste.
   | { t: number; type: 'buff'; id: number; by: number; effect: string; until?: number } // until: timed buffs only
   // A member's trait trigger fired: it may have warped to (x, y) and healed `heal`.
@@ -271,6 +271,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
     const def = UNIT_BY_ID[u.defId];
     const items = activeItems(heldBy(p, u.uid), levels);
     const stats = allStats.get(u.uid)!;
+    const synergies = heroTraits(p, u, items);
     out.push({
       id: out.length,
       side,
@@ -300,7 +301,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
       owner: null,
       mirror: 0,
       debuffs: [],
-      triggers: [...unitTriggers(levels, def), ...essenceTriggers(p, u.uid)].map((tr) => ({ ...tr, fired: false })),
+      triggers: [...unitTriggers(levels, synergies), ...essenceTriggers(p, u.uid)].map((tr) => ({ ...tr, fired: false })),
       spring: items.map(({ id }) => ITEMS[id].spring).find((s) => s) ?? null,
       fury: items.map(({ id }) => ITEMS[id].lowHpFury).find((s) => s) ?? null,
       engulf: Math.max(0, ...items.map(({ id }) => ITEMS[id].engulf ?? 0)),
@@ -332,7 +333,7 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
           const opener = ITEMS[id].opener?.(tier);
           return opener ? [{ source: id, opener }] : [];
         }),
-        ...unitOpeners(levels, def),
+        ...unitOpeners(levels, synergies),
       ].map(({ source, opener: o }) => ({
         source,
         width: o.width,
@@ -370,10 +371,10 @@ function deploy(p: Player, side: Side, levels: TraitLevels, scale: number, chose
           cutthroat: has('cutthroat') ? Math.round(CUTTHROAT.every * TICKS_PER_SECOND) : null,
           spellCrit: has('criticalSpellcraft'),
         };
-      })(heroTraits(p, u, items)),
+      })(synergies),
       judgement: judgementOf(p) && leadsOf(p, levels, u.uid).includes('astral') ? { readyAt: 0, tick: -1 } : null,
       fortify: fortify && slotsUsed(p, u.uid) >= MAX_ITEMS_PER_UNIT ? fortify : 0,
-      dragonShield: dragonShield && heroTraits(p, u, items).has('dragonaltar') ? dragonShield : 0, // orbs count too
+      dragonShield: dragonShield && synergies.has('dragonaltar') ? dragonShield : 0, // orbs count too
       sharpshooter: sharp,
       revive: Math.max(0, ...items.map(({ id }) => ITEMS[id].revive ?? 0)),
       rageMark: items.map(({ id }) => ITEMS[id].rageMark).find((s) => s) ?? null,
@@ -1195,7 +1196,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     hit: (source, target, raw, type, effect) => skillHit(fighters[source.id], fighters[target.id], raw, type, effect, false),
     basicHit: (source, target, raw, type, effect) => skillHit(fighters[source.id], fighters[target.id], raw, type, effect, true),
     safestCell: (f) => safestCell(occupied, f, fighters.filter((e) => e.side !== f.side && e.hp > 0)),
-    dashTo: (who, to) => {
+    dashTo: (who, to, show) => {
       const f = fighters[who.id];
       // Displacement: an enemy's skill moving it. Immune units stay put; a Turret never moves.
       if (f.anchored || (casting && casting.side !== f.side && t < f.ccImmuneUntil)) return;
@@ -1203,7 +1204,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       f.x = to.x;
       f.y = to.y;
       occupied[gridIndex(f)] = f.id;
-      events.push({ t, type: 'dash', id: f.id, x: f.x, y: f.y });
+      if (show !== false) events.push({ t, type: 'dash', id: f.id, x: f.x, y: f.y, ...(show && { seconds: show }) });
     },
     guard: (who, seconds, reduction) => {
       const f = fighters[who.id];
@@ -1441,6 +1442,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       const target = fighters[who.id];
       target.shred = Math.max(target.shred, fighters[by.id].stats.armorShred);
     },
+    showLeap: (who, to, seconds) => {
+      events.push({ t, type: 'dash', id: who.id, x: to.x, y: to.y, seconds, arc: true });
+    },
     showProjectile: (from, to, seconds, effect) => {
       events.push({ t, type: 'projectile', effect, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, until: t + Math.round(seconds * TICKS_PER_SECOND) });
     },
@@ -1675,7 +1679,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // Item pulses (e.g. Keris' Justice): from a living holder, hitting every living enemy (or those in the
   // densest 3x3). They fire even while the holder is stunned.
-  // Angela's card: each beaming hero shoots a line through its target (or the nearest enemy) to the board's
+  // Angela's card: each beaming hero shoots a 2-wide line through its target (or the nearest enemy) to the board's
   // edge, healing allies on it and hitting enemies.
   function fireLoveBeams(t: number): void {
     if (t === 0) return;
@@ -1686,9 +1690,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       if (!enemies.length) continue;
       const aim = f.target && f.target.hp > 0 ? f.target : nearest(f, enemies);
       if (aim.x === f.x && aim.y === f.y) continue;
-      const cells = lineThrough(f, aim);
-      api.showProjectile(f, cells[cells.length - 1] ?? aim, 0.3, 'lovebeam');
-      for (const c of cells) {
+      for (const c of loveBeam(api, f, aim)) {
         const there = fighters.find((o) => o.hp > 0 && o.x === c.x && o.y === c.y);
         if (!there) continue;
         if (there.side === f.side) api.heal(there, there.maxHp * beam.heal, f);

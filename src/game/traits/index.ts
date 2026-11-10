@@ -214,10 +214,11 @@ export function traitPulses(levels: TraitLevels): { trait: string; pulse: Pulse 
   return Object.entries(levels).flatMap(([id, level]) => (TRAITS[id].pulses?.(level) ?? []).map((pulse) => ({ trait: id, pulse })));
 }
 
-// The triggers a unit carries into a fight: its own traits' only.
-export function unitTriggers(levels: TraitLevels, def: UnitDef): { trait: string; trigger: Trigger }[] {
+// The triggers a unit carries into a fight: only its synergies' (`traits`: its own, plus any orb's on it).
+export function unitTriggers(levels: TraitLevels, traits: Iterable<string>): { trait: string; trigger: Trigger }[] {
+  const mine = new Set(traits);
   return Object.entries(levels)
-    .filter(([id]) => def.traits.includes(id))
+    .filter(([id]) => mine.has(id))
     .flatMap(([id, level]) => (TRAITS[id].triggers?.(level) ?? []).map((trigger) => ({ trait: id, trigger })));
 }
 
@@ -245,10 +246,11 @@ export function roundStartEffects(p: Pick<Player, 'board' | 'orb'>): { trait: st
   });
 }
 
-// Battle-start effects a unit brings from its own active traits.
-export function unitOpeners(levels: TraitLevels, def: UnitDef): { source: string; opener: Opener }[] {
+// Battle-start effects a unit brings from its active synergies (`traits`: its own, plus any orb's on it).
+export function unitOpeners(levels: TraitLevels, traits: Iterable<string>): { source: string; opener: Opener }[] {
+  const mine = new Set(traits);
   return Object.entries(levels).flatMap(([id, level]) => {
-    const opener = def.traits.includes(id) ? TRAITS[id].opener?.(level) : undefined;
+    const opener = mine.has(id) ? TRAITS[id].opener?.(level) : undefined;
     return opener ? [{ source: id, opener }] : [];
   });
 }

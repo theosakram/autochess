@@ -32,8 +32,10 @@ export function altarStatus(p: Player, key: AltarKey, round: number): { uses: nu
   return { uses: banked + earned, next: due + earned * altar.every };
 }
 
-// Why this unit def can't go on an altar, or null.
-export function offerBlock(def: UnitDef): string | null {
+// Why this unit can't go on an altar, or null. Only 1-star heroes.
+export function offerBlock(unit: { defId: string; star: number }): string | null {
+  const def = UNIT_BY_ID[unit.defId];
+  if (unit.star > 1) return 'Only 1-star heroes can be offered';
   if (def.piece || def.shop === false) return `The ${def.name} can't be offered`;
   if (nextTier(def.tier) === null) return `Nothing costs more than the ${def.name}`;
   return null;
@@ -74,7 +76,7 @@ export function offer(state: GameState, p: Player, key: AltarKey, uid: number): 
   if (!found) return 'No such unit';
   const unit = found.slots[found.index]!;
   const def = UNIT_BY_ID[unit.defId];
-  const blocked = offerBlock(def);
+  const blocked = offerBlock(unit);
   if (blocked) return blocked;
   const tier = nextTier(def.tier)!;
 

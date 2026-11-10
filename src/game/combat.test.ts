@@ -387,8 +387,10 @@ describe('phasewarper', () => {
   });
 
   test('only members carry the trigger', () => {
-    expect(unitTriggers({ phasewarper: 1 }, UNIT_BY_ID.harley)).toHaveLength(1);
-    expect(unitTriggers({ phasewarper: 1 }, UNIT_BY_ID.footman)).toHaveLength(0);
+    expect(unitTriggers({ phasewarper: 1 }, UNIT_BY_ID.harley.traits)).toHaveLength(1);
+    expect(unitTriggers({ phasewarper: 1 }, UNIT_BY_ID.footman.traits)).toHaveLength(0);
+    // An orb's synergy counts too.
+    expect(unitTriggers({ phasewarper: 1 }, [...UNIT_BY_ID.footman.traits, 'phasewarper'])).toHaveLength(1);
   });
 
   test('safest cell is the free tile farthest from threats', () => {

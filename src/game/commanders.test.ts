@@ -792,7 +792,7 @@ describe('Dyroth', () => {
   }
   const owned = (p: Player) => [...p.bench, ...p.board].filter((u) => u !== null).map((u) => u!.defId);
 
-  test('the Demon Altar opens on round 3: a 4-gold Gustiwana Deadeye gives a 5-gold Gustiwana and a 5-gold Deadeye', () => {
+  test('the Greater Demon Altar opens on round 3: a 4-gold Gustiwana Deadeye gives a 5-gold Gustiwana and a 5-gold Deadeye', () => {
     const { state, p } = dyrothGame();
     const def = UNITS.find((u) => u.tier === 4 && u.traits.includes('gustiwana') && u.traits.includes('deadeye'));
     // Any 4-gold hero with a faction and a role works the same; prefer the example if the roster has it.
@@ -842,6 +842,8 @@ describe('Dyroth', () => {
     state.round = 3;
     const hero = UNITS.find((u) => u.tier === 2 && u.shop !== false)!;
     p.board[0] = { uid: 705, defId: hero.id, star: 2 };
+    expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 705 }).ok).toBe(false); // 1-star only
+    p.board[0] = { uid: 705, defId: hero.id, star: 1 };
     p.items = [{ uid: 900, id: 'waraxe', tier: 1, holder: 705 }];
     for (let i = 0; i < p.bench.length; i++) p.bench[i] = { uid: 800 + i, defId: 'footman', star: 1 }; // full
     expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 705 }).ok).toBe(true);
@@ -894,11 +896,11 @@ describe('Dyroth', () => {
     expect(altarStatus(p, 'altar', state.round).uses).toBe(1);
   });
 
-  test('on another commander, his card lends the Demon Altar', () => {
+  test('on another commander, his card lends the Abyss Altar (the random one)', () => {
     const { p } = dyrothGame();
     p.commander = 'lukas';
     p.commanderCard = 'dyroth';
-    expect(powersOf(p).altar).toEqual(DYROTH.altar);
+    expect(powersOf(p).altar).toEqual(DYROTH.secondAltar);
     expect(powersOf(p).secondAltar).toBeUndefined();
   });
 });

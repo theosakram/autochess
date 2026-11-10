@@ -19,7 +19,8 @@ import { baseItemOf, cardItem, isItemCard, ITEMS } from './items';
 import { orbOptions } from './orb';
 import { absorb, bloodMerge, bloodRoom, copiesOf, pooledOf, findCopies, mergeSize, mergeUnits, nearMerge, promote, slotsOf } from './merge';
 import { addXp, boardCount, heroCapOf, isAlive, levelUpCost } from './player';
-import { refreshShop, shopPrice } from './shop';
+import { drawUnit, refreshShop, shopPrice } from './shop';
+import { pickBox } from './box';
 import { TRAITS } from './traits';
 import { nextInt } from './rng';
 import type { GameState, Loc, Player, Unit } from './types';
@@ -48,6 +49,7 @@ export type Action =
   | { type: 'pickFactionOrb'; trait: string } // Prime Selection: one of the faction orbs on offer
   | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
   | { type: 'pickItem'; item: string } // one of the basic items on offer
+  | { type: 'pickBox'; prize: number } // the Box round: a prize, on your turn
   | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (a roll a round, unused ones bank up)
   | { type: 'openTrove' } // Kaela: cash in the Trove's points
   | { type: 'useMirror'; unit: number } // unit uid: copy it with a Mirror Device from the inventory
@@ -223,7 +225,7 @@ function perform(state: GameState, p: Player, action: Action): Result {
       if (!Number.isInteger(slot) || slot < 0 || slot >= SHOP_SIZE) return fail('Bad shop slot');
       const defId = p.shop[slot];
       if (!defId) return fail('Nothing to buy there');
-      if (isItemCard(defId)) return upgradeItem(p, slot);
+      if (isItemCard(defId)) return upgradeItem(state, p, slot);
       const cost = shopPrice(p, slot);
       if (p.gold < cost) return fail('Not enough gold');
       // Opening Promotion: this was the round's free buy (unless Guiness had made the hero free anyway).
@@ -321,6 +323,9 @@ function perform(state: GameState, p: Player, action: Action): Result {
       return why ? fail(why) : OK;
     }
 
+    case 'pickBox':
+      return result(pickBox(state, p, action.prize));
+
     case 'pickFactionOrb': {
       const why = pickFactionOrb(state, p, action.trait);
       return why ? fail(why) : OK;
@@ -414,8 +419,9 @@ function perform(state: GameState, p: Player, action: Action): Result {
   }
 }
 
-// Upgrade cards are free: they raise the matching owned item one tier, up to the shop's cap.
-function upgradeItem(p: Player, slot: number): Result {
+// Upgrade cards are free: they raise the matching owned item one tier, up to the shop's cap. A hero takes
+// the card's slot, so the shop doesn't come up a slot short.
+function upgradeItem(state: GameState, p: Player, slot: number): Result {
   const itemId = cardItem(p.shop[slot]!);
   const item = p.items.find((i) => baseItemOf(i.id) === itemId); // its enhanced version too
   if (!item) return fail(`You don't own ${ITEMS[itemId].name}`);
@@ -423,6 +429,6 @@ function upgradeItem(p: Player, slot: number): Result {
   const cap = (trait && TRAITS[trait].items?.maxShopTier) || ITEMS[itemId].maxTier;
   if (item.tier >= cap) return fail(`${ITEMS[itemId].name} is already tier ${cap}`);
   item.tier++;
-  p.shop[slot] = null;
+  p.shop[slot] = drawUnit(state, p.level, p);
   return OK;
 }

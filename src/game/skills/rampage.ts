@@ -1,30 +1,24 @@
 import { type Point } from '../grid';
-import { dist } from '../grid';
 import { pct } from '../traits/format';
-import { dashLine } from './phantomExecution';
+import { bestLine } from './areas';
 import type { SkillDef, SkillFighter } from './types';
 import { pickSpread } from './unfoldingTale';
 
 // Fanny (5g Cult of Fire / Hunter). Per star, index 0 = 1★.
 export const RAMPAGE = {
   dashes: 5,
-  stepSeconds: 0.1, // one cell per step
+  stepSeconds: 0.2, // one cell per step: a slow leap to the wall
   atk: [0.7, 0.75, 1.5], // of attack, physical, to each enemy it passes (once per dash)
   fireballs: 4, // per dash, at random enemies
   fireball: [1, 1, 4], // of attack, physical, each
   slash: [2.7, 2.7, 6.7], // of attack, physical, to the nearest enemy after the last dash
 };
 
-// Each dash heads for the farthest enemy and keeps going to the wall.
-function farthest(enemies: SkillFighter[], from: Point): SkillFighter | null {
-  return enemies.reduce<SkillFighter | null>((best, e) => (!best || dist(from, e) > dist(from, best) ? e : best), null);
-}
-
 export const rampage: SkillDef = {
   id: 'rampage',
   name: 'Rampage',
   desc:
-    `Dashes ${RAMPAGE.dashes} times, each toward the farthest enemy and on until it reaches the wall: every enemy it passes takes ` +
+    `Dashes ${RAMPAGE.dashes} times, leaping along the line through the most enemies (the farthest on a tie) to the wall: every enemy it passes takes ` +
     `{atk} of attack as physical damage. As it sets off on each dash it shoots ${RAMPAGE.fireballs} fireballs at random enemies, ` +
     'each dealing {fireball} of attack as physical damage. After the last dash it slashes the nearest enemy for {slash} of attack ' +
     'as physical damage. It can be hit while it dashes.',
@@ -37,6 +31,7 @@ export const rampage: SkillDef = {
     let left = R.dashes;
     let path: Point[] = [];
     let passed = new Set<number>();
+    let landing: Point = caster;
     let done = false;
     const finish = () => {
       if (done) return;
@@ -50,11 +45,16 @@ export const rampage: SkillDef = {
     api.repeat(caster, R.stepSeconds, R.dashes * 10, () => {
       if (done) return;
       while (!path.length) {
-        const target = left > 0 ? farthest(api.enemiesOf(caster), caster) : null;
-        if (!target) return finish();
+        // Each dash takes the line through the most enemies, the farthest on a tie, on to the wall.
+        const line = left > 0 ? bestLine(api, caster, Infinity, true) : [];
+        if (!line.length) return finish();
         left--;
         passed = new Set();
-        path = dashLine(caster, target, 99);
+        path = line;
+        // One arc to the farthest free cell, timed to the silent cell-by-cell moves below (so it can be hit on
+        // the way); it lands a step before the next leap, which is its perch on the wall.
+        landing = [...line].reverse().find((p) => !api.occupant(p)) ?? { x: caster.x, y: caster.y };
+        api.showLeap(caster, landing, Math.max(1, line.length - 1) * R.stepSeconds);
         for (const e of pickSpread<SkillFighter>(api, api.enemiesOf(caster), R.fireballs)) {
           if (e.hp <= 0) continue;
           api.showProjectile(caster, e, 0.2, 'rampagefireball');
@@ -63,12 +63,15 @@ export const rampage: SkillDef = {
       }
       const cell = path.shift()!;
       const there = api.occupant(cell);
-      if (!there) api.dashTo(caster, cell);
+      if (!there) api.dashTo(caster, cell, false);
       else if (there.side !== caster.side && !passed.has(there.id)) {
         passed.add(there.id);
         api.hit(caster, there, pass, 'physical', 'rampage');
       }
-      if (!path.length && left === 0) finish();
+      if (path.length) return;
+      // Someone stepped into the landing mid-leap: snap the picture to where it really ended.
+      if (caster.x !== landing.x || caster.y !== landing.y) api.dashTo(caster, { x: caster.x, y: caster.y });
+      if (left === 0) finish();
     });
   },
 };

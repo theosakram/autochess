@@ -4,7 +4,7 @@ import { MAX_COMBAT_TICKS, TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { dist, GRID_H, GRID_W, type Point } from './grid';
 import { JIMAT } from './items';
-import { PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, dashLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, bestLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, TRAITS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -79,6 +79,7 @@ function fakeBattle(enemyCells: Point[]) {
     attackPower: (f) => ({ amount: f.stats.atk, type: 'physical' }),
     showOrbit: () => {},
     showProjectile: () => {},
+    showLeap: () => {},
     shred: (target) => {
       log.order.push(`shred:${target.id}`);
     },
@@ -117,7 +118,7 @@ function fakeBattle(enemyCells: Point[]) {
   const attacked = (skill: string, by = enemies[0]) => SKILLS[skill].onAttacked!(api, caster, by);
   const afterAttack = (skill: string, target = enemies[0]) => SKILLS[skill].afterAttack!(api, caster, target);
   // `allies`: push extra units of the caster's side (alliesOf reads them).
-  return { caster, enemies, log, fragile, cast, onHit, atStart, attacked, afterAttack, allies: all };
+  return { api, caster, enemies, log, fragile, cast, onHit, atStart, attacked, afterAttack, allies: all };
 }
 
 describe('Phantom Execution', () => {
@@ -130,36 +131,42 @@ describe('Phantom Execution', () => {
     expect([UNIT_BY_ID.lance.name, UNIT_BY_ID.lance.range]).toEqual(['Lance', 1]);
   });
 
-  test('3★ only: 3 guarded dashes as the fight starts; they count toward Phantoms, not toward the cast count', () => {
-    for (const star of [1, 2] as const) {
+  test('3★ only: starts the fight with full mana', () => {
+    for (const star of [1, 2, 3] as const) {
       const b = fakeBattle([{ x: 3, y: 3 }]);
       b.caster.star = star;
+      b.caster.stats = unitStats(UNIT_BY_ID.lance, star);
       b.atStart('phantomexecution');
+      expect(b.log.mana).toEqual(star === 3 ? [{ target: b.caster.id, amount: b.caster.stats.maxMana }] : []);
       expect(b.log.dashes).toEqual([]);
     }
-    const b = fakeBattle([{ x: 3, y: 0 }, { x: 0, y: 3 }]);
-    b.caster.star = 3;
-    b.caster.stats = unitStats(UNIT_BY_ID.lance, 3);
-    b.atStart('phantomexecution');
-    expect(b.log.guards).toEqual([3 * PHANTOM_EXECUTION.dashSeconds]);
-    expect(b.caster.skill.dashes).toBe(3);
-    expect(b.caster.skill.casts).toBeUndefined();
-    expect(b.log.hits.some((h) => h.effect === 'phantom')).toBe(false);
-    // The first cast after is still a single dash, and it leaves a Phantom.
-    b.cast();
-    expect(b.log.guards[1]).toBe(PHANTOM_EXECUTION.dashSeconds);
-    expect(b.caster.skill.dashes).toBe(4);
   });
 
-  test('dashes 1, then 2, then 3 per cast, and never more', () => {
+  // Casts once and plays out every queued dash.
+  const castAll = (b: ReturnType<typeof fakeBattle>) => {
+    const from = b.log.repeats.length;
+    b.cast();
+    for (const r of b.log.repeats.slice(from)) for (let i = 0; i < r.times; i++) r.fn();
+  };
+
+  test('3 dashes per cast: one at once, the rest a dash apart, busy until the last', () => {
     const b = fakeBattle([{ x: 3, y: 3 }]);
-    const perCast = [1, 2, 3, 3].map(() => {
-      const before = b.log.dashes.length;
-      b.cast();
-      return b.log.dashes.length - before;
-    });
-    expect(perCast).toEqual([1, 2, 3, 3]);
-    expect(b.log.guards).toEqual([1, 2, 3, 3].map((n) => n * PHANTOM_EXECUTION.dashSeconds));
+    b.cast();
+    expect(b.log.dashes).toHaveLength(1);
+    expect(b.log.busy).toEqual([true]);
+    expect(b.log.repeats[0]).toMatchObject({ seconds: PHANTOM_EXECUTION.dashSeconds, times: 2 });
+    b.log.repeats[0].fn();
+    b.log.repeats[0].fn();
+    expect(b.log.dashes).toHaveLength(3);
+    expect(b.log.busy).toEqual([true, false]);
+    expect(b.log.guards).toEqual([3 * PHANTOM_EXECUTION.dashSeconds]);
+  });
+
+  test('dashes along the line through the most enemies, not the nearest', () => {
+    // Nearest is alone at (2,4); a pair lines up to the right at (5,5),(6,5).
+    const b = fakeBattle([{ x: 2, y: 4 }, { x: 5, y: 5 }, { x: 6, y: 5 }]);
+    b.cast();
+    expect(b.log.hits.slice(0, 2).map((h) => h.target).sort()).toEqual([2, 3]);
   });
 
   test('hits every enemy on the line for its star share of attack; Phantoms only after 3 dashes', () => {
@@ -167,23 +174,23 @@ describe('Phantom Execution', () => {
     const b = fakeBattle([{ x: 3, y: 3 }, { x: 3, y: 2 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.lance, 1);
     const raw = b.caster.stats.atk * PHANTOM_EXECUTION.atk[0];
-    b.cast(); // dash 1
-    expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
+    castAll(b); // dashes 1-3
+    expect(b.log.hits.slice(0, 2).map((h) => h.target).sort()).toEqual([1, 2]);
     expect(b.log.hits.every((h) => h.raw === raw && h.effect === 'phantomexecution')).toBe(true);
-    b.cast(); // dashes 2-3
-    expect(b.log.hits.some((h) => h.effect === 'phantom')).toBe(false);
-    b.cast(); // dashes 4-6: every one leaves a Phantom
+    castAll(b); // dashes 4-6: every one leaves a Phantom
     expect(b.log.hits.filter((h) => h.effect === 'phantom').length).toBeGreaterThan(0);
   });
 
-  test('the dash line runs straight through the target to the edge or 4 cells', () => {
-    expect(dashLine({ x: 3, y: 5 }, { x: 3, y: 3 }, 4)).toEqual([
-      { x: 3, y: 4 },
-      { x: 3, y: 3 },
-      { x: 3, y: 2 },
-      { x: 3, y: 1 },
-    ]);
-    expect(dashLine({ x: 1, y: 1 }, { x: 0, y: 0 }, 4)).toEqual([{ x: 0, y: 0 }]);
+  test('bestLine aims at any angle, through the most enemies; ties go nearest (or farthest)', () => {
+    // A lone enemy off every 8-way line from (3,5) still gets hit.
+    const lone = fakeBattle([{ x: 4, y: 2 }]);
+    expect(bestLine(lone.api, lone.caster, 4)).toContainEqual({ x: 4, y: 2 });
+    // Two lone enemies, equal count: nearest by default, farthest with `far`.
+    const two = fakeBattle([{ x: 3, y: 4 }, { x: 0, y: 5 }]);
+    expect(bestLine(two.api, two.caster, 99)[0]).toEqual({ x: 3, y: 4 });
+    expect(bestLine(two.api, two.caster, 99, true)[0]).toEqual({ x: 2, y: 5 });
+    // Length caps the line.
+    expect(bestLine(two.api, two.caster, 1)).toHaveLength(1);
   });
 });
 
@@ -644,6 +651,9 @@ describe('Rampage', () => {
     if (!cast) throw new Error('no rampage');
     expect(r.events.some((e) => e.type === 'effect' && e.effect === 'rampagefireball')).toBe(true);
     expect(r.events.some((e) => e.type === 'effect' && e.effect === 'rampageslash')).toBe(true);
+    // Each dash is drawn as one arcing leap, never cell-by-cell steps.
+    const dashes = r.events.filter((e) => e.type === 'dash' && e.id === me && e.t >= cast.t);
+    expect(dashes.some((e) => e.type === 'dash' && e.arc)).toBe(true);
     // Busy: no basic attacks from it until its last dash step is over.
     // (Only the first rampage: it can cast again later.)
     const next = r.events.find((e) => e.type === 'skill' && e.id === me && e.t > cast.t)?.t ?? Infinity;
@@ -1138,22 +1148,25 @@ describe('Tari Penyembuh', () => {
     expect([UNIT_BY_ID.angela.name, UNIT_BY_ID.angela.range, UNIT_BY_ID.angela.mana]).toEqual(['Angela', 4, 40]);
   });
 
-  test('heals the ally with the lowest HP %, for a share of magic attack', () => {
-    const b = fakeBattle([{ x: 3, y: 1 }]);
+  test('Love Beam: 2 rows wide through its target, healing allies and hitting enemies on it', () => {
+    // From (3,5) straight up at (3,1). (2,0) puts more enemies on the left, so the beam takes columns 2-3;
+    // (5,0) is off it.
+    const b = fakeBattle([{ x: 3, y: 1 }, { x: 2, y: 0 }, { x: 5, y: 0 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.angela, 2);
     b.caster.star = 2;
-    // Allies: the caster (full), a big unit at 600/1500 (40%) and a small one at 300/500 (60%).
-    const big: SkillFighter = { ...b.caster, id: 50, hp: 600, maxHp: 1500, x: 2, y: 5 };
-    const small: SkillFighter = { ...b.caster, id: 51, hp: 300, maxHp: 500, x: 4, y: 5 };
-    b.allies.push(big, small);
+    const ally: SkillFighter = { ...b.caster, id: 50, hp: 100, maxHp: 1500, x: 2, y: 4 };
+    b.allies.push(ally);
     b.cast('taripenyembuh');
-    expect(b.log.heals).toEqual([{ target: 50, amount: b.caster.stats.ap * TARI_PENYEMBUH.ap[1] }]);
+    const ap = b.caster.stats.ap;
+    expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2]);
+    expect(b.log.hits.every((h) => h.raw === ap * TARI_PENYEMBUH.ap[1] && h.effect === 'lovebeam')).toBe(true);
+    expect(b.log.heals).toEqual([{ target: 50, amount: ap * TARI_PENYEMBUH.heal[1] }]);
   });
 
-  test('nobody hurt: no heal', () => {
-    const b = fakeBattle([{ x: 3, y: 1 }]);
+  test('Love Beam leans to the side with more enemies', () => {
+    const b = fakeBattle([{ x: 3, y: 1 }, { x: 4, y: 2 }, { x: 4, y: 0 }]);
     b.cast('taripenyembuh');
-    expect(b.log.heals).toEqual([]);
+    expect(b.log.hits.map((h) => h.target).sort()).toEqual([1, 2, 3]);
   });
 });
 
@@ -2813,6 +2826,9 @@ describe("Wanderer's Volley", () => {
     }
     // Straight up from (3,5): columns 2-4, rows 4 down to 0.
     expect(wideLine({ x: 3, y: 5 }, { x: 3, y: 4 })).toHaveLength(15);
+    // 2 wide: columns 2-3, or 3-4 shifted.
+    expect([...new Set(wideLine({ x: 3, y: 5 }, { x: 3, y: 4 }, 2).map((c) => c.x))].sort()).toEqual([2, 3]);
+    expect([...new Set(wideLine({ x: 3, y: 5 }, { x: 3, y: 4 }, 2, 1).map((c) => c.x))].sort()).toEqual([3, 4]);
   });
 });
 

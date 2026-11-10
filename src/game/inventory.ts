@@ -193,10 +193,10 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
   p.board.forEach((u, cell) => {
     if (!u) return;
     const items = activeItems(heldBy(p, u.uid), levels);
-    const own = UNIT_BY_ID[u.defId].honorary;
-    const honorary = [...honoraryTraits(items), ...(own ? [own.trait] : [])];
-    const leads = Object.keys(leaders).filter((id) => leaders[id].includes(u.uid));
     const mine = heroTraits(p, u, items);
+    // Member bonuses for every synergy it has: its own, orbs on it, its items' and its honorary one.
+    const honorary = [...mine];
+    const leads = Object.keys(leaders).filter((id) => leaders[id].includes(u.uid));
     const big = [...mine].filter((t) => (counts[t] ?? 0) >= TEAMWORK_COUNT).length;
     const mods: StatMod[] = [...extra, ...powerMods(p, cell, heldBy(p, u.uid).length, big, u.defId)];
     // Rogue Mercenary: its permanent buff.

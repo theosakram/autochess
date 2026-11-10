@@ -119,7 +119,7 @@ export interface Player {
   shield?: number; // commander shield (Rock Solid): soaks hp damage first
   factionOrbOffer?: string[]; // Prime Selection: faction orbs to choose one from (faction trait ids)
   freeRerolls?: number; // banked free shop refreshes (Premium Client), used before gold
-  powerOffer?: { tier: PowerTier; cards: string[]; rerolled: boolean[] }; // waiting for a pick (no time limit)
+  powerOffer?: { tier: PowerTier; cards: string[]; rerolls: number }; // waiting for a pick (no time limit); rerolls spent, shared by every slot
   powerQueue?: PowerTier[]; // later power card rounds' tiers, offered one by one once powerOffer is picked
   itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
   offerFrom?: 'basic' | 'loot' | 'chest'; // where the current itemOffer comes from
@@ -148,6 +148,7 @@ export interface Player {
   freya?: { trait: string | null; claimed: number[] };
   rallied?: { trait: string | null; heroes: string[] }; // Cyclops's low-hp rally, once given: the trait and heroes it gave
   heirGold?: number;
+  boxCap?: number; // +1 hero capacity prizes taken from Box rounds
   freeSlot?: number | null; // the shop slot whose hero is free this round (Guiness), until bought or refreshed
   freeBuy?: true; // Opening Promotion: this round's first hero bought costs nothing
   freeHeroes?: number; // Guiness's card: after-fight shops left that get a free hero // gold Cyclops's powers paid from knockouts so far // Freya: the blessed role, and the reward levels (1-3) claimed
@@ -179,6 +180,16 @@ export interface GameState {
   players: Player[];
   chosen: Record<string, string>; // trait id -> unit def id it picked for the whole game, same for everyone
   powerTiers?: PowerTier[]; // the power card tier on each POWER_CARD_ROUNDS round, rolled once per match
+  box?: Box; // the Box round under way (see box.ts), between a stage's last fight and the next round
+}
+
+export type BoxPrize = { kind: 'hero'; defId: string } | { kind: 'item'; id: string } | { kind: 'orb'; trait: string } | { kind: 'capacity' };
+
+export interface Box {
+  stage: number;
+  prizes: BoxPrize[];
+  order: string[]; // player ids, in pick order (lowest hp first)
+  picks: number[]; // prize indices taken so far, in order: picks[k] was order[k]'s
 }
 
 export type PowerTier = 'blue' | 'purple' | 'gold';

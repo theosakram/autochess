@@ -21,6 +21,17 @@ const SEEDS = [
   { id: 'b', name: 'B', isBot: false, commander: 'lukas' },
 ];
 
+test('power card rerolls: one per card, shared, so one card can take them all', () => {
+  const state = createGame(1, SEEDS);
+  const a = state.players[0];
+  a.powerOffer = { tier: 'purple', cards: ['payday', 'fastGrowth'], rerolls: 0 };
+  const pinned = a.powerOffer.cards[0];
+  expect(applyAction(state, a.id, { type: 'rerollPower', slot: 1 }).ok).toBe(true);
+  expect(applyAction(state, a.id, { type: 'rerollPower', slot: 1 }).ok).toBe(true);
+  expect(applyAction(state, a.id, { type: 'rerollPower', slot: 0 }).ok).toBe(false); // all spent
+  expect(a.powerOffer.cards[0]).toBe(pinned);
+});
+
 describe('Magic Immersion', () => {
   // Mana after the first basic attack, for a hero with or without an item, with or without the card.
   const firstAttackMana = (item: boolean, tier: PowerTier | null) => {
@@ -135,7 +146,7 @@ describe('Payday', () => {
     for (const [tier, gold, rounds] of [['blue', 6, 1], ['purple', 7, 2], ['gold', 8, 3]] as const) {
       const state = createGame(5, SEEDS);
       const [a] = state.players;
-      a.powerOffer = { tier, cards: ['payday'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['payday'], rerolls: 0 };
       const before = a.gold;
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'payday' }).ok).toBe(true);
       expect(a.gold - before).toBe(gold);
@@ -163,7 +174,7 @@ describe('Full Throttle', () => {
     }
     a.powerCards = [];
     a.xp = 26;
-    a.powerOffer = { tier: 'purple', cards: ['fastGrowth'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['fastGrowth'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'fastGrowth' }).ok).toBe(true);
     expect(a.level).toBe(7);
   });
@@ -270,7 +281,7 @@ describe('Uncertain Fortune', () => {
       for (let i = 0; i < n; i++) {
         a.gold = 0;
         a.powerCards = [];
-        a.powerOffer = { tier, cards: ['feelingLucky'], rerolled: [] };
+        a.powerOffer = { tier, cards: ['feelingLucky'], rerolls: 0 };
         expect(applyAction(state, a.id, { type: 'pickPower', card: 'feelingLucky' }).ok).toBe(true);
         expect(a.gold === low || a.gold === high).toBe(true);
         if (a.gold === high) highs++;
@@ -325,7 +336,7 @@ describe('Healing Fountain', () => {
     for (const [tier, n, heal] of [['blue', 3, 2], ['purple', 4, 3], ['gold', 5, 4]] as const) {
       const state = createGame(11, SEEDS);
       const [a] = state.players;
-      a.powerOffer = { tier, cards: ['healingFountain'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['healingFountain'], rerolls: 0 };
       const gold = a.gold;
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'healingFountain' }).ok).toBe(true);
       expect(a.gold - gold).toBe(n);
@@ -344,7 +355,7 @@ describe('Rock Solid', () => {
     for (const [tier, n] of [['blue', 20], ['purple', 30], ['gold', 40]] as const) {
       const state = createGame(13, SEEDS);
       const [a] = state.players;
-      a.powerOffer = { tier, cards: ['paladin'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['paladin'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'paladin' }).ok).toBe(true);
       expect(a.shield).toBe(n);
       hurtPlayer(a, n - 5);
@@ -360,7 +371,7 @@ describe('Glittering Jewels', () => {
     for (const [tier, n] of [['blue', 9], ['purple', 13], ['gold', 19]] as const) {
       const state = createGame(17, SEEDS);
       const [a] = state.players;
-      a.powerOffer = { tier, cards: ['shoppingSpree'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['shoppingSpree'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'shoppingSpree' }).ok).toBe(true);
       expect(a.freeRerolls).toBe(n);
       a.gold = 0;
@@ -647,7 +658,7 @@ describe('Excellent Recruit', () => {
       a.bench.fill(null);
       const pooled = () => Object.values(state.pool).reduce((n, c) => n + c, 0);
       const before = pooled();
-      a.powerOffer = { tier, cards: ['excellentRecruit'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['excellentRecruit'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'excellentRecruit' }).ok).toBe(true);
       const got = a.bench.filter((u) => u).map((u) => UNITS.find((d) => d.id === u!.defId)!);
       expect(got.length).toBeGreaterThan(0); // fewer than 3 if they merged
@@ -662,7 +673,7 @@ describe('Excellent Recruit', () => {
     a.board.fill(null);
     for (let i = 0; i < a.bench.length; i++) a.bench[i] = { uid: 900 + i, defId: 'minos', star: 2 };
     a.level = 1;
-    a.powerOffer = { tier: 'purple', cards: ['excellentRecruit'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['excellentRecruit'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'excellentRecruit' }).ok).toBe(true);
     const fielded = a.board.flatMap((u) => (u ? [UNITS.find((d) => d.id === u.defId)!] : [])).filter((d) => !d.piece);
     expect(fielded.length).toBeGreaterThan(0); // fewer than 3 if they merged
@@ -676,7 +687,7 @@ describe('Cyclical Support', () => {
       const state = createGame(29, SEEDS);
       const [a] = state.players;
       delete a.itemOffer;
-      a.powerOffer = { tier, cards: ['cyclicalSupport'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['cyclicalSupport'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'cyclicalSupport' }).ok).toBe(true);
       expect(a.offerFrom).toBe('chest');
       expect((a as Player).itemOffer?.length).toBeGreaterThan(0);
@@ -702,7 +713,7 @@ describe('Jump the Gun', () => {
       a.level = 9;
       a.xp = 0;
       const need = xpToNext(a)!;
-      a.powerOffer = { tier, cards: ['jumpTheGun'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['jumpTheGun'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'jumpTheGun' }).ok).toBe(true);
       expect(n < need ? [a.level, a.xp] : [a.level]).toEqual(n < need ? [9, n] : [10]);
     }
@@ -745,7 +756,7 @@ describe("Rogue's Aid", () => {
     const state = createGame(37, SEEDS);
     const [a] = state.players;
     a.items = [];
-    a.powerOffer = { tier: 'blue', cards: ['roguesAid'], rerolled: [] };
+    a.powerOffer = { tier: 'blue', cards: ['roguesAid'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'roguesAid' }).ok).toBe(true);
     expect(a.items.map((i) => [i.id, i.tier, i.holder])).toEqual([['thieftool', 1, null]]);
   });
@@ -807,7 +818,7 @@ describe('Fateful Dice', () => {
     const state = createGame(43, SEEDS);
     const [a] = state.players;
     a.mirrors = 1;
-    a.powerOffer = { tier: 'purple', cards: ['fatefulDice'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['fatefulDice'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'fatefulDice' }).ok).toBe(true);
     expect(a.mirrors).toBe(2);
   });
@@ -820,7 +831,7 @@ describe('Counter Action', () => {
     delete a.itemOffer;
     a.chests = undefined;
     a.hp = hp;
-    a.powerOffer = { tier: 'purple', cards: ['counterAction'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['counterAction'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'counterAction' }).ok).toBe(true);
     return { state, a };
   };
@@ -864,7 +875,7 @@ describe('Apex Weaponry', () => {
     a.level = 7;
     a.xp = 0;
     a.gold = 0;
-    a.powerOffer = { tier: 'purple', cards: ['apexWeaponry'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['apexWeaponry'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'apexWeaponry' }).ok).toBe(true);
     expect(a.gold).toBe(4);
     expect((a as Player).chests?.waiting ?? 0).toBe(0);
@@ -900,7 +911,7 @@ describe('Reinforcement Plus', () => {
       a.bench.fill(null);
       const pooled = () => Object.values(state.pool).reduce((n, c) => n + c, 0);
       const before = pooled();
-      a.powerOffer = { tier, cards: ['reinforcementPlus'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['reinforcementPlus'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'reinforcementPlus' }).ok).toBe(true);
       const got = a.bench.filter(Boolean);
       expect(got).toHaveLength(1);
@@ -915,7 +926,7 @@ describe('Reinforcement Plus', () => {
     const [a] = state.players;
     a.board.fill(null);
     for (let i = 0; i < a.bench.length; i++) a.bench[i] = { uid: 900 + i, defId: 'minos', star: 2 };
-    a.powerOffer = { tier: 'blue', cards: ['reinforcementPlus'], rerolled: [] };
+    a.powerOffer = { tier: 'blue', cards: ['reinforcementPlus'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'reinforcementPlus' }).ok).toBe(true);
     expect(a.board.filter((u) => u && !UNITS.find((d) => d.id === u.defId)!.piece).map((u) => u!.star)).toEqual([2]);
   });
@@ -937,7 +948,7 @@ const pickPurple = (seed: number, card: string, setup?: (a: Player) => void, set
   a.bench.fill(null);
   setup?.(a);
   setState?.(state);
-  a.powerOffer = { tier: 'purple', cards: [card], rerolled: [] };
+  a.powerOffer = { tier: 'purple', cards: [card], rerolls: 0 };
   expect(applyAction(state, a.id, { type: 'pickPower', card }).ok).toBe(true);
   return { state, a };
 };
@@ -1130,7 +1141,7 @@ describe('Adequate Stock', () => {
       const state = createGame(101, SEEDS);
       const [a] = state.players;
       a.freeRerolls = 0;
-      a.powerOffer = { tier, cards: ['adequateStock'], rerolled: [] };
+      a.powerOffer = { tier, cards: ['adequateStock'], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: 'adequateStock' }).ok).toBe(true);
       expect(a.freeRerolls).toBe(0); // none on the pick
       const from = state.round;
@@ -1151,7 +1162,7 @@ describe('Trust Fund', () => {
     const [a] = state.players;
     a.level = 7;
     a.gold = 0;
-    a.powerOffer = { tier: 'purple', cards: ['trustFund'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['trustFund'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'trustFund' }).ok).toBe(true);
     expect(a.gold).toBe(0);
     a.level = 8;
@@ -1297,7 +1308,7 @@ describe('Exclusive Offering', () => {
     a.board[4] = { uid: 4, defId: 'eudora', star: 1 };
     syncPlayer(state, a);
     expect(a.items.filter((i) => baseItemOf(i.id) === 'offering')).toHaveLength(1);
-    a.powerOffer = { tier: 'purple', cards: ['exclusiveOffering'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['exclusiveOffering'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'exclusiveOffering' }).ok).toBe(true);
     const offerings = a.items.filter((i) => baseItemOf(i.id) === 'offering');
     expect(offerings).toHaveLength(2);
@@ -1334,7 +1345,7 @@ describe('Transmutation', () => {
   test('after 4 rounds the card turns into a random gold power card', () => {
     const state = createGame(131, SEEDS);
     const [a] = state.players;
-    a.powerOffer = { tier: 'purple', cards: ['transmutation'], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: ['transmutation'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'transmutation' }).ok).toBe(true);
     const from = state.round;
     while (state.round < from + 3) {
@@ -1488,7 +1499,7 @@ describe('gold cards', () => {
     a.bench.fill(null);
     setup?.(a);
     setState?.(state);
-    a.powerOffer = { tier: 'gold', cards: [card], rerolled: [] };
+    a.powerOffer = { tier: 'gold', cards: [card], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card }).ok).toBe(true);
     return { state, a };
   };
@@ -2117,7 +2128,7 @@ describe('blessings', () => {
       a.mistOrbs = [];
       a.itemOffer = undefined;
       a.chests = undefined;
-      a.powerOffer = { tier: 'gold', cards: [`${t}Blessing`], rerolled: [] };
+      a.powerOffer = { tier: 'gold', cards: [`${t}Blessing`], rerolls: 0 };
       expect(applyAction(state, a.id, { type: 'pickPower', card: `${t}Blessing` }).ok).toBe(true);
       expect(a.mistOrbs!.map((o) => o.trait)).toEqual([t]);
       const heroes = [...a.bench, ...a.board].filter((u) => u && badgeHeroes(t).includes(u.defId));
@@ -2178,7 +2189,7 @@ describe('hero cards', () => {
     b.board.fill(null);
     b.bench.fill(null);
     s2.pool.minos = 4;
-    b.powerOffer = { tier: 'purple', cards: ['quakingBlow'], rerolled: [] };
+    b.powerOffer = { tier: 'purple', cards: ['quakingBlow'], rerolls: 0 };
     expect(applyAction(s2, b.id, { type: 'pickPower', card: 'quakingBlow' }).ok).toBe(true);
     const got = [...b.bench, ...b.board].find((u) => u?.defId === 'minos')!;
     expect([got.star, s2.pool.minos]).toEqual([3, 4]);
@@ -2206,7 +2217,7 @@ describe('Prime Selection', () => {
   const pick = (tier: PowerTier) => {
     const state = createGame(19, SEEDS);
     const [a] = state.players;
-    a.powerOffer = { tier, cards: ['factionSynergy'], rerolled: [] };
+    a.powerOffer = { tier, cards: ['factionSynergy'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'factionSynergy' }).ok).toBe(true);
     return { state, a };
   };
@@ -2234,7 +2245,7 @@ describe('Prime Selection', () => {
     for (let seed = 1; seed <= 30; seed++) {
       const state = createGame(seed, SEEDS);
       const [a] = state.players;
-      a.powerOffer = { tier: 'blue', cards: ['factionSynergy'], rerolled: [] };
+      a.powerOffer = { tier: 'blue', cards: ['factionSynergy'], rerolls: 0 };
       applyAction(state, a.id, { type: 'pickPower', card: 'factionSynergy' });
       for (const id of a.factionOrbOffer ?? []) kinds.add(TRAITS[id].kind);
     }
@@ -2255,7 +2266,7 @@ describe('cards that enhance items', () => {
     const state = createGame(23, SEEDS);
     const [a] = state.players;
     setup?.(state, a);
-    a.powerOffer = { tier: 'purple', cards: [card], rerolled: [] };
+    a.powerOffer = { tier: 'purple', cards: [card], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card }).ok).toBe(true);
     return { state, a };
   };
@@ -2308,7 +2319,7 @@ describe('Novel Equipment', () => {
     const state = createGame(29, SEEDS);
     const [a] = state.players;
     a.items = [];
-    a.powerOffer = { tier: 'gold', cards: ['novelEquipment'], rerolled: [] };
+    a.powerOffer = { tier: 'gold', cards: ['novelEquipment'], rerolls: 0 };
     expect(applyAction(state, a.id, { type: 'pickPower', card: 'novelEquipment' }).ok).toBe(true);
     return { state, a };
   };

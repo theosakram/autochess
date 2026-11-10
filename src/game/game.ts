@@ -1,4 +1,5 @@
 import { grantBlood } from './blood';
+import { closeBox, isBoxRound, openBox } from './box';
 import { giveGloves } from './gloves';
 import { essenceRound, payEcho, releaseEssence } from './essence';
 import { runBot } from './bot';
@@ -126,6 +127,7 @@ export interface RoundBonus {
 
 // Preparation phase start. Returns the round-start trait bonuses that were paid out.
 export function startRound(state: GameState): RoundBonus[] {
+  closeBox(state); // anyone who hasn't picked yet gets the first prize left
   state.round++;
   grantOrbs(state);
   const alive = state.players.filter(isAlive);
@@ -225,6 +227,8 @@ export function resolveCombat(state: GameState): Fight[] {
   for (const p of state.players.filter(isAlive)) lendArms(state, p);
   const fights = isMonsterRound(state.round) ? monsterRound(state) : playerFights(state);
   for (const p of state.players) returnArms(p);
+  // A stage's last fight: the Box round follows (bots pick now; a person on their turn, before the next round).
+  if (isBoxRound(state.round)) openBox(state);
   return fights;
 }
 
