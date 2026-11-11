@@ -362,6 +362,19 @@ export class Stage {
 
     const fx: FxContext = { L: this.L, tweens: this.tweens, place: this.place, air: this.layers.fx, floor: this.layers.cells };
     const actor = (id: number) => views.get(id)!.actor;
+    const shieldOf = (id: number) => {
+      const p = actor(id).position;
+      return vec3(p.x, WORLD.piece.bodyY, p.z);
+    };
+    // How many hits each source has sent out this tick (by source and effect), so a volley's bolts take turns.
+    const volleys = { t: -1, sent: new Map<string, number>() };
+    const volleyIndex = (t: number, key: string) => {
+      if (t !== volleys.t) volleys.sent.clear();
+      volleys.t = t;
+      const n = volleys.sent.get(key) ?? 0;
+      volleys.sent.set(key, n + 1);
+      return n;
+    };
     const moveTo = (id: number, p: Point, ms: number, arc = 0) => actor(id).moveTo(at(p), ms, arc);
     const flash = (id: number, color: number, ms = 250) => actor(id).flash(color, ms);
     // A blow landing: the target jolts.
@@ -377,9 +390,8 @@ export class Stage {
         if (swing && by !== target) attacker.actor.lunge(actor(target).position);
         return land();
       }
-      const lift = (p: Vec3) => vec3(p.x, WORLD.piece.bodyY, p.z);
       const color = attacker.attack === 'bolt' ? COLORS.spell : COLORS.arrow;
-      fireShot(fx, attacker.attack, lift(attacker.actor.position), lift(actor(target).position), color, land);
+      fireShot(fx, attacker.attack, shieldOf(by), shieldOf(target), color, land);
     };
     const pop = (id: number, label: string, color: number, size = 14, weight: '700' | '900' = '700') => {
       const v = views.get(id)!;
@@ -480,11 +492,19 @@ export class Stage {
           break;
         case 'effect': {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
-          flash(e.target, color, 350);
-          hit(e.target, e.damage);
-          SKILL_LOOKS[e.effect]?.hit?.(fx, views.get(e.target)!);
+          const look = SKILL_LOOKS[e.effect];
           setBar(e.target, 'hp', e.hp);
-          pop(e.target, e.crit ? `${e.damage}!` : String(e.damage), e.crit ? COLORS.crit : color, e.crit ? 22 : 18, '900');
+          const land = () => {
+            flash(e.target, color, 350);
+            hit(e.target, e.damage);
+            look?.hit?.(fx, views.get(e.target)!);
+            pop(e.target, e.crit ? `${e.damage}!` : String(e.damage), e.crit ? COLORS.crit : color, e.crit ? 22 : 18, '900');
+          };
+          // A skill whose hits fly: the hit plays when its projectile arrives.
+          if (look?.shot && e.by !== undefined && e.by !== e.target && views.has(e.by)) {
+            const index = volleyIndex(e.t, `${e.by}:${e.effect}`);
+            look.shot(fx, { from: shieldOf(e.by), to: shieldOf(e.target), index }, land);
+          } else land();
           break;
         }
         case 'heal':

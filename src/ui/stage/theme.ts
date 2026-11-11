@@ -59,9 +59,9 @@ export const EFFECT_COLORS: Record<string, number> = {
   mooneater: 0x9db4ff,
   keris: 0xff6b9a,
   offering: 0xff8a3d,
-  phantomexecution: 0xb48cff,
-  phantom: 0x7a5cff,
-  chaosassault: 0xe05cff,
+  phantomexecution: 0x5fe8d0, // Lance's dash: blue-green wind
+  phantom: 0x2fb5a3, // his Phantom: a deeper teal
+  chaosassault: 0xe05cff, // Lunox's twilight bolts (see skillFx.ts for their dusk gold core)
   starfall: 0x8fd3ff,
   rendingbite: 0xff7a45,
   mournfulshot: 0xb9a7ff,

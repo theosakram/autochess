@@ -11,13 +11,11 @@ export const powerOfChaos: SkillDef = {
   id: 'powerofchaos',
   name: 'Power of Chaos',
   desc:
-    `Dashes to a safe location and releases ${POWER_OF_CHAOS.assaults} Chaos Assaults, enhanced basic attacks at the nearest enemy, ` +
+    `Releases ${POWER_OF_CHAOS.assaults} Chaos Assaults, enhanced basic attacks at the nearest enemy, ` +
     'each dealing {ap} of magic attack as magic damage. Killing an enemy grants 1 more Chaos Assault.',
   damage: { ap: 'magic' },
   values: () => ({ ap: POWER_OF_CHAOS.ap.map(pct) }),
   cast(api, caster) {
-    const safe = api.safestCell(caster);
-    if (safe.x !== caster.x || safe.y !== caster.y) api.dashTo(caster, safe);
     const raw = caster.stats.ap * POWER_OF_CHAOS.ap[caster.star - 1];
     for (let left = POWER_OF_CHAOS.assaults; left > 0; left--) {
       const target = api.nearestEnemy(caster);

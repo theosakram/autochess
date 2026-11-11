@@ -220,13 +220,13 @@ describe('Power of Chaos', () => {
     expect([UNIT_BY_ID.lunox.name, UNIT_BY_ID.lunox.range, UNIT_BY_ID.lunox.mana, UNIT_BY_ID.lunox.attackType]).toEqual(['Lunox', 4, 20, 'magic']);
   });
 
-  test('dashes to safety, then 3 enhanced basic attacks at the nearest enemy', () => {
+  test('3 enhanced basic attacks at the nearest enemy, staying put', () => {
     for (const star of [1, 2, 3] as const) {
       const b = fakeBattle([{ x: 3, y: 3 }, { x: 0, y: 0 }]);
       b.caster.star = star;
       b.caster.stats = unitStats(UNIT_BY_ID.lunox, star);
       b.cast('powerofchaos');
-      expect(b.log.dashes).toEqual([{ x: 6, y: 5 }]);
+      expect(b.log.dashes).toEqual([]);
       expect(b.log.hits).toHaveLength(POWER_OF_CHAOS.assaults);
       const raw = b.caster.stats.ap * POWER_OF_CHAOS.ap[star - 1];
       expect(b.log.hits.every((h) => h.basic && h.raw === raw && h.effect === 'chaosassault')).toBe(true);
@@ -238,8 +238,9 @@ describe('Power of Chaos', () => {
     b.fragile.add(1);
     b.fragile.add(2);
     b.cast('powerofchaos');
-    // 3 assaults + 2 bonus for the 2 kills; the last 3 all land on the survivor.
-    expect(b.log.hits.map((h) => h.target)).toEqual([1, 2, 3, 3, 3]);
+    // 3 assaults + 2 bonus for the 2 kills, nearest first from where she stands (3,5); the last 3 all land on
+    // the survivor.
+    expect(b.log.hits.map((h) => h.target)).toEqual([2, 1, 3, 3, 3]);
   });
 });
 

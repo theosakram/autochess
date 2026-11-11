@@ -16,10 +16,12 @@ export interface FxContext {
   floor: Container; // on the board, under the pieces (shadows)
 }
 
-// How high a flight arcs: its peak per cell travelled, and at most.
-interface Arc {
+// How a flight bends: its peak height per cell travelled, and at most; and optionally how far it swings out
+// sideways at the midpoint (cells, + to the right of its heading), for volleys that fan out and curve in.
+export interface Arc {
   perCell: number;
   max: number;
+  swerve?: number;
 }
 const LOB: Arc = { perCell: 0.22, max: 1.2 }; // skill orbs, lobbed
 const ARROW_ARC: Arc = { perCell: 0.08, max: 0.4 }; // arrows fly nearly flat
@@ -27,17 +29,26 @@ const BOLT_ARC: Arc = { perCell: 0.12, max: 0.6 };
 const SHADOW_ALPHA = 0.3;
 
 // One sprite of a flying thing: the head (lag 0), or a trail mark that far behind it (a share of the flight).
-interface Part {
+export interface Part {
   sprite: Container;
   lag: number;
 }
 
 // Flies `parts` from `from` to `to` (world points) over `ms` along an arc, a shadow of `shadowRadius` cells sliding
 // on the floor under the head. With `orient`, the head turns to point where it's going. `onLand` runs on arrival.
-function flight(fx: FxContext, parts: Part[], from: Vec3, to: Vec3, ms: number, arc: Arc, shadowRadius: number, orient: boolean, onLand?: () => void): void {
-  const peak = Math.min(arc.max, Math.hypot(to.x - from.x, to.z - from.z) * arc.perCell);
-  const path = (k: number) => {
+export function flight(fx: FxContext, parts: Part[], from: Vec3, to: Vec3, ms: number, arc: Arc, shadowRadius: number, orient: boolean, onLand?: () => void): void {
+  const [dx, dz] = [to.x - from.x, to.z - from.z];
+  const length = Math.hypot(dx, dz);
+  const peak = Math.min(arc.max, length * arc.perCell);
+  // Sideways: perpendicular to the heading on the floor (right of it for a positive swerve).
+  const [sx, sz] = length && arc.swerve ? [(-dz / length) * arc.swerve, (dx / length) * arc.swerve] : [0, 0];
+  const ground = (k: number) => {
     const p = lerp3(from, to, k);
+    const out = Math.sin(Math.PI * k);
+    return vec3(p.x + sx * out, p.y, p.z + sz * out);
+  };
+  const path = (k: number) => {
+    const p = ground(k);
     return vec3(p.x, p.y + Math.sin(Math.PI * k) * peak, p.z);
   };
   const r = fx.L.unit * shadowRadius;
@@ -51,8 +62,8 @@ function flight(fx: FxContext, parts: Part[], from: Vec3, to: Vec3, ms: number, 
       const [a, b] = [fx.L.project(path(Math.max(0, k - 0.02))), fx.L.project(path(Math.min(1, k + 0.02)))];
       parts[0].sprite.rotation = Math.atan2(b.y - a.y, b.x - a.x);
     }
-    const ground = lerp3(from, to, k);
-    fx.place(shadow, vec3(ground.x, WORLD.tileTop, ground.z));
+    const under = ground(k);
+    fx.place(shadow, vec3(under.x, WORLD.tileTop, under.z));
   };
   step(0);
   fx.tweens.add(ms, step, () => {
@@ -119,7 +130,7 @@ export function fireShot(fx: FxContext, look: ShotLook, from: Vec3, to: Vec3, co
 const IMPACT_MS = 200;
 
 // A ring bursting out from where a shot hit, fading as it grows.
-function impact(fx: FxContext, at: Vec3, color: number): void {
+export function impact(fx: FxContext, at: Vec3, color: number): void {
   const r = fx.L.unit * 0.16;
   const ring = new Graphics().circle(0, 0, r).stroke({ width: 3, color });
   fx.place(ring, at);
