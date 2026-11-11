@@ -82,8 +82,9 @@ export type CombatEvent =
   | { t: number; type: 'shield'; id: number; amount: number; until: number }
   // A unit skill went off (its hits follow as effect events with `by`).
   | { t: number; type: 'skill'; id: number; skill: string }
-  // An instant reposition, e.g. a dash; drawn as a quick slide rather than a walk.
-  | { t: number; type: 'dash'; id: number; x: number; y: number; seconds?: number; arc?: boolean }
+  // An instant reposition, e.g. a dash; drawn as a quick slide rather than a walk. `effect`: the skill (or trait,
+  // item) dashing, when it has a look of its own on the board.
+  | { t: number; type: 'dash'; id: number; x: number; y: number; seconds?: number; arc?: boolean; effect?: string }
   // A lasting buff from `effect` (a trait or item id), e.g. Mooneater's column haste.
   | { t: number; type: 'buff'; id: number; by: number; effect: string; until?: number } // until: timed buffs only
   // A member's trait trigger fired: it may have warped to (x, y) and healed `heal`.
@@ -1196,7 +1197,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     hit: (source, target, raw, type, effect) => skillHit(fighters[source.id], fighters[target.id], raw, type, effect, false),
     basicHit: (source, target, raw, type, effect) => skillHit(fighters[source.id], fighters[target.id], raw, type, effect, true),
     safestCell: (f) => safestCell(occupied, f, fighters.filter((e) => e.side !== f.side && e.hp > 0)),
-    dashTo: (who, to, show) => {
+    dashTo: (who, to, show, effect) => {
       const f = fighters[who.id];
       // Displacement: an enemy's skill moving it. Immune units stay put; a Turret never moves.
       if (f.anchored || (casting && casting.side !== f.side && t < f.ccImmuneUntil)) return;
@@ -1204,7 +1205,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       f.x = to.x;
       f.y = to.y;
       occupied[gridIndex(f)] = f.id;
-      if (show !== false) events.push({ t, type: 'dash', id: f.id, x: f.x, y: f.y, ...(show && { seconds: show }) });
+      if (show !== false) events.push({ t, type: 'dash', id: f.id, x: f.x, y: f.y, ...(show && { seconds: show }), ...(effect && { effect }) });
     },
     guard: (who, seconds, reduction) => {
       const f = fighters[who.id];

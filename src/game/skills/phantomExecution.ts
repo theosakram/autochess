@@ -24,9 +24,9 @@ function dash(api: SkillApi, caster: SkillFighter): boolean {
   for (const enemy of struck) api.hit(caster, enemy, raw, 'physical', 'phantomexecution');
   // The Phantom retraces the same path right behind him.
   if (phantom) for (const enemy of struck) if (enemy.hp > 0) api.hit(caster, enemy, raw, 'physical', 'phantom');
-  // Land on the farthest free cell of the line; stay put if there is none.
+  // Land on the farthest free cell of the line; stay put if there is none. With a Phantom, the dash looks it.
   const landing = [...line].reverse().find((p) => !api.occupant(p));
-  if (landing) api.dashTo(caster, landing, P.dashAnim);
+  if (landing) api.dashTo(caster, landing, P.dashAnim, phantom ? 'phantom' : 'phantomexecution');
   caster.skill.dashes = (caster.skill.dashes ?? 0) + 1;
   return true;
 }

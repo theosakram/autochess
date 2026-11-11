@@ -26,7 +26,8 @@ export interface SkillApi {
   basicHit(source: SkillFighter, target: SkillFighter, raw: number, type: DamageType, effect: string): boolean;
   safestCell(f: SkillFighter): Point; // free cell farthest from every living enemy
   // `show`: how many seconds the move animates (default: a quick dash), or false to not animate it (a showLeap draws it).
-  dashTo(f: SkillFighter, to: Point, show?: number | false): void;
+  // `effect`: whose dash it is, for its look on the board (cosmetic only).
+  dashTo(f: SkillFighter, to: Point, show?: number | false, effect?: string): void;
   guard(f: SkillFighter, seconds: number, reduction: number): void; // takes less damage for a while
   // Absorbs the next `amount` damage (after armor/mr) for `seconds`. Replaces any shield it had.
   // Adds a shield layer from `effect` on top of any others: damage eats the newest layer first. A new

@@ -3,20 +3,30 @@ import type { Fighter } from '../../game/combat';
 import { fieldStats, leadsOf } from '../../game/inventory';
 import { Application, Container, Graphics, Text, type FederatedPointerEvent } from 'pixi.js';
 import type { CombatEvent } from '../../game/combat';
-import { BOARD_COLS, BOARD_ROWS, MOVE_TICKS, TICKS_PER_SECOND } from '../../game/config';
+import { BENCH_SIZE, BOARD_COLS, BOARD_ROWS, MOVE_TICKS, TICKS_PER_SECOND } from '../../game/config';
 import type { Fight } from '../../game/game';
 import { boardToGrid, GRID_H, GRID_W, gridIndex, viewPoint, type Point, type Side } from '../../game/grid';
 import { playerTraits, traitTiles } from '../../game/traits';
 import type { Loc, Player } from '../../game/types';
-import { PAD, stageLayout, stageWidthForHeight, type StageLayout } from './layout';
-import { COLORS, EFFECT_COLORS, FONT, TILE_COLORS, mix } from './theme';
+import { UNIT_BY_ID } from '../../game/units';
+import { Actor, type Placer } from './actor';
+import { vec3, type Vec3 } from './camera';
+import { fireShot, flyOrb, orbit, SLASHES, sweepSlash, type FxContext } from './fx';
+import { stageLayout, stageWidthForHeight, WORLD, type StageLayout } from './layout';
+import { attackLook, type AttackLook } from './physique';
+import { SKILL_LOOKS } from './skillFx';
+import { drawBackdrop, drawBase, drawTileDetails, padTop, tileTop } from './scene';
+import { COLORS, EFFECT_COLORS, FONT, SCENE_COLORS, TILE_COLORS, mix } from './theme';
 import { heroFace, makeToken, type TokenView } from './token';
-import { lerp, Tweens } from './tween';
+import { Tweens } from './tween';
 
 const TICK_MS = 1000 / TICKS_PER_SECOND;
 const RESULT_MS = 1500;
 const DASH_MS = 120;
 const DRAG_THRESHOLD = 5; // px of movement before a press becomes a drag
+const LEAP = 0.6; // an arcing dash's peak height, in cells
+const GLOW_INSET = 0.02; // floor highlights (guide, burning ground) nearly fill their cell
+const DRAG_LIFT = 0.3; // a dragged piece's shield rises this high, picked up off the board
 
 // What the prep (shopping) view shows.
 export interface PrepView {
@@ -41,30 +51,6 @@ export interface Playback {
 }
 
 // The Pixi canvas: board + bench while shopping, and fight playback.
-// Slash looks for projectile effects (instead of a flying orb): the half-moon's size in board cells and how far
-// it sweeps (radians) as it fades.
-const SLASHES: Record<string, { radius: number; sweep: number }> = {
-  kerisslash: { radius: 1.7, sweep: 0.9 },
-  kerisslashall: { radius: 7, sweep: 0.7 },
-};
-
-// A half-moon facing +x: its outer edge an arc of `radius`, thickest (`thickness`) in the middle and sharp at the tips.
-function crescent(radius: number, thickness: number, color: number, alpha: number): Graphics {
-  const spread = Math.PI * 0.42;
-  const steps = 24;
-  const points: number[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = -spread + (2 * spread * i) / steps;
-    points.push(Math.cos(t) * radius, Math.sin(t) * radius);
-  }
-  for (let i = steps; i >= 0; i--) {
-    const t = -spread + (2 * spread * i) / steps;
-    const r = radius - thickness * Math.cos((t / spread) * (Math.PI / 2));
-    points.push(Math.cos(t) * r, Math.sin(t) * r);
-  }
-  return new Graphics().poly(points).fill({ color, alpha });
-}
-
 export class Stage {
   private app = new Application();
   private layers = { cells: new Container(), units: new Container(), fx: new Container(), top: new Container() };
@@ -89,6 +75,7 @@ export class Stage {
       height: 400,
     });
     host.append(stage.app.canvas);
+    stage.layers.units.sortableChildren = true; // nearer units draw over farther ones (see place)
     stage.app.stage.addChild(...Object.values(stage.layers));
     stage.app.ticker.add((ticker) => stage.tweens.update(ticker.deltaMS));
     new ResizeObserver(() => {
@@ -115,23 +102,41 @@ export class Stage {
     for (const layer of Object.values(this.layers)) for (const child of layer.removeChildren()) child.destroy({ children: true });
   }
 
+  // ---------- placement
+
+  // Puts a board object at a world point: its screen position, its size at that depth (drawn at `unit` scale)
+  // and its draw order, nearer over farther.
+  private readonly place: Placer = (obj, at) => {
+    const p = this.L.project(at);
+    obj.position.set(p.x, p.y);
+    obj.scale.set(p.scale / this.L.unit);
+    obj.zIndex = at.z;
+  };
+
+  // Where a prep location sits in the world.
+  private spot(loc: Loc): Vec3 {
+    return loc.area === 'bench' ? this.L.benchWorld(loc.index) : this.L.cellWorld(boardToGrid(0, loc.index));
+  }
+
+  // The floor shape of a prep location: its tile or its pad.
+  private shapeOf(loc: Loc, inset?: number): number[] {
+    return loc.area === 'bench' ? padTop(this.L, loc.index) : tileTop(this.L, boardToGrid(0, loc.index), inset);
+  }
+
   // ---------- board drawing
 
-  private cell(center: Point, size: number, color: number, alpha = 1, outline?: { color: number; alpha: number }): Graphics {
-    const g = new Graphics().roundRect(center.x - size / 2, center.y - size / 2, size, size, 4).fill({ color, alpha });
+  // A floor shape (tile, pad or highlight), filled and optionally outlined, on the cells layer.
+  private floor(points: number[], color: number, alpha = 1, outline?: { color: number; alpha: number }): Graphics {
+    const g = new Graphics().poly(points).fill({ color, alpha });
     if (outline) g.stroke({ width: 1.5, color: outline.color, alpha: outline.alpha });
     this.layers.cells.addChild(g);
     return g;
   }
 
-  // Panels, the 7x6 grid and the bench. `tiles`: grid index -> trait id. In prep, your cells are
+  // The board's body, the 7x6 grid and the bench pads. `tiles`: grid index -> trait id. In prep, your cells are
   // clickable and `targets` (empty cells a selected unit could move to) get an outline.
   private drawBoard(tiles: Map<number, string>, prep: boolean, targets: Set<string>): void {
-    const { width, boardHeight, benchTop, boardCell, benchCell } = this.L;
-    this.layers.cells.addChild(
-      new Graphics().roundRect(0, 0, width, boardHeight, 8).fill(COLORS.panel),
-      new Graphics().roundRect(0, benchTop, width, PAD * 2 + benchCell, 8).fill(COLORS.panel),
-    );
+    this.layers.cells.addChild(drawBackdrop(this.L), drawBase(this.L));
     const clickable = (g: Graphics, loc: Loc) => {
       g.eventMode = 'static';
       g.cursor = targets.has(key(loc)) ? 'pointer' : 'default';
@@ -150,41 +155,39 @@ export class Stage {
           : loc && targets.has(key(loc))
             ? { color: COLORS.selected, alpha: 0.6 }
             : undefined;
-        const g = this.cell(this.L.gridCenter({ x, y }), boardCell, color, prep && enemyHalf ? 0.35 : 1, outline);
+        const g = this.floor(tileTop(this.L, { x, y }), color, prep && enemyHalf ? 0.35 : 1, outline);
         if (prep && loc) clickable(g, loc);
       }
     }
-    for (let i = 0; i < 8; i++) {
+    this.layers.cells.addChild(drawTileDetails(this.L));
+    for (let i = 0; i < BENCH_SIZE; i++) {
       const loc: Loc = { area: 'bench', index: i };
-      const outline = targets.has(key(loc)) ? { color: COLORS.selected, alpha: 0.6 } : undefined;
-      const g = this.cell(this.L.benchCenter(i), benchCell, COLORS.cell, 1, outline);
+      const outline = targets.has(key(loc)) ? { color: COLORS.selected, alpha: 0.6 } : { color: SCENE_COLORS.padEdge, alpha: 1 };
+      const g = this.floor(padTop(this.L, i), SCENE_COLORS.padTop, 1, outline);
       if (prep) clickable(g, loc);
     }
   }
 
   // The loaded lineup's markers, under the units: a gold glow, the planned hero faint in the middle, 👍 in the corner.
   private drawGuide(view: PrepView): void {
-    const size = this.L.boardCell;
+    const size = this.L.unit;
     for (const { cell, defId } of view.guide ?? []) {
       if (view.player.board[cell]?.defId === defId) continue; // already where it belongs
-      const at = this.center({ area: 'board', index: cell });
+      const grid = boardToGrid(0, cell);
+      const at = this.L.cellWorld(grid);
       const glow = new Graphics()
-        .roundRect(at.x - size / 2, at.y - size / 2, size, size, 6)
+        .poly(this.shapeOf({ area: 'board', index: cell }, GLOW_INSET))
         .fill({ color: COLORS.accent, alpha: 0.16 })
         .stroke({ width: 2.5, color: COLORS.accent, alpha: 0.9 });
       const ghost = heroFace(defId, size * 0.42);
       ghost.alpha = 0.35;
-      ghost.position.set(at.x, at.y);
+      this.place(ghost, at);
       const thumb = new Text({ text: '👍', style: { fontFamily: FONT, fontSize: size * 0.24 } });
       thumb.anchor.set(1, 0);
-      thumb.position.set(at.x + size / 2 - 3, at.y - size / 2 + 2);
+      this.place(thumb, vec3(at.x + 0.45, at.y, at.z - 0.45)); // the cell's back right corner
       for (const g of [glow, ghost, thumb]) g.eventMode = 'none'; // clicks still reach the cell under it
       this.layers.cells.addChild(glow, ghost, thumb);
     }
-  }
-
-  private center(loc: Loc): Point {
-    return loc.area === 'bench' ? this.L.benchCenter(loc.index) : this.L.gridCenter(boardToGrid(0, loc.index));
   }
 
   // ---------- prep view
@@ -223,7 +226,7 @@ export class Stage {
           copies: u.copies,
           merc: u.merc,
           signature: u.signature,
-          size: area === 'board' ? this.L.boardCell : this.L.benchCell,
+          size: this.L.unit,
           crowned: crowned.has(u.defId),
           leads: area === 'board' ? leadsOf(p, levels, u.uid) : [],
           orb: p.orb?.defId === u.defId ? p.orb.trait : null,
@@ -234,11 +237,10 @@ export class Stage {
           hpBar: area === 'board',
           maxHp: area === 'board' ? stats.get(u.uid)?.hp : undefined,
         });
-        const at = this.center(loc);
-        token.root.position.set(at.x, at.y);
+        this.place(token.root, this.spot(loc));
         token.root.eventMode = 'static';
         token.root.cursor = 'grab';
-        token.root.on('pointerdown', (e) => this.press(e, u.uid, loc, token.root));
+        token.root.on('pointerdown', (e) => this.press(e, u.uid, loc, token));
         this.layers.units.addChild(token.root);
       });
     }
@@ -249,10 +251,19 @@ export class Stage {
 
   // A press on a unit: a click if it barely moves, otherwise a drag that follows the pointer
   // (window listeners, so it works across the page and on touch) and drops on release.
-  private press(e: FederatedPointerEvent, uid: number, from: Loc, token: Container): void {
+  // While dragging, the piece is lifted and stands (at the right size) on the floor under the pointer, and the
+  // cell or pad it would drop on lights up.
+  private press(e: FederatedPointerEvent, uid: number, from: Loc, token: TokenView): void {
     const start = { x: e.clientX, y: e.clientY };
     const canvas = this.app.canvas;
+    const piece = token.root;
     let dragging = false;
+    const marker = new Graphics();
+    marker.eventMode = 'none';
+    const mark = (loc: Loc | null) => {
+      marker.clear();
+      if (loc) marker.poly(this.shapeOf(loc, GLOW_INSET)).fill({ color: COLORS.accent, alpha: 0.18 }).stroke({ width: 2, color: COLORS.accent, alpha: 0.9 });
+    };
     const local = (ev: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       return { x: ev.clientX - r.left, y: ev.clientY - r.top };
@@ -261,18 +272,24 @@ export class Stage {
       if (!dragging) {
         if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_THRESHOLD) return;
         dragging = true;
-        this.layers.top.addChild(token);
-        token.alpha = 0.85;
+        this.layers.top.addChild(piece);
+        this.layers.cells.addChild(marker);
+        piece.alpha = 0.9;
+        token.setLift(DRAG_LIFT);
         this.on.dragging(true);
       }
       const p = local(ev);
-      token.position.set(p.x, p.y);
+      const floor = this.L.floorAt(p.x, p.y);
+      if (floor) this.place(piece, floor);
+      else piece.position.set(p.x, p.y);
+      mark(this.L.locAt(p.x, p.y));
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       if (!dragging) return this.on.unitClick(uid);
+      marker.destroy();
       this.on.dragging(false);
       const overShop = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest('[data-sell]');
       const p = local(ev);
@@ -295,7 +312,8 @@ export class Stage {
     const { result } = fight;
     const mySide: Side = fight.home === viewerId ? 0 : 1;
     const flip = mySide === 1;
-    const at = (p: Point) => this.L.gridCenter(viewPoint(p, flip));
+    const view = (p: Point) => viewPoint(p, flip);
+    const at = (p: Point, y?: number) => this.L.cellWorld(view(p), y);
 
     const tiles = new Map<number, string>();
     for (const side of [0, 1] as const) {
@@ -305,6 +323,8 @@ export class Stage {
     this.drawBench();
 
     interface View extends TokenView {
+      actor: Actor;
+      attack: AttackLook; // how its basic attack looks: a lean-in swing, or a shot
       maxHp: number;
       maxMana: number;
       stun?: Text;
@@ -320,7 +340,7 @@ export class Stage {
         copies: f.copies,
         merc: f.merc,
         signature: f.signature,
-        size: this.L.boardCell,
+        size: this.L.unit,
         crowned: f.chosen !== null,
         leads: f.leads,
         orb: f.orb,
@@ -330,33 +350,46 @@ export class Stage {
         bars: true,
         maxHp: f.maxHp,
       });
-      const p = at(f);
-      token.root.position.set(p.x, p.y);
       token.setBar('mana', f.mana / f.maxMana);
       this.layers.units.addChild(token.root);
-      views.set(f.id, { ...token, maxHp: f.maxHp, maxMana: f.maxMana });
+      views.set(f.id, {
+        ...token,
+        actor: new Actor(token, at(f), this.tweens, this.place, `fighter${f.id}`),
+        attack: attackLook(UNIT_BY_ID[f.defId]), maxHp: f.maxHp, maxMana: f.maxMana });
       return token;
     };
     for (const f of result.fighters) addView(f);
 
-    // `lift`: pixels of arc at the midpoint, for a leap.
-    const moveTo = (id: number, p: Point, ms: number, lift = 0) => {
-      const root = views.get(id)!.root;
-      const from = { x: root.x, y: root.y };
-      const to = at(p);
-      this.tweens.add(ms, (k) => root.position.set(lerp(from.x, to.x, k), lerp(from.y, to.y, k) - Math.sin(Math.PI * k) * lift), undefined, `move${id}`);
+    const fx: FxContext = { L: this.L, tweens: this.tweens, place: this.place, air: this.layers.fx, floor: this.layers.cells };
+    const actor = (id: number) => views.get(id)!.actor;
+    const moveTo = (id: number, p: Point, ms: number, arc = 0) => actor(id).moveTo(at(p), ms, arc);
+    const flash = (id: number, color: number, ms = 250) => actor(id).flash(color, ms);
+    // A blow landing: the target jolts.
+    const hit = (target: number, damage: number) => {
+      if (damage > 0) actor(target).hop();
     };
-    const flash = (id: number, color: number, ms = 250) => {
-      const overlay = views.get(id)!.flash(color);
-      this.tweens.add(ms, (k) => (overlay.alpha = 1 - k), undefined, `flash${id}`);
+    // A basic attack (or placeholder cast) reaching its target: a melee attacker leans into it and it lands now; a
+    // ranged one fires a shot, and the blow lands (`land`) when the shot does. Hp bars don't wait: the fight's state
+    // is already past the hit.
+    const deliver = (by: number, target: number, swing: boolean, land: () => void) => {
+      const attacker = views.get(by)!;
+      if (attacker.attack === 'swing' || by === target) {
+        if (swing && by !== target) attacker.actor.lunge(actor(target).position);
+        return land();
+      }
+      const lift = (p: Vec3) => vec3(p.x, WORLD.piece.bodyY, p.z);
+      const color = attacker.attack === 'bolt' ? COLORS.spell : COLORS.arrow;
+      fireShot(fx, attacker.attack, lift(attacker.actor.position), lift(actor(target).position), color, land);
     };
     const pop = (id: number, label: string, color: number, size = 14, weight: '700' | '900' = '700') => {
-      const root = views.get(id)!.root;
+      const v = views.get(id)!;
       const t = new Text({ text: label, style: { fontFamily: FONT, fontSize: size, fill: color, fontWeight: weight, stroke: { color: 0x000000, width: 3 } } });
       t.anchor.set(0.5, 1);
-      // Numbers rise from the body, not the top edge, so they don't cover the hp bar they changed.
-      const x = root.x + (Math.random() - 0.5) * this.L.boardCell * 0.5;
-      const y0 = root.y + this.L.boardCell * (0.1 + Math.random() * 0.15);
+      // Numbers rise from the shield, not over it, so they don't cover the hp bar they changed.
+      const cell = this.L.unit * v.root.scale.x; // the unit's cell size where it stands
+      const from = v.body.getGlobalPosition();
+      const x = from.x + (Math.random() - 0.5) * cell * 0.5;
+      const y0 = from.y + cell * (0.1 + Math.random() * 0.15);
       t.position.set(x, y0);
       this.layers.fx.addChild(t);
       this.tweens.add(650, (k) => {
@@ -419,17 +452,24 @@ export class Stage {
         case 'move':
           moveTo(e.id, e, MOVE_TICKS * TICK_MS);
           break;
-        case 'dash':
-          moveTo(e.id, e, e.seconds ? e.seconds * 1000 : DASH_MS, e.arc ? this.L.boardCell * 0.6 : 0);
+        case 'dash': {
+          const ms = e.seconds ? e.seconds * 1000 : DASH_MS;
+          const from = actor(e.id).position;
+          moveTo(e.id, e, ms, e.arc ? LEAP : 0);
+          if (e.effect) SKILL_LOOKS[e.effect]?.dash?.(fx, { from, to: at(e), ms });
           break;
+        }
         case 'attack':
         case 'cast':
           flash(e.id, e.type === 'cast' ? COLORS.mana : COLORS.selected, e.type === 'cast' ? 400 : 200);
           setBar(e.target, 'hp', e.hp);
           setBar(e.id, 'mana', e.mana);
           setBar(e.target, 'mana', e.targetMana);
-          if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 22, '900');
-          else pop(e.target, String(e.damage), e.type === 'cast' ? COLORS.spell : COLORS.text, e.type === 'cast' ? 19 : 16, '900');
+          deliver(e.id, e.target, e.type === 'attack', () => {
+            hit(e.target, e.damage);
+            if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 22, '900');
+            else pop(e.target, String(e.damage), e.type === 'cast' ? COLORS.spell : COLORS.text, e.type === 'cast' ? 19 : 16, '900');
+          });
           break;
         case 'mana':
           for (const [id, mana] of e.mana) setBar(id, 'mana', mana);
@@ -441,6 +481,8 @@ export class Stage {
         case 'effect': {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
           flash(e.target, color, 350);
+          hit(e.target, e.damage);
+          SKILL_LOOKS[e.effect]?.hit?.(fx, views.get(e.target)!);
           setBar(e.target, 'hp', e.hp);
           pop(e.target, e.crit ? `${e.damage}!` : String(e.damage), e.crit ? COLORS.crit : color, e.crit ? 22 : 18, '900');
           break;
@@ -454,30 +496,30 @@ export class Stage {
           const icon = e.effect === 'sheep' ? '🐑' : '💫';
           if (v.stun && v.stun.text !== icon) v.stun.text = icon;
           if (!v.stun) {
-            v.stun = new Text({ text: icon, style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.22 } });
+            v.stun = new Text({ text: icon, style: { fontFamily: FONT, fontSize: this.L.unit * 0.22 } });
             v.stun.anchor.set(0.5);
-            v.stun.position.set(this.L.boardCell * 0.32, -this.L.boardCell * 0.42);
-            v.root.addChild(v.stun);
+            v.stun.position.set(this.L.unit * 0.32, -this.L.unit * 0.42);
+            v.body.addChild(v.stun);
           }
           stunEnds.set(e.id, e.until);
           break;
         }
         case 'link': {
           for (const id of e.ids) {
-            const mark = new Text({ text: '🔗', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.18 } });
+            const mark = new Text({ text: '🔗', style: { fontFamily: FONT, fontSize: this.L.unit * 0.18 } });
             mark.anchor.set(0.5);
-            mark.position.set(this.L.boardCell * 0.32, this.L.boardCell * 0.3);
-            views.get(id)!.root.addChild(mark);
+            mark.position.set(this.L.unit * 0.32, this.L.unit * 0.3);
+            views.get(id)!.body.addChild(mark);
           }
           break;
         }
         case 'taunt': {
           const v = views.get(e.id)!;
           if (!v.taunt) {
-            v.taunt = new Text({ text: '❗', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.22 } });
+            v.taunt = new Text({ text: '❗', style: { fontFamily: FONT, fontSize: this.L.unit * 0.22 } });
             v.taunt.anchor.set(0.5);
-            v.taunt.position.set(0, -this.L.boardCell * 0.5);
-            v.root.addChild(v.taunt);
+            v.taunt.position.set(0, -this.L.unit * 0.5);
+            v.body.addChild(v.taunt);
           }
           tauntEnds.set(e.id, Math.max(tauntEnds.get(e.id) ?? 0, e.until));
           break;
@@ -485,10 +527,10 @@ export class Stage {
         case 'debuff': {
           const v = views.get(e.id)!;
           if (!v.debuff) {
-            v.debuff = new Text({ text: '🔻', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.2 } });
+            v.debuff = new Text({ text: '🔻', style: { fontFamily: FONT, fontSize: this.L.unit * 0.2 } });
             v.debuff.anchor.set(0.5);
-            v.debuff.position.set(-this.L.boardCell * 0.32, this.L.boardCell * 0.3);
-            v.root.addChild(v.debuff);
+            v.debuff.position.set(-this.L.unit * 0.32, this.L.unit * 0.3);
+            v.body.addChild(v.debuff);
           }
           debuffEnds.set(e.id, Math.max(debuffEnds.get(e.id) ?? 0, e.until));
           break;
@@ -511,10 +553,10 @@ export class Stage {
             break;
           }
           if (!v.marks) {
-            v.marks = new Text({ text: '', style: { fontFamily: FONT, fontSize: this.L.boardCell * 0.16, fontWeight: '900', fill: EFFECT_COLORS[e.effect] ?? COLORS.accent } });
+            v.marks = new Text({ text: '', style: { fontFamily: FONT, fontSize: this.L.unit * 0.16, fontWeight: '900', fill: EFFECT_COLORS[e.effect] ?? COLORS.accent } });
             v.marks.anchor.set(0.5);
-            v.marks.position.set(0, this.L.boardCell * 0.36);
-            v.root.addChild(v.marks);
+            v.marks.position.set(0, this.L.unit * 0.36);
+            v.body.addChild(v.marks);
           }
           v.marks.text = '◆'.repeat(e.count);
           break;
@@ -526,9 +568,7 @@ export class Stage {
             const old = fires.get(key);
             if (old) old.until = Math.max(old.until, e.until);
             else {
-              const p = at(c);
-              const half = this.L.boardCell / 2;
-              const patch = new Graphics().roundRect(p.x - half, p.y - half, half * 2, half * 2, 6).fill({ color, alpha: 0.45 }).stroke({ width: 3, color, alpha: 0.9 });
+              const patch = new Graphics().poly(tileTop(this.L, view(c), GLOW_INSET)).fill({ color, alpha: 0.45 }).stroke({ width: 3, color, alpha: 0.9 });
               this.layers.cells.addChild(patch);
               fires.set(key, { patch, until: e.until });
             }
@@ -537,85 +577,26 @@ export class Stage {
         }
         case 'piece': {
           // The commander piece appears where it stands (yours or theirs), fires, and fades away.
-          const token = makeToken({ defId: e.defId, star: 1, size: this.L.boardCell, foe: e.side !== mySide });
-          const p = at(e);
-          token.root.position.set(p.x, p.y);
+          const token = makeToken({ defId: e.defId, star: 1, size: this.L.unit, foe: e.side !== mySide });
+          this.place(token.root, at(e));
           this.layers.units.addChild(token.root);
           this.tweens.add(900, (k) => (token.root.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4), () => token.root.destroy());
           break;
         }
         case 'projectile': {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
-          // Slashes: a half-moon at `to`, facing away from `from`, that sweeps across and fades.
+          const ms = Math.max(1, e.until - e.t) * TICK_MS;
           const slash = SLASHES[e.effect];
-          if (slash) {
-            const [from, to] = [at(e.from), at(e.to)];
-            const angle = Math.atan2(to.y - from.y, to.x - from.x);
-            const radius = this.L.boardCell * slash.radius;
-            const moon = new Container();
-            moon.addChild(crescent(radius, radius * 0.32, color, 0.85), crescent(radius * 0.97, radius * 0.12, 0xffffff, 0.9));
-            // Pivot on the blade itself (its thick middle), so the blade sits over the struck area.
-            moon.pivot.set(radius * 0.85, 0);
-            moon.position.set(to.x, to.y);
-            this.layers.fx.addChild(moon);
-            const sweep = slash.sweep;
-            this.tweens.add(
-              Math.max(1, e.until - e.t) * TICK_MS,
-              (k) => {
-                if (moon.destroyed) return;
-                const ease = 1 - (1 - k) ** 3;
-                moon.rotation = angle - sweep / 2 + sweep * ease;
-                moon.scale.set(0.75 + 0.35 * ease);
-                moon.alpha = k < 0.55 ? 1 : 1 - (k - 0.55) / 0.45;
-              },
-              () => moon.destroyed || moon.destroy(),
-            );
-            break;
-          }
-          const orb = new Graphics().circle(0, 0, this.L.boardCell * 0.12).fill(color).stroke({ width: 2, color: 0xffffff, alpha: 0.7 });
-          const [from, to] = [at(e.from), at(e.to)];
-          orb.position.set(from.x, from.y);
-          this.layers.fx.addChild(orb);
-          this.tweens.add(
-            Math.max(1, e.until - e.t) * TICK_MS,
-            (k) => orb.destroyed || orb.position.set(lerp(from.x, to.x, k), lerp(from.y, to.y, k)),
-            () => orb.destroyed || orb.destroy(),
-          );
+          if (slash) sweepSlash(fx, at(e.from), at(e.to), slash, color, ms);
+          else flyOrb(fx, at(e.from, WORLD.piece.bodyY), at(e.to, WORLD.piece.bodyY), color, ms);
           break;
         }
-        case 'orbit': {
-          // Orbs circling the unit, fading at the end.
-          const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
-          const ring = new Container();
-          const r = this.L.boardCell * 0.62;
-          for (let j = 0; j < e.count; j++) ring.addChild(new Graphics().circle(0, 0, this.L.boardCell * 0.07).fill(color).stroke({ width: 1, color: 0xffffff, alpha: 0.6 }));
-          // On the effects layer so neighbouring tokens don't cover it; it follows the unit each frame.
-          const owner = views.get(e.id)!.root;
-          this.layers.fx.addChild(ring);
-          ring.position.copyFrom(owner.position);
-          const ms = (e.until - e.t) * TICK_MS;
-          this.tweens.add(
-            ms,
-            (k) => {
-              if (ring.destroyed) return;
-              ring.position.copyFrom(owner.position);
-              ring.visible = owner.alpha > 0.05;
-              ring.children.forEach((orb, j) => {
-                const a = k * Math.PI * 2 * ((e.until - e.t) / 16) + (j / e.count) * Math.PI * 2;
-                orb.position.set(Math.cos(a) * r, Math.sin(a) * r);
-              });
-              ring.alpha = k > 0.9 ? (1 - k) * 10 : 1;
-            },
-            () => ring.destroyed || ring.destroy({ children: true }),
-          );
+        case 'orbit':
+          // Orbs circling the unit, fading at the end; one turn per 16 ticks.
+          orbit(fx, views.get(e.id)!, e.count, EFFECT_COLORS[e.effect] ?? COLORS.spell, (e.until - e.t) * TICK_MS, (e.until - e.t) / 16);
           break;
-        }
         case 'buff': {
-          const half = this.L.boardCell / 2 - 1;
-          const ring = new Graphics()
-            .roundRect(-half, -half, half * 2, half * 2, 6)
-            .stroke({ width: e.until ? 3 : 2, color: EFFECT_COLORS[e.effect] ?? COLORS.accent });
-          views.get(e.id)!.root.addChild(ring);
+          const ring = views.get(e.id)!.ring(EFFECT_COLORS[e.effect] ?? COLORS.accent, e.until ? 3 : 2);
           // One ring per unit and effect: a refreshed buff (e.g. a stack more) replaces its ring.
           const key = `${e.id}:${e.effect}`;
           buffRings.get(key)?.ring.destroy();
@@ -629,11 +610,9 @@ export class Stage {
           setBar(e.id, 'hp', e.hp);
           if (e.heal) pop(e.id, `+${e.heal}`, COLORS.heal, 15);
           break;
-        case 'death': {
-          const root = views.get(e.id)!.root;
-          this.tweens.add(400, (k) => (root.alpha = 1 - k), undefined, `death${e.id}`);
+        case 'death':
+          actor(e.id).die();
           break;
-        }
       }
     };
 
@@ -659,7 +638,8 @@ export class Stage {
       t.anchor.set(0.5);
       const banner = new Container();
       banner.addChild(new Graphics().roundRect(-t.width / 2 - 28, -t.height / 2 - 12, t.width + 56, t.height + 24, 8).fill({ color: 0x000000, alpha: 0.75 }), t);
-      banner.position.set(this.L.width / 2, this.L.boardHeight / 2);
+      const middle = this.L.project(vec3(0)); // the board's centre
+      banner.position.set(middle.x, middle.y);
       this.layers.top.addChild(banner);
       doneTimer = window.setTimeout(onDone, RESULT_MS);
     };
@@ -683,9 +663,8 @@ export class Stage {
     if (!this.prep) return;
     this.prep.player.bench.forEach((u, index) => {
       if (!u) return;
-      const token = makeToken({ defId: u.defId, star: u.star, copies: u.copies, merc: u.merc, signature: u.signature, size: this.L.benchCell });
-      const p = this.L.benchCenter(index);
-      token.root.position.set(p.x, p.y);
+      const token = makeToken({ defId: u.defId, star: u.star, copies: u.copies, merc: u.merc, signature: u.signature, size: this.L.unit });
+      this.place(token.root, this.L.benchWorld(index));
       token.root.alpha = 0.6;
       this.layers.units.addChild(token.root);
     });

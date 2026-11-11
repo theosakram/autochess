@@ -16,8 +16,33 @@ export const COLORS = {
   heal: 0x3fae5a,
   crit: 0xff3b3b,
   spell: 0x8fb8ff,
+  arrow: 0xf3e6c8, // a physical ranged attack's arrow (magic ones fly as spell-coloured bolts)
   selected: 0xffffff,
   leader: 0xffd76a, // the glow around a unit that leads a trait (Astral's Sovereign)
+};
+
+// The board's body (the 2.5D frame, wall and bench tray); tiles keep COLORS.cell/cellAlt.
+export const SCENE_COLORS = {
+  rimTop: 0x2c3a52,
+  rimEdge: 0x58719a, // the lit front edge of the rim
+  wall: 0x141b28, // the front wall shades from wallTop down to this
+  wallTop: 0x273349,
+  well: 0x141c29, // the sunk floor the tiles sit in
+  tileSide: 0x1a222e,
+  midline: 0xffbe5a,
+  trayTop: 0x202b3d,
+  trayFront: 0x161e2b,
+  padSide: 0x2a3346,
+  padTop: 0x3f4b62,
+  padEdge: 0x5d6e8c,
+  plinthSide: 0x1f2633, // a piece's plinth: neutral stone, so the cost colour only rims it
+  plinthTop: 0x343e50,
+  post: 0x3a4a68, // the rim's corner posts
+  postSide: 0x242e44,
+  postCap: 0xe0a63a,
+  tileLight: 0xffffff, // the lit back edge of each tile
+  glow: 0x24324e, // the light around the board, fading to the page colour at the stage's edges
+  page: 0x0f1116,
 };
 
 // One star is silver, two gold, three blazing: a merge should be unmissable.
