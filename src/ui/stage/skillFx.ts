@@ -2,9 +2,11 @@ import { Container, Graphics } from 'pixi.js';
 import { lerp3, vec3, type Vec3 } from './camera';
 import { crescent, flight, impact, type FxContext, type Part } from './fx';
 import { FORESHORTENING, WORLD } from './layout';
+import { STARFALL_AEGIS } from '../../game/skills/starfallAegis';
 import { STORM_PURSUIT } from '../../game/skills/stormPursuit';
 import { COLORS, EFFECT_COLORS, mix } from './theme';
 import { shieldPath, type TokenView } from './token';
+import { shing, starChime, starStrike, starWhoosh } from '../sound';
 
 // Looks of their own for particular skills, by effect id: what plays on the board when that skill dashes a piece,
 // sends a hit flying or lands one, on top of the generic motion (the slide, the flash, the jolt). Give a skill a look
@@ -442,6 +444,230 @@ function oathBurst(fx: FxContext, caster: TokenView, color: number): void {
   }
 }
 
+// Boss Alpha's Spectral Cataclysm. Landing: a shockwave rolls out over the floor. Then it charges: 8 cracks glow
+// along the floor where the lasers will go, motes stream into a swelling core over it. Then the lasers.
+const CATACLYSM = { waveMs: 380, waveRadius: 1.7, crack: 0.85, core: [0.1, 0.34], motes: 3, moteFrom: 1.3 };
+const DIRS8 = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4);
+
+function spectralCharge(fx: FxContext, at: Vec3, _to: Vec3, ms: number): void {
+  const color = EFFECT_COLORS.spectralcataclysm;
+  const hot = mix(color, 0xffffff, 0.7);
+  const ground = (a: number, r: number) => fx.L.project(vec3(at.x + Math.cos(a) * r, at.y, at.z + Math.sin(a) * r));
+  const floor = new Graphics();
+  const air = new Graphics();
+  fx.floor.addChild(floor);
+  fx.air.addChild(air);
+  const C = CATACLYSM;
+  const total = Math.max(ms, C.waveMs);
+  fx.tweens.add(
+    total,
+    (k) => {
+      if (floor.destroyed || air.destroyed) return;
+      const t = k * total;
+      const charge = Math.min(1, t / ms);
+      floor.clear();
+      air.clear();
+      // The shockwave: two rings racing out and fading.
+      for (const lag of [0, 90]) {
+        const w = (t - lag) / C.waveMs;
+        if (w <= 0 || w >= 1) continue;
+        const r = C.waveRadius * (1 - (1 - w) ** 2);
+        const ring = Array.from({ length: 33 }, (_, j) => ground((j / 32) * Math.PI * 2, r));
+        ring.forEach((q, j) => (j ? floor.lineTo(q.x, q.y) : floor.moveTo(q.x, q.y)));
+        floor.stroke({ width: 10 * (1 - w), color, alpha: 0.35 * (1 - w) });
+        ring.forEach((q, j) => (j ? floor.lineTo(q.x, q.y) : floor.moveTo(q.x, q.y)));
+        floor.stroke({ width: 3, color: hot, alpha: 1 - w });
+      }
+      // The cracks: where the lasers will fire, brighter as it charges, flickering at the end.
+      const flicker = charge > 0.75 ? 0.6 + 0.4 * Math.sin(t / 18) : 1;
+      for (const a of DIRS8) {
+        const len = C.crack * (Math.SQRT2 ** (Math.round(a / (Math.PI / 4)) % 2)) * Math.min(1, charge * 1.6);
+        const p0 = ground(a, 0.25);
+        const p1 = ground(a, 0.25 + len);
+        floor.moveTo(p0.x, p0.y).lineTo(p1.x, p1.y).stroke({ width: 7, color, alpha: 0.3 * charge * flicker, cap: 'round' });
+        floor.moveTo(p0.x, p0.y).lineTo(p1.x, p1.y).stroke({ width: 2, color: hot, alpha: charge * flicker, cap: 'round' });
+      }
+      // The core over it, swelling and whitening; motes streaming in along the 8 lines.
+      if (t <= ms) {
+        const y = WORLD.piece.bodyY + 0.55;
+        const c = fx.L.project(vec3(at.x, y, at.z));
+        const r = (C.core[0] + (C.core[1] - C.core[0]) * charge) * c.scale * (1 + 0.08 * Math.sin(t / 30));
+        air.circle(c.x, c.y, r * 1.9).fill({ color, alpha: 0.18 + 0.2 * charge });
+        air.circle(c.x, c.y, r).fill({ color: mix(color, 0xffffff, 0.3 + 0.6 * charge), alpha: 0.95 });
+        for (const a of DIRS8) {
+          for (let m = 0; m < C.motes; m++) {
+            const phase = ((t / ms) * 2 + m / C.motes) % 1;
+            const d = C.moteFrom * (1 - phase);
+            const q = fx.L.project(vec3(at.x + Math.cos(a) * d, y - 0.25 * (1 - phase), at.z + Math.sin(a) * d));
+            air.circle(q.x, q.y, 2.5 * q.scale / c.scale * (0.5 + phase)).fill({ color: hot, alpha: phase * charge });
+          }
+        }
+      }
+    },
+    () => {
+      floor.destroyed || floor.destroy();
+      air.destroyed || air.destroy();
+    },
+  );
+}
+
+// One laser: shoots from the core to the board's edge (its front reaching each tile as that tile is hit), holds a
+// beat, then thins out and fades.
+const LASER = { holdMs: 140, fadeMs: 260, glow: 16, mid: 7, core: 2.5, flareMs: 160 };
+
+function spectralBeam(fx: FxContext, from: Vec3, to: Vec3, ms: number): void {
+  const color = EFFECT_COLORS.spectralcataclysm;
+  const y = WORLD.piece.bodyY + 0.55;
+  const a = vec3(from.x, y, from.z);
+  const b = vec3(to.x, WORLD.piece.bodyY, to.z);
+  const g = new Graphics();
+  fx.air.addChild(g);
+  const total = ms + LASER.holdMs + LASER.fadeMs;
+  fx.tweens.add(
+    total,
+    (k) => {
+      if (g.destroyed) return;
+      const t = k * total;
+      const head = Math.min(1, t / ms);
+      const fade = t <= ms + LASER.holdMs ? 1 : 1 - (t - ms - LASER.holdMs) / LASER.fadeMs;
+      const p0 = fx.L.project(a);
+      const p1 = fx.L.project(lerp3(a, b, head));
+      const shimmer = 1 + 0.15 * Math.sin(t / 12);
+      g.clear();
+      const line = () => g.moveTo(p0.x, p0.y).lineTo(p1.x, p1.y);
+      line().stroke({ width: LASER.glow * fade * shimmer, color, alpha: 0.22 * fade, cap: 'round' });
+      line().stroke({ width: LASER.mid * fade, color: mix(color, 0xffffff, 0.35), alpha: 0.75 * fade, cap: 'round' });
+      line().stroke({ width: LASER.core * shimmer, color: 0xffffff, alpha: fade, cap: 'round' });
+      // The burning front, while it travels; a flare at the source as it fires.
+      if (head < 1) g.circle(p1.x, p1.y, 6 * p1.scale / p0.scale).fill({ color: 0xffffff, alpha: 0.9 });
+      if (t < LASER.flareMs) g.circle(p0.x, p0.y, 18 * (1 - t / LASER.flareMs) + 6).fill({ color: mix(color, 0xffffff, 0.6), alpha: 0.6 * (1 - t / LASER.flareMs) });
+    },
+    () => g.destroyed || g.destroy(),
+  );
+}
+
+// A laser burning through a piece: a bright burst at its shield.
+function beamBurn(fx: FxContext, target: TokenView, color: number): void {
+  const g = new Graphics();
+  target.body.addChild(g);
+  const r = WORLD.piece.shieldW * fx.L.unit * 0.5;
+  fx.tweens.add(
+    240,
+    (k) => {
+      if (g.destroyed) return;
+      g.clear();
+      g.circle(0, 0, r * (0.4 + k * 0.9)).stroke({ width: 4 * (1 - k) + 1, color: 0xffffff, alpha: 1 - k });
+      g.circle(0, 0, r * 0.5 * (1 - k)).fill({ color: mix(color, 0xffffff, 0.5), alpha: 0.8 * (1 - k) });
+    },
+    () => g.destroyed || g.destroy(),
+  );
+}
+
+// Odette's Starfall Aegis: a shooting star streaks down out of the sky onto each enemy, a glowing tail behind it,
+// speeding up as it falls, and bursts on landing (a flash, a ring, glints flying out). Every enemy is struck at
+// once, so each star gets its own small delay and angle: a shower, not a drill.
+const STARFALL = {
+  height: 3.4, // cells above the target it falls from
+  drift: 1.1, // cells sideways it travels as it falls
+  ms: 300, // the fall
+  stagger: 130, // ms: up to this much later than the strike
+  tail: 0.32, // share of the path the tail trails
+  burstMs: 320,
+  glints: 6,
+};
+
+// A four-pointed sparkle at (x, y), `r` from centre to tip.
+const sparkle = (g: Graphics, x: number, y: number, r: number, turn: number) => {
+  const pts: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    const a = turn + (i * Math.PI) / 4;
+    const d = i % 2 ? r * 0.3 : r;
+    pts.push(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  return g.poly(pts);
+};
+
+function starfallShot(fx: FxContext, { to }: Volley, land: () => void): void {
+  const color = EFFECT_COLORS.starfall;
+  const S = STARFALL;
+  // From up and to the left (or right), a little to the back: a slant you can read from the camera.
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const sky = vec3(to.x + side * S.drift * (0.7 + Math.random() * 0.5), to.y + S.height, to.z - 0.4 - Math.random() * 0.4);
+  const delay = Math.random() * S.stagger;
+  starWhoosh();
+  const g = new Graphics();
+  fx.air.addChild(g);
+  const spin = Math.random() * Math.PI;
+  fx.tweens.add(
+    delay + S.ms,
+    (k) => {
+      if (g.destroyed) return;
+      const t = k * (delay + S.ms) - delay;
+      g.clear();
+      if (t < 0) return;
+      const fall = (t / S.ms) ** 1.6; // accelerating
+      const head = fx.L.project(lerp3(sky, to, fall));
+      const back = fx.L.project(lerp3(sky, to, Math.max(0, fall - S.tail)));
+      const tail = () => g.moveTo(back.x, back.y).lineTo(head.x, head.y);
+      tail().stroke({ width: 0.1 * head.scale, color, alpha: 0.18, cap: 'round' });
+      tail().stroke({ width: 0.04 * head.scale, color: mix(color, 0xffffff, 0.4), alpha: 0.6, cap: 'round' });
+      tail().stroke({ width: 0.015 * head.scale + 1, color: 0xffffff, alpha: 0.9, cap: 'round' });
+      g.circle(head.x, head.y, 0.09 * head.scale).fill({ color, alpha: 0.3 });
+      sparkle(g, head.x, head.y, 0.085 * head.scale, spin + fall * 3).fill(0xffffff);
+    },
+    () => {
+      g.destroyed || g.destroy();
+      land();
+      starStrike();
+      starBurst(fx, to, color, spin);
+    },
+  );
+}
+
+function starBurst(fx: FxContext, at: Vec3, color: number, spin: number): void {
+  const S = STARFALL;
+  const g = new Graphics();
+  fx.air.addChild(g);
+  const glints = Array.from({ length: S.glints }, (_, i) => ({ a: spin + (i / S.glints) * Math.PI * 2 + Math.random() * 0.4, reach: 0.35 + Math.random() * 0.2 }));
+  fx.tweens.add(
+    S.burstMs,
+    (k) => {
+      if (g.destroyed) return;
+      const c = fx.L.project(at);
+      const out = 1 - (1 - k) ** 2;
+      g.clear();
+      // The flash: a big sparkle, fading fast.
+      if (k < 0.5) sparkle(g, c.x, c.y, 0.32 * (1 - k * 2) * c.scale, spin).fill({ color: 0xffffff, alpha: 1 - k * 2 });
+      // The ring, on the ground plane's slant.
+      const r = 0.42 * out * c.scale;
+      g.ellipse(c.x, c.y, r, r * FORESHORTENING.floor * 1.6).stroke({ width: 3 * (1 - k) + 0.5, color, alpha: 1 - k });
+      // Glints flying out and dimming.
+      for (const { a, reach } of glints) {
+        const d = reach * out * c.scale;
+        sparkle(g, c.x + Math.cos(a) * d, c.y + Math.sin(a) * d * 0.7, 0.045 * (1 - k) * c.scale + 1, a).fill({ color: mix(color, 0xffffff, 0.6), alpha: 1 - k });
+      }
+    },
+    () => g.destroyed || g.destroy(),
+  );
+}
+
+// ...and while she channels it, she pirouettes on the spot: a whole number of turns over the channel, easing in and
+// out (so she ends facing front), unhurried, like a dancer.
+const PIROUETTE = { turns: 4 };
+
+function pirouette(fx: FxContext, caster: TokenView): void {
+  const ms = STARFALL_AEGIS.seconds * 1000;
+  fx.tweens.add(
+    ms,
+    (k) => {
+      if (caster.root.destroyed) return;
+      const eased = k - Math.sin(2 * Math.PI * k) / (2 * Math.PI); // slow to start and to stop, steady between
+      caster.setTurn(eased * PIROUETTE.turns * Math.PI * 2);
+    },
+    () => caster.root.destroyed || caster.setTurn(0),
+  );
+}
+
 // ---------- the looks
 
 // Lance's Phantom Execution: a blue-green tunnel of wind around his dash, afterimages along it, a cross on everyone he cuts
@@ -452,6 +678,7 @@ const PHANTOM = EFFECT_COLORS.phantom;
 export const SKILL_LOOKS: Record<string, SkillLook> = {
   phantomexecution: {
     dash(fx, d) {
+      shing();
       windTunnel(fx, d, WINDBLADE);
       afterimages(fx, d, WINDBLADE);
     },
@@ -459,6 +686,7 @@ export const SKILL_LOOKS: Record<string, SkillLook> = {
   },
   phantom: {
     dash(fx, d) {
+      shing(true);
       windTunnel(fx, d, WINDBLADE);
       afterimages(fx, d, WINDBLADE);
       chaser(fx, d, PHANTOM);
@@ -484,4 +712,17 @@ export const SKILL_LOOKS: Record<string, SkillLook> = {
   sumpahpalapa: { cast: (fx, caster) => oathBurst(fx, caster, EFFECT_COLORS.sumpahpalapa) },
   // Melina's Spirit Archers: a violet crescent moon rises over him as he casts.
   spiritarchers: { cast: (fx, caster) => moonrise(fx, caster, COLORS.comet) },
+  // Odette's Starfall Aegis: shooting stars down out of the sky onto every enemy, each strike.
+  starfall: { shot: starfallShot },
+  starfallaegis: {
+    cast(fx, caster) {
+      starChime();
+      pirouette(fx, caster);
+    },
+  },
+  // Boss Alpha's Spectral Cataclysm: a shockwave on landing, a charge-up, then lasers in 8 directions.
+  spectralcharge: { projectile: spectralCharge },
+  spectralbeam: { projectile: spectralBeam },
+  spectralimpact: { hit: (fx, target) => beamBurn(fx, target, EFFECT_COLORS.spectralimpact) },
+  spectralcataclysm: { hit: (fx, target) => beamBurn(fx, target, EFFECT_COLORS.spectralcataclysm) },
 };

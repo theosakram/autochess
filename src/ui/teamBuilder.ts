@@ -5,6 +5,7 @@ import type { Item, MistOrb, Player, Star, Unit, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS } from '../game/units';
 import { portraitHtml } from './portraits';
 import { traitBadgeHtml } from './traitBadges';
+import { itemIcon } from './itemIcons';
 
 // Team Builder (home screen): place heroes on your own board, hand them items and orbs, see the synergies,
 // save the lineup. Nothing here touches a game.
@@ -200,7 +201,7 @@ function boardHtml(board: BuilderBoard): string {
       const u = UNIT_BY_ID[h.defId];
       const star = h.star ?? 1;
       const items = h.items
-        .map((id, slot) => `<button class="tb-chip" data-action="tbTakeItem" data-cell="${cell}" data-slot="${slot}" title="${ITEMS[id].name} (click to remove)">${ITEMS[id].icon}</button>`)
+        .map((id, slot) => `<button class="tb-chip" data-action="tbTakeItem" data-cell="${cell}" data-slot="${slot}" title="${ITEMS[id].name} (click to remove)">${itemIcon(id)}</button>`)
         .join('');
       const orb = h.orb
         ? `<button class="tb-orb" data-action="tbTakeOrb" data-cell="${cell}" title="${TRAITS[h.orb].name} orb (click to remove)">${traitBadgeHtml(h.orb)}</button>`
@@ -267,7 +268,7 @@ function heroPoolHtml(board: BuilderBoard, f: HeroFilter): string {
 function itemPoolHtml(): string {
   const card = (i: ItemDef) =>
     `<div class="tb-pool-item" draggable="true" data-drag="item:${i.id}" title="${i.name}: drag onto a hero">
-      <span class="tb-pool-icon">${i.icon}</span><small>${i.name}</small>
+      <span class="tb-pool-icon">${itemIcon(i.id)}</span><small>${i.name}</small>
     </div>`;
   const section = (title: string, list: ItemDef[]) => (list.length ? `<h4 class="tb-pool-section">${title}</h4>${list.map(card).join('')}` : '');
   const all = BUILDER_ITEMS;

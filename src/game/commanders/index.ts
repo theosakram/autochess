@@ -116,7 +116,7 @@ export const MARKS: Record<MarkKind, { icon: string; name: string; action: strin
   halo: { icon: '😇', name: 'Halo', action: 'Protect with your halo', available: (pw) => (pw.protect?.picks ?? 0) >= 1 },
   halo2: { icon: '😇', name: 'Second Halo', action: 'Protect with your second halo', available: (pw) => (pw.protect?.picks ?? 0) >= 2 },
   iceArrow: { icon: '❄️', name: 'Ice Arrow Blessing', action: 'Give the Ice Arrow Blessing', available: (pw) => !!pw.iceArrow },
-  cable: { icon: '🪢', name: 'Steel Cable', action: 'Tie your steel cable', available: (pw) => !!pw.cable },
+  cable: { icon: '🔗', name: 'Steel Cable', action: 'Tie your steel cable', available: (pw) => !!pw.cable },
 };
 export const MARK_KINDS = Object.keys(MARKS) as MarkKind[];
 

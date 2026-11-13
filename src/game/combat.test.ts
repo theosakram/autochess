@@ -528,13 +528,15 @@ describe('attack types', () => {
 });
 
 describe('mage', () => {
-  test('Mage raises magic attack only: allies a little, Mages a lot', () => {
+  test('Mage gives everyone magic attack; only Mages get magic damage', () => {
     const plain = (id: string) => unitStats(UNIT_BY_ID[id], 1);
     const ally = unitStats(UNIT_BY_ID.footman, 1, { levels: { mage: 1 } });
     const caster = unitStats(UNIT_BY_ID.val, 1, { levels: { mage: 1 } });
     expect(ally.ap).toBe(Math.round(plain('footman').ap * (1 + MAGE.allies[0])));
-    expect(caster.ap).toBe(Math.round(plain('val').ap * (1 + MAGE.allies[0] + MAGE.mageBonus[0])));
+    expect(caster.ap).toBe(Math.round(plain('val').ap * (1 + MAGE.allies[0])));
     expect(ally.atk).toBe(plain('footman').atk);
+    expect(ally.magicAmp).toBe(0);
+    expect(caster.magicAmp).toBe(MAGE.magicDamage[0]);
   });
 
   test("a Mage's magic attacks hit harder with the trait; a physical ally's attacks don't change", () => {

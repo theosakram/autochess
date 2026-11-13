@@ -55,8 +55,11 @@ import {
   traitDetailHtml,
   traitsPanelHtml,
   unitInfoHtml,
+  itemInfoHtml,
+  pickLevel,
   unitDetailHtml,
 } from './views';
+import { layoutMasonry } from './masonry';
 import { lineupGuide, lineupPanelHtml, loadSavedTeams, type SavedTeam } from './teamBuilder';
 
 const TOAST_MS = 1800;
@@ -84,6 +87,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let openItem: number | null = null;
   // Unit type whose info popup is open (from the gallery or a trait card).
   let openUnitInfo: string | null = null;
+  // Item type whose info popup is open (from a trait card's item chips).
+  let openItemInfo: string | null = null;
   // Mist Shop slot whose ware is waiting for a pick (Mirror: a unit; picked orbs: a trait).
   let mistPick: number | null = null;
   // The Mirror Device picker (Kaela's dice prizes) is open.
@@ -318,6 +323,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       poolOpen ? poolHtml(p, state.pool) : '', // under a hero's info opened from it
       rewardPick && p.rewardOffer?.[rewardPick] ? rewardPickHtml(p, rewardPick) : '', // under a Wanderer's card opened from it
       openUnitInfo ? unitInfoHtml(openUnitInfo, p) : '',
+      openItemInfo ? itemInfoHtml(openItemInfo) : '',
       openBearer !== null && p.items.some((i) => i.uid === openBearer) ? bearerDetailHtml(p, openBearer, state.chosen) : '',
       openItem !== null && p.items.some((i) => i.uid === openItem) ? itemDetailHtml(p, openItem, !combat, state.chosen) : '',
       orbFor !== null && p.orbs.length ? orbChoiceHtml(p, orbFor) : '',
@@ -342,6 +348,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       termOpen ? termPopupHtml(termOpen) : '', // over whatever text opened it
       over ? gameOverHtml(p, state.players.length, state) : '',
     ].join('');
+    layoutMasonry(slot('overlays'));
     // Show the next Box round pick after a beat.
     if (boxOpen() && boxShown < state.box!.picks.length && !boxTimer) {
       boxTimer = window.setTimeout(() => {
@@ -498,6 +505,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       openBearer = Number(bearer.dataset.bearer);
       return render();
     }
+    if (pickLevel(target)) return;
+    const itemInfo = target.closest<HTMLElement>('[data-item-info]');
+    if (itemInfo) {
+      openItemInfo = itemInfo.dataset.itemInfo!;
+      return render();
+    }
     const info = target.closest<HTMLElement>('[data-unit-info]');
     if (info) {
       openUnitInfo = info.dataset.unitInfo!;
@@ -555,6 +568,8 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'previewCommander') {
         commanderPreview = btn.dataset.commander!;
         render();
+        // The overlay was rebuilt: keep keyboard focus on the tile just looked at.
+        document.querySelector<HTMLElement>(`.commander-tile[data-commander="${commanderPreview}"]`)?.focus({ preventScroll: true });
       } else if (a === 'openRewardPick' || a === 'closeRewardPick') {
         rewardPick = a === 'openRewardPick' ? btn.dataset.pickTrait! : null;
         render();
@@ -645,6 +660,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         render();
       } else if (a === 'closeUnitInfo') {
         openUnitInfo = null;
+        render();
+      } else if (a === 'closeItemInfo') {
+        openItemInfo = null;
         render();
       }
       else if (a === 'closeItem') {
@@ -747,8 +765,26 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       e.preventDefault();
       return el.click();
     }
-    // Nothing else until a commander is picked.
-    if (e.repeat || !me().commander) return;
+    // The commander pick: arrow keys walk the roster (up/down by a row), Enter chooses the one looked at.
+    if (!me().commander) {
+      const tiles = [...document.querySelectorAll<HTMLElement>('.commander-tile')];
+      const at = tiles.findIndex((t) => t.classList.contains('on'));
+      if (e.key === 'Enter' && !(el instanceof HTMLButtonElement) && at >= 0) {
+        e.preventDefault();
+        return dispatch({ type: 'pickCommander', commander: tiles[at].dataset.commander! });
+      }
+      const cols = tiles.filter((t) => t.offsetTop === tiles[0]?.offsetTop).length || 1;
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key];
+      if (step && tiles.length) {
+        e.preventDefault();
+        const next = tiles[Math.max(0, Math.min(tiles.length - 1, (at < 0 ? 0 : at) + step))];
+        commanderPreview = next.dataset.commander!;
+        render();
+        document.querySelector<HTMLElement>(`.commander-tile[data-commander="${commanderPreview}"]`)?.focus({ preventScroll: false });
+      }
+      return;
+    }
+    if (e.repeat) return;
     if (e.key === 'Escape' && skillOpen) {
       skillOpen = false;
       return render();
@@ -759,6 +795,10 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     }
     if (e.key === 'Escape' && termOpen) {
       termOpen = null;
+      return render();
+    }
+    if (e.key === 'Escape' && openItemInfo) {
+      openItemInfo = null;
       return render();
     }
     if (e.key === 'Escape' && openUnitInfo) {

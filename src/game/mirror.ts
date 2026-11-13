@@ -1,4 +1,4 @@
-import { canClaim, gainUnit } from './actions';
+import { canClaimToBoard, gainUnit } from './actions';
 import type { GameState, Player } from './types';
 
 // The Mirror Device: an inventory item (Player.mirrors counts them) from the Mist Shop, Amon's Mirror Bar and
@@ -16,7 +16,7 @@ export function mirrorBlock(_state: GameState, p: Player, uid: number): string |
   if (!p.mirrors) return 'You have no Mirror Device';
   const unit = [...p.board, ...p.bench].find((u) => u?.uid === uid);
   if (!unit) return 'Pick one of your units to copy';
-  if (!canClaim(p, unit.defId)) return 'Bench is full';
+  if (!canClaimToBoard(p, unit.defId)) return 'No room on the bench or board';
   return null;
 }
 
@@ -28,6 +28,6 @@ export function useMirror(state: GameState, p: Player, uid: number): string | nu
   const pooled = (state.pool[defId] ?? 0) > 0;
   if (pooled) state.pool[defId]--;
   p.mirrors!--;
-  gainUnit(state, p, defId, false, false, !pooled);
+  gainUnit(state, p, defId, true, false, !pooled);
   return null;
 }

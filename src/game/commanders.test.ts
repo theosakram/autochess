@@ -877,7 +877,7 @@ describe('Dyroth', () => {
     expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 704 }).ok).toBe(true);
   });
 
-  test("an offered hero's items go back to the inventory; gifts wait for bench room", () => {
+  test("an offered hero's items go back to the inventory; with a full bench, gifts land on the board", () => {
     const { state, p } = dyrothGame();
     state.round = 3;
     const hero = UNITS.find((u) => u.tier === 2 && u.shop !== false)!;
@@ -888,12 +888,8 @@ describe('Dyroth', () => {
     for (let i = 0; i < p.bench.length; i++) p.bench[i] = { uid: 800 + i, defId: 'footman', star: 1 }; // full
     expect(applyAction(state, p.id, { type: 'offer', altar: 'altar', unit: 705 }).ok).toBe(true);
     expect(p.items[0].holder).toBeNull();
-    expect(p.gifts!.length).toBe(2);
-    p.bench[0] = null;
-    p.bench[1] = null;
-    syncPlayer(state, p);
     expect(p.gifts!.length).toBe(0);
-    expect(p.bench.slice(0, 2).every((u) => u && UNIT_BY_ID[u.defId].tier === 3)).toBe(true);
+    expect(p.board.filter((u) => u && UNIT_BY_ID[u.defId].tier === 3)).toHaveLength(2);
   });
 
   test('Abyss Altar on Dyroth: a second altar, ready on the pick, a random hero 1 cost up, every 3 rounds', () => {
@@ -1303,16 +1299,14 @@ describe('Johnson', () => {
     expect(id in state.pool).toBe(false);
   });
 
-  test('picked with a full bench, the Johnnie waits for room', () => {
+  test('picked with a full bench, the Johnnie lands on the board', () => {
     const { state, p } = johnsonGame();
     p.bench.fill(null);
     p.bench.forEach((_, i) => (p.bench[i] = { uid: 900 + i, defId: 'cici', star: 1 }));
     const id = p.johnnie!.offer[0];
     expect(applyAction(state, p.id, { type: 'pickJohnnie', johnnie: id }).ok).toBe(true);
-    expect(p.gifts).toContain(id);
-    p.bench[0] = null;
-    syncPlayer(state, p);
-    expect(p.bench.some((u) => u?.defId === id)).toBe(true);
+    expect(p.gifts ?? []).not.toContain(id);
+    expect(p.board.some((u) => u?.defId === id)).toBe(true);
   });
 
   test('Family Business: every Johnnie gets +35% attack and magic attack and +30% HP, other heroes nothing', () => {

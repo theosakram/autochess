@@ -27,6 +27,7 @@ export interface Stats {
   armorPen: number; // share of the target's armor its physical damage ignores (0..1)
   burnOnHit: number; // basic attacks burn the target: this share of its max hp per second, magic, for BURN_SECONDS
   damageAmp: number; // all damage this unit deals is multiplied by 1 + damageAmp
+  magicAmp: number; // magic damage (adaptive landing as magic too) is further multiplied by 1 + magicAmp
   damageTaken: number; // all damage this unit takes is multiplied by 1 + damageTaken (e.g. Weak)
   critChance: number; // 0..1, basic attacks only
   critDamage: number; // multiplier on a critting basic attack
@@ -73,6 +74,7 @@ export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
     armorPen: 0,
     burnOnHit: 0,
     damageAmp: 0,
+    magicAmp: 0,
     damageTaken: 0,
     critChance: 0,
     critDamage: BASE_CRIT_DAMAGE,

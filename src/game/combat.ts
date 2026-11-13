@@ -488,7 +488,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     if (dealer?.fury && target.hp < target.maxHp * dealer.fury.below) {
       api.buff(dealer, [{ stat: 'damageAmp', add: dealer.fury.amp }], dealer.fury.seconds, dealer.fury.effect, dealer);
     }
-    const amp = dealer ? dealer.stats.damageAmp : 0;
+    const amp = dealer ? (1 + dealer.stats.damageAmp) * (type === 'magic' ? 1 + dealer.stats.magicAmp : 1) - 1 : 0;
     const stat = type === 'physical' ? 'armor' : 'mr';
     const lowered = target.debuffs.reduce((n, d) => n + (t < d.until ? d[stat] : 0), 0);
     const raw0 = type === 'pure' ? 0 : target.stats[stat] - target.shred - lowered;

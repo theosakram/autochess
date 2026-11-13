@@ -32,7 +32,9 @@ import { fieldedMistOrbs, orbTraits, playerTraitCounts, playerTraits, traitCount
 import type { BotLevel, BoxPrize, GameState, Item, Player, PowerTier, Unit, UnitDef } from '../game/types';
 import { UNIT_BY_ID, UNITS, unitPrice } from '../game/units';
 import { portraitHtml } from './portraits';
-import { bearerBadgeHtml, traitBadgeHtml } from './traitBadges';
+import { gloveIcon, itemIcon } from './itemIcons';
+import { commanderCardIcon, commanderIcon, powerCardIcon } from './commanderIcons';
+import { bearerBadgeHtml, hex, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
 
 // Pure HTML builders. No state, no DOM access: app.ts decides what to show.
 
@@ -126,22 +128,22 @@ const itemText = (src: ItemDef, tier: number, p?: Player) => {
   return def.desc.replace(/\{(\w+)\}/g, (_, key: string) => values[key][tier - 1]);
 };
 
-// The items a trait hands out, with your tier of each highlighted.
-function traitItemsHtml(itemIds: string[], p: Player, compact = false): string {
+// The items a trait hands out: chips that open the item's own popup, with your tier of each in a game.
+function traitItemsHtml(itemIds: string[], p: Player, bare = false): string {
   const grants = auraGrants(p, playerTraits(p));
-  const rows = itemIds
+  const chips = itemIds
     .map((id) => {
-      const def = shownItem(ITEMS[id], p);
+      const def = ITEMS[id];
       const owned = p.items.find((it) => baseItemOf(it.id) === id);
       const grant = owned && grants.get(owned.uid);
+      const state = bare ? '' : `<small class="item-chip-state">${owned ? `tier ${owned.tier}` : 'not yet'}</small>`;
       return `<li class="${owned ? 'owned' : ''}">
-        <b>${def.icon} ${def.name}</b> <small>${def.kind} · ${owned ? `tier ${owned.tier}` : 'not yet'}</small>
-        <p class="trait-desc">${compact ? descNowHtml(def, owned?.tier ?? 0) : descHtml(def, owned?.tier ?? 0)}</p>
+        <button class="item-chip" data-item-info="${def.id}" title="${def.name}: see what it does">${itemIcon(def.id)}<b>${def.name}</b><small>${def.kind}</small>${state}</button>
         ${grant ? `<p class="aura-line">Now: ${auraText(grant)}</p>` : ''}
       </li>`;
     })
     .join('');
-  return `<h4>Items</h4><ul class="trait-items">${rows}</ul>`;
+  return `<h4>Items</h4><ul class="trait-items">${chips}</ul>`;
 }
 
 // Like descHtml, but only one level's numbers: the active one (or the first, muted, while inactive),
@@ -158,19 +160,58 @@ function descNowHtml(src: DescSource, lvl: number): string {
   });
 }
 
-type TraitCardOpts = { heading: 'h2' | 'h3'; compact?: boolean; dim?: boolean };
+// `bare`: no game running (home gallery), so no counts, progress or ownership, just the rules.
+// Galleries show one level's numbers at a time; the breakpoint chips pick which (no re-render, see pickLevel).
+// Remembered per trait so a re-render keeps the pick.
+const LEVEL_PICKS = new Map<string, number>();
+
+// Every level's value of each {placeholder}, one span per breakpoint; CSS shows the picked one.
+// A '-' level (not yet) shows the first later level's value, muted.
+function descPickHtml(src: DescSource, levels: number): string {
+  const values = src.values();
+  return src.desc.replace(/\{(\w+)\}/g, (_, key: string) => {
+    const vals = values[key];
+    const at = (i: number) => vals[Math.min(i, vals.length - 1)];
+    const spans = Array.from({ length: levels }, (_, i) => {
+      const v = at(i);
+      const later = v === '-' ? (vals.find((x, j) => j > i && x !== '-') ?? '-') : null;
+      return `<span class="lv lv-${i} ${later ? 'later' : 'on'}">${later ?? v}</span>`;
+    }).join('');
+    return wrapDamage(damageClass(src, key, 'physical'), spans);
+  });
+}
+
+// A breakpoint chip was clicked: show that level's numbers in its card. True if it was one.
+export function pickLevel(target: HTMLElement): boolean {
+  const chip = target.closest<HTMLElement>('[data-lv-pick]');
+  const scope = chip?.closest<HTMLElement>('[data-lv]');
+  if (!chip || !scope) return false;
+  scope.dataset.lv = chip.dataset.lvPick!;
+  LEVEL_PICKS.set(scope.dataset.lvTrait!, Number(chip.dataset.lvPick));
+  for (const c of scope.querySelectorAll<HTMLElement>('[data-lv-pick]')) c.setAttribute('aria-pressed', String(c === chip));
+  return true;
+}
+
+type TraitCardOpts = { heading: 'h2' | 'h3'; compact?: boolean; dim?: boolean; bare?: boolean };
 
 // Title plus everything about a trait, measured against the player's units. Shared by the single-trait
 // popup (compact: current numbers only) and the galleries (every level) so they never drift apart.
 // With `dim`, units the player doesn't have are greyed out; bench ones sit in between.
-function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string>, { heading, compact = false, dim = false }: TraitCardOpts): string {
+function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string>, { heading, compact = false, dim = false, bare = false }: TraitCardOpts): string {
   const t = TRAITS[traitId];
   const n = playerTraitCounts(p)[traitId] ?? 0;
   const lvl = traitLevel(traitId, n);
   const onBoard = new Set(p.board.flatMap((u) => (u ? [u.defId] : [])));
   const onBench = new Set(p.bench.flatMap((u) => (u ? [u.defId] : [])));
   const next = t.breakpoints[lvl];
-  const bps = t.breakpoints.map((b, i) => `<span class="${i < lvl ? 'on' : ''}${i === lvl - 1 ? ' current' : ''}">${b}</span>`).join('');
+  const picked = LEVEL_PICKS.get(traitId) ?? Math.max(lvl - 1, 0);
+  const bpClass = (i: number) => `${i < lvl ? 'on' : ''}${i === lvl - 1 ? ' current' : ''}`;
+  // The in-game popup (compact) shows the active level; galleries let you pick one.
+  const bps = compact
+    ? t.breakpoints.map((b, i) => `<span class="${bpClass(i)}">${b}</span>`).join('')
+    : t.breakpoints
+        .map((b, i) => `<button class="lv-pick ${bpClass(i)}" data-lv-pick="${i}" aria-pressed="${i === picked}" title="Show the numbers with ${b}">${b}</button>`)
+        .join('');
   const tile = (u: UnitDef) => {
     const mine = Object.values(p.rewardUnit ?? {}).includes(u.id);
     const where = onBoard.has(u.id) ? 'board' : onBench.has(u.id) ? 'bench' : 'none';
@@ -181,9 +222,8 @@ function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string
     ].join('');
     const tag = where === 'bench' ? 'bench' : u.shop === false ? (mine ? 'yours' : 'not in shop') : '';
     return `<li class="tier-${u.tier}${dim ? ` at-${where}` : ''}${where === 'board' ? ' owned' : ''}" title="${u.name} · ${u.tier}g${where === 'board' ? ' · on your board' : where === 'bench' ? ' · on your bench' : ''}">
-        <button class="unit-link" data-unit-info="${u.id}">${portraitHtml(u.id, 'tiny')}<span class="unit-name">${u.name}</span></button>
-        <span class="unit-cost">${u.tier}g</span>
-        <span class="unit-traits">${chips}${tag ? `<small class="unit-tag">${tag}</small>` : ''}</span>
+        <button class="unit-link" data-unit-info="${u.id}">${portraitHtml(u.id, 'unit-face')}<span class="unit-text"><span class="unit-name">${u.name}</span><span class="unit-sub"><b class="unit-cost">${u.tier}g</b>${tag ? `<small class="unit-tag">${tag}</small>` : ''}</span></span></button>
+        <span class="unit-traits">${chips}</span>
       </li>`;
   };
   const byCost = (a: UnitDef, b: UnitDef) => a.tier - b.tier || a.name.localeCompare(b.name);
@@ -191,17 +231,20 @@ function traitCardHtml(traitId: string, p: Player, chosen: Record<string, string
   const fielded = members.filter((u) => onBoard.has(u.id)).length;
   const units = members.map(tile).join('');
   const bearers = UNITS.filter((u) => u.honorary?.trait === traitId).sort(byCost).map(tile).join('');
-  const count = next ? `${n} / ${next}` : `${n} · max`;
-  return `<${heading} class="trait-title"><span class="trait-icon">${traitBadgeHtml(t.id)}</span> ${t.name} <small>${t.kind} · ${count}</small></${heading}>
+  const count = bare ? '' : next ? ` · ${n} / ${next}` : ` · ${n} · max`;
+  const desc = compact ? descNowHtml(t, lvl) : descPickHtml(t, t.breakpoints.length);
+  return `<${heading} class="trait-title"><span class="trait-icon">${traitBadgeHtml(t.id)}</span> ${t.name} <small>${t.kind}${count}</small></${heading}>
+    <div class="lv-scope" data-lv="${picked}" data-lv-trait="${traitId}">
     <div class="trait-bps">${bps}</div>
-    <p class="trait-desc">${compact ? descNowHtml(t, lvl) : descHtml(t, lvl)}</p>
+    <p class="trait-desc">${desc}</p>
+    </div>
     ${chosen[traitId] ? `<p class="trait-stacks">👑 This game: <b>${UNIT_BY_ID[chosen[traitId]].name}</b></p>` : ''}
-    ${t.leader ? leaderLineHtml(traitId, p) : ''}
+    ${t.leader && !bare ? leaderLineHtml(traitId, p) : ''}
     ${p.orb?.trait === traitId ? `<p class="trait-stacks">🔮 Magic Orb: <b>${UNIT_BY_ID[p.orb.defId].name}</b> counts +1</p>` : ''}
     ${p.twilight?.trait === traitId && blessedUnit(p) ? `<p class="trait-stacks">🌗 Twilight Blessing: <b>${UNIT_BY_ID[blessedUnit(p)!.defId].name}</b> counts +1</p>` : ''}
-    ${t.stacks ? stacksHtml(traitId, p) : ''}
+    ${t.stacks ? stacksHtml(traitId, p, bare) : ''}
     ${unlockHtml(traitId, p)}
-    ${t.items ? traitItemsHtml(t.items.pool, p, compact) : ''}
+    ${t.items ? traitItemsHtml(t.items.pool, p, bare) : ''}
     <h4>Units${dim ? ` <small>${fielded} / ${members.length} on board</small>` : ''}</h4>
     <ul class="trait-units${dim ? ' dim-missing' : ''}">${units}</ul>
     ${bearers ? `<h4>Bearers <small>get the bonus, don't count</small></h4><ul class="trait-units${dim ? ' dim-missing' : ''}">${bearers}</ul>` : ''}`;
@@ -218,16 +261,19 @@ function unlockHtml(traitId: string, p: Player): string {
 }
 
 // A counting trait's number, and its rewards: done, or how far off.
-function stacksHtml(traitId: string, p: Player): string {
+function stacksHtml(traitId: string, p: Player, bare = false): string {
   const rule = TRAITS[traitId].stacks!;
   const n = p.stacks[traitId] ?? 0;
   const claimed = p.rewards?.[traitId] ?? 0;
   const unit = p.rewardUnit?.[traitId];
-  const name = unit ? rewardLabel(UNIT_BY_ID[unit]) : p.rewardOffer?.[traitId] ? 'your pick (choose it at the grave)' : 'offered when it first appears';
+  const name = bare ? `your ${rule.rewardName ?? 'reward hero'}` : unit ? rewardLabel(UNIT_BY_ID[unit]) : p.rewardOffer?.[traitId] ? 'your pick (choose it at the grave)' : 'offered when it first appears';
   const rewards = (rule.rewards ?? [])
-    .map((r, i) => `<li class="${i < claimed ? 'done' : ''}">${r.at}: ${rewardText(r, name)}${i < claimed ? ' ✓' : ''}</li>`)
+    .map((r, i) => `<li class="${!bare && i < claimed ? 'done' : ''}"><b class="reward-at">${r.at}</b><span>${rewardText(r, name)}${!bare && i < claimed ? ' ✓' : ''}</span></li>`)
     .join('');
-  return `<p class="trait-stacks">${rule.label}: <b>${n}</b> / ${rule.max}</p>${rewards ? `<ul class="stack-rewards">${rewards}</ul>` : ''}`;
+  const list = rewards ? `<ul class="stack-rewards">${rewards}</ul>` : '';
+  // Outside a game there's no counter: just the milestones.
+  if (bare) return list ? `<h4>${rule.label} rewards</h4>${list}` : '';
+  return `<p class="trait-stacks">${rule.label}: <b>${n}</b> / ${rule.max}</p>${list}`;
 }
 
 // The Mist Shop beside the board, while any Mistbender is fielded: coins, the 3 wares, what's been bought.
@@ -255,7 +301,7 @@ function essenceFacts(p: Player): string[] {
   const flat = new Map<string, number>();
   for (const m of essenceMods(p)) if (m.add && show[m.stat]) flat.set(m.stat, (flat.get(m.stat) ?? 0) + m.add);
   return [
-    `Essence of <b>${UNIT_BY_ID[hero.defId].name} ${starsHtml(hero)}</b>${p.essence!.items.length ? ` and its ${p.essence!.items.map((i) => ITEMS[i.id].icon).join('')}` : ''}.`,
+    `Essence of <b>${UNIT_BY_ID[hero.defId].name} ${starsHtml(hero)}</b>${p.essence!.items.length ? ` and its ${p.essence!.items.map((i) => itemIcon(i.id)).join('')}` : ''}.`,
     [...flat].map(([k, v]) => `+${Math.round(v)} ${show[k]}`).join(', ') + (p.essence!.items.length ? ', and a share of the items\' other stats' : '') + '.',
     ...essenceRoles(p).map((r) => `${traitBadgeHtml(r)} ${ESSENCE_ROLES[r].text}.`),
   ];
@@ -452,7 +498,7 @@ export function galleryHtml(p: Player, chosen: Record<string, string>, tab: Gall
   const body =
     tab === 'grid' ? crossoverGridHtml(p)
     : tab === 'deck' ? cardGalleryHtml(p, cardTier, tiers)
-    : gallerySection(p, chosen, 'faction', 'Factions', true) + gallerySection(p, chosen, 'role', 'Roles', true);
+    : traitJumpHtml() + gallerySection(p, chosen, 'faction', 'Factions', true) + gallerySection(p, chosen, 'role', 'Roles', true);
   // Each tab keeps its own scroll position.
   return modalHtml('closeGallery', 'gallery', `<h2>📖 Synergies</h2><nav class="gallery-tabs">${tabs}</nav>${body}`, `gallery-${tab}`);
 }
@@ -477,7 +523,7 @@ function cardGalleryHtml(p: Player, shown: PowerTier, tiers?: PowerTier[]): stri
         const mine = (p.powerCards ?? []).some((h) => h.id === c.id && h.tier === t);
         const only = cardTiers(c.id).length === 1;
         return `<article class="gallery-card card-entry tier-${t}${mine ? ' mine' : ''}">
-          <h3 class="trait-title"><span class="commander-portrait">${c.icon}</span><span>${powerCardName(c.id, t)}${mine ? ' <small class="card-mine">Yours</small>' : ''}${only ? ` <small class="card-only tier-text">${tierName(t)} only</small>` : ''}</span></h3>
+          <h3 class="trait-title"><span class="commander-portrait">${powerCardIcon(c.id)}</span><span>${powerCardName(c.id, t)}${mine ? ' <small class="card-mine">Yours</small>' : ''}${only ? ` <small class="card-only tier-text">${tierName(t)} only</small>` : ''}</span></h3>
           <p class="trait-desc">${c.desc(t)}</p>
         </article>`;
       })
@@ -489,7 +535,7 @@ function cardGalleryHtml(p: Player, shown: PowerTier, tiers?: PowerTier[]): stri
       const taken = p.commanderCard === c.id;
       const own = p.commander === c.id;
       return `<article class="gallery-card card-entry${taken ? ' mine' : ''}">
-        <h3 class="trait-title"><span class="commander-portrait">${c.card.icon}</span><span>${c.card.name}${taken ? ' <small class="card-mine">Yours</small>' : ''}<br><small>${c.icon} ${c.name}'s card${own ? ' · your commander' : ''}</small></span></h3>
+        <h3 class="trait-title"><span class="commander-portrait">${commanderCardIcon(c.id)}</span><span>${c.card.name}${taken ? ' <small class="card-mine">Yours</small>' : ''}<br><small>${commanderIcon(c.id)} ${c.name}'s card${own ? ' · your commander' : ''}</small></span></h3>
         <p class="commander-text"><b>On ${c.name}:</b> ${c.card.selfDesc}</p>
         <p class="commander-text"><b>On another commander:</b> ${c.card.otherDesc ?? c.desc}</p>
       </article>`;
@@ -551,7 +597,7 @@ export function homeGalleryHtml(p: Player, tab: HomeTab, cardTier: PowerTier = '
     : tab === 'cards' ? cardGalleryHtml(p, cardTier)
     : tab === 'items' ? itemGalleryHtml()
     : tab === 'crossovers' ? crossoverGridHtml(p)
-    : gallerySection(p, {}, 'faction', 'Factions') + gallerySection(p, {}, 'role', 'Roles');
+    : traitJumpHtml() + gallerySection(p, {}, 'faction', 'Factions') + gallerySection(p, {}, 'role', 'Roles');
   return `<div class="dialog gallery home-gallery" data-keep-scroll="home-${tab}">
     <div class="home-gallery-head">
       <button data-action="home">← Back</button>
@@ -619,8 +665,8 @@ export function termPopupHtml(id: string): string {
 function commanderFoldsHtml(c: (typeof COMMANDERS)[string], scope: string): string {
   const group = `${scope}-${c.id}`;
   return `<div class="commander-folds">
-    <details name="${group}"><summary>${c.icon} Power</summary><p class="commander-text">${c.desc}</p></details>
-    <details name="${group}"><summary>${c.card.icon} Card: ${c.card.name}</summary>
+    <details name="${group}"><summary>${commanderIcon(c.id)} Power</summary><p class="commander-text">${c.desc}</p></details>
+    <details name="${group}"><summary>${commanderCardIcon(c.id)} Card: ${c.card.name}</summary>
       <p class="commander-text"><b>On ${c.name}:</b> ${c.card.selfDesc}</p>
       <p class="commander-text"><b>On another commander:</b> ${c.card.otherDesc ?? c.desc}</p>
     </details>
@@ -631,7 +677,7 @@ function commanderGalleryHtml(): string {
   const cards = Object.values(COMMANDERS)
     .map(
       (c) => `<article class="gallery-card commander-entry">
-        <h3 class="trait-title"><span class="commander-portrait">${c.icon}</span><span>${c.name}<br><small>${c.title}</small></span></h3>
+        <h3 class="trait-title"><span class="commander-portrait">${commanderIcon(c.id)}</span><span>${c.name}<br><small>${c.title}</small></span></h3>
         ${commanderFoldsHtml(c, 'gallery')}
       </article>`,
     )
@@ -641,27 +687,36 @@ function commanderGalleryHtml(): string {
 }
 
 // Every item, grouped by where it comes from. Tiered values show every tier.
-function itemGalleryHtml(): string {
-  // Base items only: an enhanced version shows on its base's card, behind the Enhanced pill.
-  const all = Object.values(ITEMS).filter((i) => !i.enhancedFrom);
-  const body = (def: ItemDef) =>
-    `<h3 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name} <small>${def.kind}${def.maxTier > 1 ? ` · ${def.maxTier} tiers` : ''}</small></h3>
+const itemBodyHtml = (def: ItemDef) =>
+    `<h3 class="trait-title"><span class="trait-icon">${itemIcon(def.id)}</span> ${def.name} <small>${def.kind}${def.maxTier > 1 ? ` · ${def.maxTier} tiers` : ''}</small></h3>
       <p class="trait-desc">${descHtml(def, 0)}</p>
       ${def.membersOnly && def.trait ? `<p class="meta">Only ${TRAITS[def.trait].name} units can hold it.</p>` : ''}
       ${def.forbidden ? `<p class="meta">${TRAITS[def.forbidden].name} units can't hold it.</p>` : ''}`;
-  // An item with an enhanced version: Base / Enhanced pills switch the card (radio inputs, no app state).
-  const card = (def: ItemDef) => {
-    const plus = canEnhance(def.id) ? ITEMS[enhancedId(def.id)] : null;
-    if (!plus) return `<article class="gallery-card item-entry">${body(def)}</article>`;
-    const name = `enh-${def.id}`;
-    return `<article class="gallery-card item-entry has-enhanced">
+
+// An item's gallery card. With an enhanced version, Base / Enhanced pills switch it (radio inputs, no app state);
+// `key` keeps the radio names apart when the same item shows twice (gallery and popup).
+function itemCardHtml(def: ItemDef, key = ''): string {
+  const plus = canEnhance(def.id) ? ITEMS[enhancedId(def.id)] : null;
+  if (!plus) return `<article class="gallery-card item-entry">${itemBodyHtml(def)}</article>`;
+  const name = `enh-${key}${def.id}`;
+  return `<article class="gallery-card item-entry has-enhanced">
       <input type="radio" class="enh-b" name="${name}" id="${name}-b" checked hidden>
       <input type="radio" class="enh-e" name="${name}" id="${name}-e" hidden>
       <nav class="enh-pills"><label class="pill-b" for="${name}-b">Base</label><label class="pill-e" for="${name}-e">✦ Enhanced</label></nav>
-      <div class="enh-base">${body(def)}</div>
-      <div class="enh-plus">${body(plus)}</div>
+      <div class="enh-base">${itemBodyHtml(def)}</div>
+      <div class="enh-plus">${itemBodyHtml(plus)}</div>
     </article>`;
-  };
+}
+
+// An item by type (not one you hold), e.g. from a trait card's item chips.
+export function itemInfoHtml(id: string): string {
+  return modalHtml('closeItemInfo', 'trait-popup item-info', itemCardHtml(ITEMS[id], 'pop-'));
+}
+
+function itemGalleryHtml(): string {
+  // Base items only: an enhanced version shows on its base's card, behind the Enhanced pill.
+  const all = Object.values(ITEMS).filter((i) => !i.enhancedFrom);
+  const card = (def: ItemDef) => itemCardHtml(def);
   const section = (title: string, list: ItemDef[], note = '') =>
     list.length ? `<h3 class="gallery-section">${title}</h3>${note ? `<p class="meta">${note}</p>` : ''}<div class="gallery-grid">${list.map(card).join('')}</div>` : '';
   const traitIds = [...new Set(all.flatMap((i) => (i.trait ? [i.trait] : [])))];
@@ -675,7 +730,7 @@ function itemGalleryHtml(): string {
     `<h3 class="gallery-section">Pacquiao's gloves</h3><p class="meta">Used from the inventory on one of your heroes; never held.</p><div class="gallery-grid">${Object.values(GLOVES)
       .map(
         (g) => `<article class="gallery-card item-entry ${gloveClass(g)}">
-      <h3 class="trait-title"><span class="trait-icon">${g.icon}</span> ${g.name} <small>usable</small></h3>
+      <h3 class="trait-title"><span class="trait-icon">${gloveIcon(g.id, g.icon)}</span> ${g.name} <small>usable</small></h3>
       <p class="trait-desc">${gloveText(g)}</p>
       <p class="meta">${g.id === 'glory' ? "From Pacquiao's card." : `From Pacquiao, on ${roundLabel(PACQUIAO.gloveRounds.find((r) => r.glove === g.id)!.round)}.`}</p>
     </article>`,
@@ -685,12 +740,35 @@ function itemGalleryHtml(): string {
   );
 }
 
+// A trait's accent: its badge's icon colour (bright), or white.
+const traitInk = (id: string) => {
+  const b = TRAIT_BADGES[id];
+  const ch = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+  const lum = (c: number) => ch(c).reduce((n, v, i) => n + v * [0.299, 0.587, 0.114][i], 0) / 255;
+  // The brighter of the icon and badge colours; a dark one (Astral's ink) is lifted toward white so it reads.
+  const c = !b ? 0xffffff : b.ink === undefined ? 0xffffff : lum(b.ink) >= lum(b.color) ? b.ink : b.color;
+  if (lum(c) >= 0.45) return hex(c);
+  const [r, g, bl] = ch(c).map((v) => Math.round(v + (255 - v) * 0.55));
+  return hex((r << 16) | (g << 8) | bl);
+};
+
+// `dim` is the in-game gallery (fade units you don't own); without it there's no game, so cards are bare.
 function gallerySection(p: Player, chosen: Record<string, string>, kind: 'faction' | 'role', title: string, dim = false): string {
-  const cards = Object.values(TRAITS)
-    .filter((t) => t.kind === kind)
-    .map((t) => `<article class="gallery-card">${traitCardHtml(t.id, p, chosen, { heading: 'h3', dim })}</article>`)
+  const traits = Object.values(TRAITS).filter((t) => t.kind === kind);
+  const cards = traits
+    .map((t) => `<article class="gallery-card trait-card" id="gtrait-${t.id}" style="--trait:${traitInk(t.id)}">${traitCardHtml(t.id, p, chosen, { heading: 'h3', dim, bare: !dim })}</article>`)
     .join('');
-  return `<h3 class="gallery-section">${title}</h3><div class="gallery-grid">${cards}</div>`;
+  return `<h3 class="gallery-section">${title} <small>${traits.length}</small></h3><div class="trait-gallery">${cards}</div>`;
+}
+
+// Every trait as a badge link, jumping to its card further down.
+function traitJumpHtml(): string {
+  const links = (kind: 'faction' | 'role') =>
+    Object.values(TRAITS)
+      .filter((t) => t.kind === kind)
+      .map((t) => `<a class="trait-jump-link" href="#gtrait-${t.id}" style="--trait:${traitInk(t.id)}">${traitBadgeHtml(t.id)}<span>${t.name}</span></a>`)
+      .join('');
+  return `<nav class="trait-jump" aria-label="Jump to a synergy"><div>${links('faction')}</div><div>${links('role')}</div></nav>`;
 }
 
 // Roles down the side, factions across the top, plus a "none" row and column. A unit with
@@ -699,31 +777,73 @@ function crossoverGridHtml(p: Player): string {
   const owned = new Set(p.board.flatMap((u) => (u ? [u.defId] : [])));
   const ids = (kind: 'faction' | 'role') => Object.values(TRAITS).filter((t) => t.kind === kind).map((t) => t.id);
   const factions = [...ids('faction'), null];
-  const roles = [...ids('role'), null];
   // A bearer sits in the column of the trait it carries (e.g. Plane Wanderers under Necromancer).
   const traitsOf = (u: UnitDef) => [...u.traits, ...(u.honorary ? [u.honorary.trait] : [])];
+  const rolesOf = (u: UnitDef) => traitsOf(u).filter((t) => TRAITS[t].kind === 'role');
+  // Roles that share a two-role hero sit next to each other, so that hero's two cells can merge into one.
+  const roles: (string | null)[] = [];
+  for (const r of ids('role')) {
+    if (roles.includes(r)) continue;
+    roles.push(r);
+    const partners = UNITS.filter((u) => !u.summon && rolesOf(u).length === 2 && rolesOf(u).includes(r)).map((u) => rolesOf(u).find((x) => x !== r)!);
+    for (const q of partners) if (!roles.includes(q)) roles.push(q);
+  }
+  roles.push(null);
   const has = (traits: string[], id: string | null, kind: 'faction' | 'role') =>
     id === null ? !traits.some((t) => TRAITS[t].kind === kind) : traits.includes(id);
-  const head = (id: string | null) =>
-    id === null ? '<span class="grid-none">none</span>' : `<button class="grid-head" data-trait="${id}" title="${TRAITS[id].name}">${traitBadgeHtml(id)}<span>${TRAITS[id].name}</span></button>`;
-  const cell = (role: string | null, faction: string | null) =>
-    UNITS.filter((u) => !u.summon && has(traitsOf(u), role, 'role') && has(traitsOf(u), faction, 'faction'))
-      .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name))
-      .map((u) => {
-        const bearer = u.honorary && u.honorary.trait === faction ? `${bearerBadgeHtml(u.honorary.trait)} ` : '';
-        const note = bearer ? ` · ${TRAITS[u.honorary!.trait].name} bearer, not in shop` : '';
-        return `<button class="grid-unit tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}" data-unit-info="${u.id}" title="${u.tier}g${note}">${portraitHtml(u.id, 'tiny')}${bearer}${u.name}</button>`;
-      })
-      .join('');
+  const unitsAt = (role: string | null, faction: string | null) =>
+    UNITS.filter((u) => !u.summon && has(traitsOf(u), role, 'role') && has(traitsOf(u), faction, 'faction')).sort(
+      (a, b) => a.tier - b.tier || a.name.localeCompare(b.name),
+    );
+  // How many heroes a row or column holds (a two-role hero counts in each of its rows).
+  const count = (id: string | null, kind: 'faction' | 'role') =>
+    kind === 'faction' ? roles.reduce((n, r) => n + unitsAt(r, id).length, 0) : factions.reduce((n, f) => n + unitsAt(id, f).length, 0);
+  const key = (id: string | null) => id ?? 'none';
+  const head = (id: string | null, kind: 'faction' | 'role') =>
+    id === null
+      ? `<span class="grid-none">No ${kind}<small>${count(id, kind)}</small></span>`
+      : `<button class="grid-head" data-trait="${id}" title="${TRAITS[id].name}: open it">${traitBadgeHtml(id)}<span>${TRAITS[id].name}</span><small>${count(id, kind)}</small></button>`;
+  const tint = (id: string | null) => (id ? ` style="--trait:${traitInk(id)}"` : '');
+  // `both`: the cell spans the hero's two role rows, so its chip shows both role badges.
+  const chip = (u: UnitDef, faction: string | null, both: boolean) => {
+    const bearer = u.honorary && u.honorary.trait === faction ? bearerBadgeHtml(u.honorary.trait) : '';
+    const note = bearer ? ` · ${TRAITS[u.honorary!.trait].name} bearer, not in shop` : '';
+    const two = both ? rolesOf(u) : [];
+    const roleNote = two.length ? ` · ${two.map((t) => TRAITS[t].name).join(' and ')}` : '';
+    return `<button class="grid-unit tier-${u.tier}${owned.has(u.id) ? ' owned' : ''}" data-unit-info="${u.id}" title="${u.name} · ${u.tier}g${roleNote}${note}">${portraitHtml(u.id, 'grid-face')}<span class="grid-name">${u.name}${two.length ? `<span class="grid-roles">${two.map((t) => traitBadgeHtml(t)).join('')}</span>` : ''}</span>${bearer}</button>`;
+  };
+  // A cell and the one below it merge when both hold exactly the same heroes, each with both rows' roles.
+  const sameIds = (a: UnitDef[], b: UnitDef[]) => a.length === b.length && a.every((u, i) => u.id === b[i].id);
+  const merges = (i: number, f: string | null) => {
+    const [r, below] = [roles[i], roles[i + 1]];
+    if (!r || !below) return false;
+    const here = unitsAt(r, f);
+    return here.length > 0 && sameIds(here, unitsAt(below, f)) && here.every((u) => rolesOf(u).includes(below));
+  };
   const rows = roles
-    .map((r) => `<tr><th scope="row">${head(r)}</th>${factions.map((f) => `<td>${cell(r, f)}</td>`).join('')}</tr>`)
+    .map((r, i) => {
+      const cells = factions
+        .map((f) => {
+          if (i > 0 && merges(i - 1, f)) return ''; // covered by the merged cell above
+          const span = merges(i, f);
+          return `<td data-f="${key(f)}"${span ? ` rowspan="2" class="merged"` : ''}>${unitsAt(r, f).map((u) => chip(u, f, span)).join('')}</td>`;
+        })
+        .join('');
+      return `<tr data-r="${key(r)}"><th scope="row"${tint(r)}>${head(r, 'role')}</th>${cells}</tr>`;
+    })
     .join('');
-  return `<div class="crossover-wrap" data-keep-scroll="crossover"><table class="crossover">
+  // Hovering a cell lights its column's header too (its row's comes from tr:hover).
+  const crosshair = factions
+    .map((f) => `.crossover:has(td[data-f="${key(f)}"]:hover) th[data-f="${key(f)}"]`)
+    .join(',');
+  const legend = [1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-cost tier-${t}"><i></i>${t}g</span>`).join('');
+  return `<style>${crosshair} { background: color-mix(in srgb, var(--trait, var(--muted)) 22%, var(--panel)); }</style>
+  <p class="grid-legend">${legend}<span class="grid-legend-sep"></span><span>${bearerBadgeHtml('necromancer')} Plane Wanderer (Necromancer reward, not in shop)</span>${owned.size ? '<span class="grid-legend-sep"></span><span><b>Lit</b> = on your board</span>' : ''}<span class="grid-legend-hint">Click a synergy or hero to open it</span></p>
+  <div class="crossover-wrap" data-keep-scroll="crossover"><table class="crossover">
     <colgroup><col class="role-col">${factions.map(() => '<col>').join('')}</colgroup>
-    <thead><tr><th></th>${factions.map((f) => `<th scope="col">${head(f)}</th>`).join('')}</tr></thead>
+    <thead><tr><th class="grid-corner"><span>Role ↓</span><span>Faction →</span></th>${factions.map((f) => `<th scope="col" data-f="${key(f)}"${tint(f)}>${head(f, 'faction')}</th>`).join('')}</tr></thead>
     <tbody>${rows}</tbody>
-  </table></div>
-  <p class="grid-legend">Colour = cost (${[1, 2, 3, 4, 5, 7].map((t) => `<span class="grid-unit tier-${t}">${t}g</span>`).join(' ')}) · bold = on your board · ${bearerBadgeHtml('necromancer')} = Plane Wanderer (Necromancer reward, not in shop) · click a trait or unit to open it</p>`;
+  </table></div>`;
 }
 
 // The gold popover: what the end of this round pays, win or lose (or, on a monster round, either way). Counts
@@ -877,7 +997,7 @@ function shopCardsHtml(p: Player, locked: boolean, chosen: Record<string, string
         const item = ITEMS[cardItem(id)];
         const tier = p.items.find((it) => baseItemOf(it.id) === item.id)?.tier ?? 0;
         return `<button class="shop-card item-card" data-action="buy" data-slot="${slot}" ${locked ? 'disabled' : ''} title="${item.name} tier ${tier + 1}: ${itemText(item, tier + 1)}">
-          <span class="portrait shop-face">${item.icon}</span>
+          <span class="portrait shop-face">${itemIcon(item.id)}</span>
           <span class="shop-body">
             <span class="unit-name">${item.name}</span>
             <span class="traits"><span class="shop-trait">Tier ${tier} → ${tier + 1}</span></span>
@@ -977,7 +1097,7 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
     const selected = samePick(picked, { kind: 'item', uid: it.uid });
     return `<div class="item-chip${tier ? '' : ' inactive'}${holder && !inSlot ? ' equipped' : ''}${selected ? ' selected' : ''}${def.enhancedFrom ? ' enhanced' : ''}" data-item="${it.uid}"
       title="${def.name} (${state})${holder ? ` on ${holder}` : ''}. ${itemText(def, tier || it.tier, p)}${grant ? ` Now: ${auraText(grant)}.` : ''}">
-      <span class="item-icon">${def.icon}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}
+      <span class="item-icon">${itemIcon(def.id)}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}
       ${def.counted ? `<b class="item-count" title="Counter">${it.count ?? 0}</b>` : ''}
       ${grant && !inSlot ? `<small class="aura-line">+${grant.amount}</small>` : ''}
     </div>`;
@@ -1017,7 +1137,7 @@ export function armoryHtml(p: Player, picked: GearPick | null = null, dragging: 
     const g = GLOVES[id];
     const n = p.gloves!.filter((x) => x === id).length;
     return `<button class="usable-chip ${gloveClass(g)}" data-action="openGlove" data-glove="${id}" title="${g.name}: ${gloveText(g)} Click to use.">
-        <span class="item-icon">${g.icon}</span><b>${g.orLower ? `≤${g.cost}` : g.cost}</b>${n > 1 ? `<b>×${n}</b>` : ''}
+        <span class="item-icon">${gloveIcon(g.id, g.icon)}</span><b>${g.orLower ? `≤${g.cost}` : g.cost}</b>${n > 1 ? `<b>×${n}</b>` : ''}
       </button>`;
   });
   const stash = [...p.items.map((it) => itemChip(it, false)), magicChip, mirrorChip, dupChip, enhChip, ...gloveChips, ...(p.mistOrbs ?? []).map((o) => mistChip(o, false))].join('');
@@ -1166,12 +1286,13 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
   const fmt = (n: number) => String(+n.toFixed(2));
   const pctS = (n: number) => `${fmt(n * 100)}%`;
   // One stat: its icon and number (the full name and any bonus in the tooltip; a bonus marks the number).
-  const stat = (icon: string, label: string, key: keyof Stats, show = (n: number) => fmt(n)) => {
+  // `short`: the label under the number, so no stat needs a hover to read.
+  const stat = (icon: string, label: string, key: keyof Stats, show = (n: number) => fmt(n), short = label) => {
     const diff = s[key] - base[key];
     const bonus = Math.abs(diff) > 1e-9 ? ` (${diff > 0 ? '+' : ''}${show(diff)} from bonuses)` : '';
-    return `<span class="stat-cell${bonus ? (diff > 0 ? ' up' : ' down') : ''}" title="${label}: ${show(s[key])}${bonus}"><i>${icon}</i>${show(s[key])}</span>`;
+    return `<span class="stat-cell${bonus ? (diff > 0 ? ' up' : ' down') : ''}" title="${label}: ${show(s[key])}${bonus}"><b><i aria-hidden="true">${icon}</i>${show(s[key])}${bonus ? `<em aria-hidden="true">${diff > 0 ? '▲' : '▼'}</em>` : ''}</b><small>${short}</small></span>`;
   };
-  const optStat = (icon: string, label: string, key: keyof Stats, show?: (n: number) => string) => (s[key] ? stat(icon, label, key, show) : '');
+  const optStat = (icon: string, label: string, key: keyof Stats, show?: (n: number) => string, short?: string) => (s[key] ? stat(icon, label, key, show, short) : '');
   const perSec = (ticks: number) => (TICKS_PER_SECOND / ticks).toFixed(2);
   const position = `${def.range <= 1 ? 'Frontline · melee' : `Backline · range ${def.range}`} · ${def.attackType ?? 'physical'} attacks`;
   const honorary = held.flatMap((it) => {
@@ -1188,11 +1309,11 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
     ),
   ].join('');
 
-  return `<section class="unit-detail tier-${def.tier}">
-    <button class="close" data-action="closeUnit" aria-label="Close">×</button>
-    <div class="detail-head">${portraitHtml(def.id, 'big')}<div>
-      <h3>${isChosen(chosen, def.id) ? '👑 ' : ''}${def.name} <span class="unit-star">${starsHtml(u)}</span></h3>
-      <p class="meta">${def.tier}g · ${position}${area === 'bench' ? ' · on bench' : ''}</p>
+  return `<section class="unit-detail tier-${def.tier}" aria-label="${def.name} details">
+    <button class="close" data-action="closeUnit" aria-label="Close" title="Close">×</button>
+    <div class="detail-head">${portraitHtml(def.id, 'big')}<div class="detail-title">
+      <h3>${isChosen(chosen, def.id) ? '<span title="Chosen">👑</span> ' : ''}${def.name} <span class="unit-star">${starsHtml(u)}</span></h3>
+      <p class="detail-tags"><span class="detail-cost" title="${def.tier}-cost hero">${def.tier}g</span>${position.split(' · ').map((t) => `<span>${t}</span>`).join('')}${area === 'bench' ? '<span class="detail-bench">On bench</span>' : ''}</p>
     </div></div>
     ${traits ? `<div class="chips">${traits}</div>` : ''}
     ${markKinds(p)
@@ -1216,42 +1337,42 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       .join('')}
     <div class="stat-grid">
       ${stat('❤️', 'HP', 'hp')}
-      ${stat('🗡️', 'Attack', 'atk')}
-      ${stat('✨', 'Magic attack', 'ap')}
-      <span class="stat-cell" title="Attack speed${attackInterval(s) !== attackInterval(base) ? `: +${fmt((s.attackSpeed - base.attackSpeed) * 100)}%` : ''}"><i>⚡</i>${perSec(attackInterval(s))}/s${
-        attackInterval(s) !== attackInterval(base) ? '<em>▲</em>' : ''
-      }</span>
+      ${stat('🗡️', 'Attack', 'atk', undefined, 'Attack')}
+      ${stat('✨', 'Magic attack', 'ap', undefined, 'Magic')}
+      <span class="stat-cell${attackInterval(s) !== attackInterval(base) ? ' up' : ''}" title="Attack speed: ${perSec(attackInterval(s))} attacks a second${attackInterval(s) !== attackInterval(base) ? ` (+${fmt((s.attackSpeed - base.attackSpeed) * 100)}% from bonuses)` : ''}"><b><i aria-hidden="true">⚡</i>${perSec(attackInterval(s))}${
+        attackInterval(s) !== attackInterval(base) ? '<em aria-hidden="true">▲</em>' : ''
+      }</b><small>Atk/s</small></span>
       ${stat('🎯', 'Range', 'range')}
       ${stat('🛡️', 'Armor', 'armor')}
-      ${stat('💠', 'Magic resist', 'mr')}
+      ${stat('💠', 'Magic resist', 'mr', undefined, 'M. resist')}
       ${stat('💧', 'Mana', 'maxMana')}
-      ${optStat('🔋', 'Mana regen', 'manaRegen', (n) => `${fmt(n)}/s`)}
-      ${optStat('💥', 'Damage amp', 'damageAmp', pctS)}
-      ${optStat('🔻', 'Damage taken', 'damageTaken', pctS)}
-      ${optStat('🔨', 'Armor shred', 'armorShred')}
-      ${optStat('🌀', 'Magic pen', 'magicPen', pctS)}
-      ${optStat('🗡️', 'Armor pen', 'armorPen', pctS)}
-      ${optStat('🎲', 'Crit chance', 'critChance', pctS)}
-      ${s.critChance ? stat('💢', 'Crit damage', 'critDamage', pctS) : ''}
-      ${optStat('📜', 'Skill damage', 'skillAmp', pctS)}
-      ${optStat('👊', 'Basic attack damage', 'basicAmp', pctS)}
-      ${optStat('🔁', 'Hit-again chance', 'hitAgain', pctS)}
-      ${optStat('🔰', 'Starting shield (of max HP)', 'startShield', pctS)}
+      ${optStat('🔋', 'Mana regen', 'manaRegen', (n) => `${fmt(n)}/s`, 'Regen')}
+      ${optStat('💥', 'Damage amp', 'damageAmp', pctS, 'Dmg amp')}
+      ${optStat('🔻', 'Damage taken', 'damageTaken', pctS, 'Dmg taken')}
+      ${optStat('🔨', 'Armor shred', 'armorShred', undefined, 'Shred')}
+      ${optStat('🌀', 'Magic pen', 'magicPen', pctS, 'M. pen')}
+      ${optStat('🗡️', 'Armor pen', 'armorPen', pctS, 'A. pen')}
+      ${optStat('🎲', 'Crit chance', 'critChance', pctS, 'Crit')}
+      ${s.critChance ? stat('💢', 'Crit damage', 'critDamage', pctS, 'Crit dmg') : ''}
+      ${optStat('📜', 'Skill damage', 'skillAmp', pctS, 'Skill dmg')}
+      ${optStat('👊', 'Basic attack damage', 'basicAmp', pctS, 'Basic dmg')}
+      ${optStat('🔁', 'Hit-again chance', 'hitAgain', pctS, 'Hit again')}
+      ${optStat('🔰', 'Starting shield (of max HP)', 'startShield', pctS, 'Shield')}
       ${optStat('❣️', 'Lifesteal', 'lifesteal', pctS)}
-      ${optStat('💞', 'Spell lifesteal', 'spellLifesteal', pctS)}
+      ${optStat('💞', 'Spell lifesteal', 'spellLifesteal', pctS, 'Spell vamp')}
     </div>
     <div class="detail-kit">
       <div class="kit-part"><small>Skill</small>
-        <button class="skill-btn${skillOpen ? ' on' : ''}" data-action="toggleSkill" title="${def.skill ? SKILLS[def.skill].name : 'Skill'}: click for details">${skillIcon(def.skill)}</button>
+        <button class="skill-btn${skillOpen ? ' on' : ''}" data-action="toggleSkill" aria-expanded="${skillOpen}" title="${def.skill ? SKILLS[def.skill].name : 'Skill'}: click for details">${skillIcon(def.skill)}</button>
       </div>
-      <div class="kit-part"><small>Items</small><div class="gear-slots">${detailSlots(p, uid, levels)}</div></div>
+      <div class="kit-part kit-items"><small>Items</small><div class="kit-slots">${detailSlots(p, uid, levels)}</div></div>
     </div>
     ${skillOpen ? `<div class="skill-pop">${skillHtml(def.skill, u.star, s, def.attackType ?? 'physical')}</div>` : ''}
     ${u.turretFrom !== undefined ? `<p class="commander-text">🗼 <b>Turret:</b> never moves in a fight. ${u.star < 3 ? `Next star on round ${roundLabel(u.turretFrom + TURRET_OF_GUARDIANS.starRounds * u.star)}.` : 'At its highest star.'}</p>` : ''}
     ${u.signature ? `<p class="commander-text">🏅 <b>Hero card:</b> permanently has ${SIGNATURE.atk * 100}% more hybrid attack and ${SIGNATURE.hp * 100}% more max HP (included above).</p>` : ''}
     ${u.merc ? `<p class="commander-text">💼 <b>Rogue Mercenary:</b> permanently deals ${ROGUE_MERCENARY.damage * 100}% more damage and has ${ROGUE_MERCENARY.hp} more max HP (included above). It stays through merges.</p>` : ''}
-    <button class="unit-sell" data-action="sellUnit" data-uid="${u.uid}">Sell for ${unitPrice(u.defId) * copiesOf(u)}g</button>
-    <p class="meta">Tip: with this unit selected, click any board or bench cell to move it there.</p>
+    <button class="unit-sell" data-action="sellUnit" data-uid="${u.uid}">Sell for <b>${unitPrice(u.defId) * copiesOf(u)}g</b></button>
+    <p class="detail-tip">Click any board or bench cell to move it there.</p>
   </section>`;
 }
 
@@ -1378,7 +1499,7 @@ function detailSlots(p: Player, uid: number, levels: TraitLevels): string {
   const slots: string[] = heldBy(p, uid).flatMap((it) => {
     const def = ITEMS[it.id];
     const tier = effectiveTier(it, levels);
-    const chip = `<div class="item-chip${tier ? '' : ' inactive'}" data-item="${it.uid}" title="${def.name}${def.trait ? ` (${tier ? `tier ${tier}` : 'inactive'})` : ''}. ${itemText(def, tier || it.tier, p)}"><span class="item-icon">${def.icon}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}</div>`;
+    const chip = `<div class="item-chip${tier ? '' : ' inactive'}" data-item="${it.uid}" title="${def.name}${def.trait ? ` (${tier ? `tier ${tier}` : 'inactive'})` : ''}. ${itemText(def, tier || it.tier, p)}"><span class="item-icon">${itemIcon(def.id)}</span>${def.trait ? `<b>T${tier || it.tier}</b>` : ''}</div>`;
     return [`<div class="gear-slot" data-gear-unit="${uid}">${chip}</div>`, ...Array.from({ length: (def.slots ?? 1) - 1 }, () => `<div class="gear-slot taken" data-gear-unit="${uid}"></div>`)];
   });
   while (slots.length < MAX_ITEMS_PER_UNIT) slots.push(`<div class="gear-slot" data-gear-unit="${uid}"></div>`);
@@ -1403,7 +1524,7 @@ export function bearerDetailHtml(p: Player, itemUid: number, chosen: Record<stri
     'closeBearer',
     'trait-popup',
     `<h2 class="trait-title"><span class="trait-icon">${bearerBadgeHtml(grant.trait)}</span> ${def.name} bearer <small>1/1</small></h2>
-    <p class="trait-desc"><b>${who}</b> holds the ${def.icon} ${def.name}.</p>
+    <p class="trait-desc"><b>${who}</b> holds the ${itemIcon(def.id)} ${def.name}.</p>
     <ul class="bearer-facts">
       <li>Gets the ${traitBadgeHtml(trait.id)} ${trait.name} unit bonus: <b>${bonus}</b>.</li>
       <li>Does <b>not</b> count toward ${trait.name}.</li>
@@ -1436,7 +1557,7 @@ export function itemDetailHtml(p: Player, uid: number, actions: boolean, chosen:
   return modalHtml(
     'closeItem',
     'trait-popup',
-    `<h2 class="trait-title"><span class="trait-icon">${def.icon}</span> ${def.name}${trait ? ` <small>tier ${tier || it.tier}</small>` : ''}</h2>
+    `<h2 class="trait-title"><span class="trait-icon">${itemIcon(def.id)}</span> ${def.name}${trait ? ` <small>tier ${tier || it.tier}</small>` : ''}</h2>
     <p class="meta">${trait ? `${trait.name} item` : def.exclusive ? 'Commander item' : def.basic ? 'Basic item' : `${EQUIPMENT_GROUPS.find((g) => g.id === def.group)?.name ?? ''} equipment`.trim()} · ${def.kind}</p>
     <p class="trait-desc">${itemText(def, tier || it.tier, p)}</p>
     <ul class="bearer-facts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>
@@ -1457,28 +1578,50 @@ export function commanderPickHtml(selected: string | null = null): string {
   const c = (selected && COMMANDERS[selected]) || all[0];
   const tiles = all
     .map(
-      (o) => `<button class="commander-tile${o.id === c.id ? ' on' : ''}" data-action="previewCommander" data-commander="${o.id}" title="${o.title}">
-        <span class="commander-portrait">${o.icon}</span><b>${o.name}</b>
+      (o) => `<button class="commander-tile${o.id === c.id ? ' on' : ''}" data-action="previewCommander" data-commander="${o.id}" aria-pressed="${o.id === c.id}" title="${o.name}, ${o.title}">
+        <span class="commander-portrait">${commanderIcon(o.id)}</span>
+        <b>${o.name}</b><small>${o.title}</small>
       </button>`,
     )
     .join('');
-  return `<div class="overlay"><div class="dialog modal commander-start">
+  return `<div class="overlay commander-overlay"><div class="dialog modal commander-start" role="dialog" aria-modal="true" aria-labelledby="commander-start-title">
     <header class="commander-start-head">
-      <h2 class="trait-title">Choose your commander</h2>
-      <p class="meta">Your commander is you: it holds your HP, and its power works for you all game.</p>
-    </header>
-    <div class="commander-roster" data-keep-scroll="commander-roster">${tiles}</div>
-    <section class="commander-detail" data-keep-scroll="commander-detail">
-      <div class="commander-detail-head">
-        <span class="commander-portrait">${c.icon}</span>
-        <div><h3>${c.name}</h3><small>${c.title}</small></div>
+      <div>
+        <h2 class="trait-title" id="commander-start-title">Choose your commander</h2>
+        <p class="meta">Your commander is you: it holds your HP, and its power works for you all game.</p>
       </div>
-      <h4>${c.icon} Power</h4>
-      <p class="commander-text">${c.desc}</p>
-      <h4>${c.card.icon} Card: ${c.card.name}</h4>
-      <p class="commander-text"><b>On ${c.name}:</b> ${c.card.selfDesc}</p>
-      <p class="commander-text"><b>On another commander:</b> ${c.card.otherDesc ?? c.desc}</p>
-      <button class="primary commander-choose" data-action="pickCommander" data-commander="${c.id}">Choose ${c.name}</button>
+      <span class="commander-count">${all.length} commanders · arrow keys to browse</span>
+    </header>
+    <div class="commander-roster" role="group" aria-label="Commanders" data-keep-scroll="commander-roster">${tiles}</div>
+    <section class="commander-detail" aria-live="polite">
+      <div class="commander-detail-body" data-keep-scroll="commander-detail">
+        <div class="commander-hero">
+          <span class="commander-hero-portrait">${commanderIcon(c.id)}</span>
+          <div>
+            <h3>${c.name}</h3>
+            <small>${c.title}</small>
+          </div>
+        </div>
+        <div class="commander-block">
+          <h4 class="commander-label">Power</h4>
+          <p class="commander-text">${c.desc}</p>
+        </div>
+        <div class="commander-block commander-card-block">
+          <h4 class="commander-label">Commander card</h4>
+          <div class="commander-card-name"><span class="commander-card-icon">${commanderCardIcon(c.id)}</span>${c.card.name}</div>
+          <div class="commander-face">
+            <span class="card-tag own">⬆ On ${c.name}</span>
+            <p class="commander-text">${c.card.selfDesc}</p>
+          </div>
+          <div class="commander-face">
+            <span class="card-tag">🤝 On another commander</span>
+            <p class="commander-text">${c.card.otherDesc ?? c.desc}</p>
+          </div>
+        </div>
+      </div>
+      <footer class="commander-detail-foot">
+        <button class="primary commander-choose" data-action="pickCommander" data-commander="${c.id}">Choose ${c.name}</button>
+      </footer>
     </section>
   </div></div>`;
 }
@@ -1531,9 +1674,9 @@ export function cardOfferHtml(p: Player): string {
     const face = cardFace(p, id);
     const used = p.cardRerolled?.[slot];
     return {
-      icon: c.card.icon,
+      icon: commanderCardIcon(c.id),
       name: c.card.name,
-      sub: `${c.icon} ${c.name}'s card`,
+      sub: `${commanderIcon(c.id)} ${c.name}'s card`,
       tag: `<span class="card-tag${face.self ? ' own' : ''}">${face.self ? '⬆ Upgrade' : '🤝 Borrow power'}</span>`,
       cls: face.self ? 'own' : '',
       desc: face.desc,
@@ -1557,7 +1700,7 @@ export function powerOfferHtml(state: GameState, p: Player): string {
   const cards = offer.cards.map((id, slot): PickCard => {
     const c = POWER_CARDS[id];
     return {
-      icon: c.icon,
+      icon: powerCardIcon(id),
       name: powerCardName(id, offer.tier),
       sub: 'Power card',
       tag: `<span class="card-tag tier-${offer.tier}">★ ${offer.tier[0].toUpperCase()}${offer.tier.slice(1)}</span>`,
@@ -1600,30 +1743,51 @@ export function factionOrbOfferHtml(p: Player): string {
 export function johnnieOfferHtml(p: Player): string {
   const mine = new Set([...p.board, ...p.bench].flatMap((u) => (u ? [u.defId] : [])));
   const have = (t: string) => [...mine].filter((id) => UNIT_BY_ID[id].traits.includes(t)).length;
-  const cards = (p.johnnie?.offer ?? [])
-    .map((id) => {
+  // With Johnnie added: does a trait reach a breakpoint (the next one up, or the first)?
+  const reaches = (t: string) => TRAITS[t].breakpoints.includes(have(t) + 1);
+  const offer = p.johnnie?.offer ?? [];
+  // The best fit: the most of your heroes sharing its traits, a breakpoint reached counting extra. Only when
+  // the options differ, so a fresh board gets no ribbon.
+  const fit = (id: string) => UNIT_BY_ID[id].traits.reduce((s, t) => s + have(t) + (reaches(t) && have(t) ? 2 : 0), 0);
+  const fits = offer.map(fit);
+  const best = Math.max(0, ...fits);
+  const ribbon = best > Math.min(...fits);
+  const cards = offer
+    .map((id, i) => {
       const traits = UNIT_BY_ID[id].traits;
+      const faction = traits.find((t) => TRAITS[t].kind === 'faction') ?? traits[0];
       const lines = traits
         .map((t) => {
           const n = have(t);
-          return `<span class="johnnie-trait">${traitBadgeHtml(t)}<span class="johnnie-trait-name">${TRAITS[t].name}<small>${TRAITS[t].kind === 'faction' ? 'Faction' : 'Role'}${n ? ` <b class="johnnie-have" title="${n} of your heroes have it">${n} yours</b>` : ''}</small></span></span>`;
+          const next = TRAITS[t].breakpoints.find((b) => b >= n + 1);
+          const status = reaches(t)
+            ? `<b class="johnnie-reach" title="With this Johnnie, ${TRAITS[t].name} reaches ${n + 1}">▲ ${n + 1}</b>`
+            : next
+              ? `<span class="johnnie-progress" title="With this Johnnie: ${n + 1} of ${next} for the next level">${n + 1}/${next}</span>`
+              : '';
+          return `<span class="johnnie-trait">${traitBadgeHtml(t)}<span class="johnnie-trait-name">${TRAITS[t].name}<small>${TRAITS[t].kind === 'faction' ? 'Faction' : 'Role'}${n ? ` · <b class="johnnie-have" title="${n} of your heroes have it">${n} owned</b>` : ''}</small></span>${status}</span>`;
         })
         .join('');
       const twins = UNITS.filter((u) => u.shop !== false && !u.piece && traits.every((t) => u.traits.includes(t))).sort((x, y) => x.tier - y.tier);
       const twinHtml = twins.length
-        ? twins.map((u) => `<span class="johnnie-twin${mine.has(u.id) ? ' owned' : ''}">${portraitHtml(u.id, 'tiny')}${u.name} <small>${u.tier}g</small></span>`).join('')
+        ? twins.map((u) => `<span class="johnnie-twin${mine.has(u.id) ? ' owned' : ''}">${portraitHtml(u.id, 'tiny')}<span class="johnnie-twin-name">${u.name}</span><small>${u.tier}g</small>${mine.has(u.id) ? '<small class="johnnie-owned">owned</small>' : ''}</span>`).join('')
         : '<span class="johnnie-twin none">No hero shares both</span>';
-      return `<button class="johnnie-option" data-action="pickJohnnie" data-johnnie="${id}">
+      const isBest = ribbon && fits[i] === best;
+      const label = traits.map((t) => TRAITS[t].name).join(' ');
+      return `<button class="johnnie-option${isBest ? ' best' : ''}" data-action="pickJohnnie" data-johnnie="${id}" style="--faction:${hex(TRAIT_BADGES[faction].color)}" aria-label="Take the ${label} Johnnie">
+        ${isBest ? '<span class="johnnie-ribbon">Best fit</span>' : ''}
         <span class="johnnie-traits">${lines}</span>
-        <span class="johnnie-twins"><small class="johnnie-label">Same pair</small>${twinHtml}</span>
+        <span class="johnnie-twins"><small class="johnnie-label">Same pair in the shop</small>${twinHtml}</span>
+        <span class="johnnie-take">Take</span>
       </button>`;
     })
     .join('');
-  return `<div class="overlay"><div class="dialog modal johnnie-den">
+  return `<div class="overlay"><div class="dialog modal johnnie-den" role="dialog" aria-modal="true" aria-labelledby="johnnie-den-title">
     <header class="card-pick-head">
+      <span class="johnnie-den-icon">${commanderIcon('johnson')}</span>
       <div>
-        <h2 class="trait-title">🎩 Johnnie's Den</h2>
-        <p class="meta">Pick one. Free now, then 0g in your shop.</p>
+        <h2 class="trait-title" id="johnnie-den-title">Johnnie's Den</h2>
+        <p class="meta">Pick one Johnnie: yours free now, then it turns up in your shop for 0g. It keeps this faction and role.</p>
       </div>
       <button class="card-pick-min" data-action="hideDen" title="Minimize: pick later from your commander panel" aria-label="Minimize">—</button>
     </header>
@@ -1638,7 +1802,7 @@ export function itemOfferHtml(p: Player): string {
       const def = ITEMS[id];
       const group = def.group ? EQUIPMENT_GROUPS.find((g) => g.id === def.group)!.name : def.kind;
       return `<button class="commander-option" data-action="pickItem" data-item-id="${id}">
-        <span class="commander-portrait">${def.icon}</span>
+        <span class="commander-portrait">${itemIcon(def.id)}</span>
         <b>${def.name}</b><small>${group}</small>
         <span class="commander-text">${itemText(def, 1)}</span>
       </button>`;
@@ -1679,7 +1843,7 @@ export function boxHtml(state: GameState, me: Player, shown: number, selected: n
     if (prize.kind === 'item') {
       const def = ITEMS[prize.id];
       const group = def.group ? EQUIPMENT_GROUPS.find((g) => g.id === def.group)!.name : def.kind;
-      return { icon: def.icon, title: def.name, sub: group, text: '', tag: '' };
+      return { icon: itemIcon(def.id), title: def.name, sub: group, text: '', tag: '' };
     }
     if (prize.kind === 'orb') {
       const n = heroesWith(prize.trait);
@@ -1774,11 +1938,11 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
   const share = Math.max(0, hp / full);
   const tab = (section: CommanderSection, label: string) =>
     `<button class="commander-tab${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" aria-expanded="${open === section}">${label} <span class="caret">${open === section ? '▴' : '▾'}</span></button>`;
-  const tabs = tab('innate', `${c.icon} Power`);
+  const tabs = tab('innate', `${commanderIcon(c.id)} Power`);
   // The card tray: the commander card (I-2), then two power card slots (not in the game yet).
   const cardSlot = card
     ? `<button class="card-slot filled${open === 'card' ? ' on' : ''}" data-action="commanderSection" data-section="card" data-card-slot="0" title="${card.card.name}">
-        <span>${card.card.icon}</span><small>${card.card.name}</small></button>`
+        <span>${commanderCardIcon(card.id)}</span><small>${card.card.name}</small></button>`
     : p.cardOffer
       ? `<button class="card-slot waiting" data-action="showCards" data-card-slot="0" title="Pick your commander card"><span>🂠</span><small>Pick</small></button>`
       : `<div class="card-slot" data-card-slot="0" title="Commander card, on stage I-2"><span>🂠</span><small>I-2</small></div>`;
@@ -1788,7 +1952,7 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
     if (have) {
       const section = `power${i}` as CommanderSection;
       return `<button class="card-slot filled tier-${have.tier}${open === section ? ' on' : ''}" data-action="commanderSection" data-section="${section}" data-card-slot="${i}" title="${powerCardName(have.id, have.tier)}">
-        <span>${POWER_CARDS[have.id].icon}</span><small>${powerCardName(have.id, have.tier)}</small></button>`;
+        <span>${powerCardIcon(have.id)}</span><small>${powerCardName(have.id, have.tier)}</small></button>`;
     }
     const waiting = p.powerOffer ? [p.powerOffer, ...(p.powerQueue ?? [])][i - 1 - (p.powerCards?.length ?? 0)]?.tier : undefined;
     if (waiting) {
@@ -1808,7 +1972,7 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
           : '';
   return `<section class="commander-panel">
     <div class="commander-head">
-      <span class="commander-portrait">${c.icon}</span>
+      <span class="commander-portrait">${commanderIcon(c.id)}</span>
       <div><b>${c.name}</b><small>${c.title}</small></div>
       <span class="commander-hp" title="Your HP${shield ? ` and commander shield (soaks damage first)` : ''}">❤️ ${hp}${shield ? ` <span class="commander-shield">🛡 ${shield}</span>` : ''}</span>
     </div>
@@ -1980,7 +2144,7 @@ function groveHtml(p: Player, round: number): string {
 export function duplicatorPickHtml(p: Player): string {
   const options = p.items
     .filter((it) => !it.loan && canDuplicate(it.id))
-    .map((it) => `<button class="chip" data-action="useDuplicator" data-item="${it.uid}">${ITEMS[it.id].icon} ${ITEMS[it.id].name}</button>`);
+    .map((it) => `<button class="chip" data-action="useDuplicator" data-item="${it.uid}">${itemIcon(it.id)} ${ITEMS[it.id].name}</button>`);
   return modalHtml(
     'closeDuplicator',
     'trait-popup',
@@ -1994,7 +2158,7 @@ export function duplicatorPickHtml(p: Player): string {
 export function enhancerPickHtml(p: Player): string {
   const options = p.items
     .filter((it) => canUseEnhancer(p, it.uid))
-    .map((it) => `<button class="chip" data-action="useEnhancer" data-item="${it.uid}">${ITEMS[it.id].icon} ${ITEMS[it.id].name}</button>`);
+    .map((it) => `<button class="chip" data-action="useEnhancer" data-item="${it.uid}">${itemIcon(it.id)} ${ITEMS[it.id].name}</button>`);
   return modalHtml(
     'closeEnhancer',
     'trait-popup',
@@ -2013,7 +2177,7 @@ export function glovePickHtml(p: Player, id: string): string {
   return modalHtml(
     'closeGlove',
     'trait-popup',
-    `<h2 class="trait-title ${gloveClass(g)}"><span class="trait-icon">${g.icon}</span> ${g.name}</h2>
+    `<h2 class="trait-title ${gloveClass(g)}"><span class="trait-icon">${gloveIcon(g.id, g.icon)}</span> ${g.name}</h2>
     <p class="trait-desc">${gloveText(g)}</p>
     <div class="orb-options">${options.join('') || '<p class="meta">No hero it can go on.</p>'}</div>`,
   );
@@ -2308,8 +2472,8 @@ function matchTableHtml(state: GameState, meId: string, animate = true): string 
       const commander = p.commander ? COMMANDERS[p.commander] : null;
       const card = p.commanderCard ? COMMANDERS[p.commanderCard].card : null;
       const cards = [
-        card ? `<span class="md-card cmd" title="${card.name} (${COMMANDERS[p.commanderCard!].name}'s card)">${card.icon}</span>` : '',
-        ...(p.powerCards ?? []).map((c) => `<span class="md-card ${c.tier}" title="${powerCardName(c.id, c.tier)}">${POWER_CARDS[c.id].icon}</span>`),
+        card ? `<span class="md-card cmd" title="${card.name} (${COMMANDERS[p.commanderCard!].name}'s card)">${commanderCardIcon(p.commanderCard!)}</span>` : '',
+        ...(p.powerCards ?? []).map((c) => `<span class="md-card ${c.tier}" title="${powerCardName(c.id, c.tier)}">${powerCardIcon(c.id)}</span>`),
       ].join('');
       // Knocked out: the lineup they had when they fell (their heroes went back to the pool).
       const L = p.finalLineup ?? p;
@@ -2317,7 +2481,7 @@ function matchTableHtml(state: GameState, meId: string, animate = true): string 
         .flatMap((u) => {
           if (!u) return [];
           const def = UNIT_BY_ID[u.defId];
-          const items = L.items.filter((it) => it.holder === u.uid).map((it) => `<span title="${ITEMS[it.id].name}">${ITEMS[it.id].icon}</span>`).join('');
+          const items = L.items.filter((it) => it.holder === u.uid).map((it) => `<span title="${ITEMS[it.id].name}">${itemIcon(it.id)}</span>`).join('');
           const orbs = [...(L.orb?.defId === u.defId ? [L.orb.trait] : []), ...(L.mistOrbs ?? []).filter((o) => o.holder === u.uid).map((o) => o.trait)];
           return [
             `<span class="md-hero tier-${def.tier}" title="${def.name} ${u.star}★">
@@ -2341,7 +2505,7 @@ function matchTableHtml(state: GameState, meId: string, animate = true): string 
       return `<tr class="${cls}" style="--i:${i}">
         <td><span class="md-rank r${Math.min(rank, 4)}" aria-label="Rank ${rank}">${rank}</span></td>
         <td class="md-player">
-          <span class="md-commander" title="${commander?.name ?? 'No commander'}">${commander?.icon ?? '❔'}</span>
+          <span class="md-commander" title="${commander?.name ?? 'No commander'}">${commanderIcon(commander?.id)}</span>
           <span class="md-who">
             <b title="${name}">${name}</b>
             <small><span class="md-lv">Lv ${p.level}</span>${out ? '<span class="md-out">Out</span>' : `<span class="md-hpn">♥ ${p.hp}</span>`}</small>

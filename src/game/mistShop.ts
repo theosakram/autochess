@@ -1,4 +1,4 @@
-import { canClaim, gainUnit, type Result } from './actions';
+import { canClaimToBoard, gainUnit, type Result } from './actions';
 import { MIRROR } from './mirror';
 import { nextFloat, nextInt } from './rng';
 import { orbTraits } from './traits';
@@ -61,9 +61,9 @@ const randomUnit = (tier: 4 | 5, price: number): MistWare => ({
     if (!total) return `No ${tier}-gold units left in the pool`;
     let r = nextInt(state, total);
     const def = defs.find((d) => (r -= state.pool[d.id]) < 0)!;
-    if (!canClaim(p, def.id)) return 'Bench is full';
+    if (!canClaimToBoard(p, def.id)) return 'No room on the bench or board';
     state.pool[def.id]--;
-    gainUnit(state, p, def.id);
+    gainUnit(state, p, def.id, true);
     return null;
   },
 });
@@ -99,9 +99,9 @@ export const MIST_WARES: Record<string, MistWare> = Object.fromEntries(
       weight: 0, // only in the shop's first batch
       apply(state: GameState, p: Player) {
         if (!state.pool.nana) return 'No Nana left in the pool';
-        if (!canClaim(p, 'nana')) return 'Bench is full';
+        if (!canClaimToBoard(p, 'nana')) return 'No room on the bench or board';
         state.pool.nana--;
-        gainUnit(state, p, 'nana');
+        gainUnit(state, p, 'nana', true);
         return null;
       },
     } satisfies MistWare,

@@ -95,6 +95,7 @@ export interface TraitDef {
     rewards?: StackReward[]; // in order of `at`; each is claimed once
     // The reward unit: one of these, rolled per player when the counter first appears, then fixed all game.
     rewardUnits?: string[];
+    rewardName?: string; // what to call the reward unit before one is picked (e.g. 'Plane Wanderer')
     rewardChoices?: number; // how many of rewardUnits are offered to pick from (default 1: rolled, no pick)
     fullAt?: number; // at this level the counter jumps to its max at once
   };

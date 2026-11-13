@@ -1,4 +1,3 @@
-import { rewardText } from './format';
 import type { StackReward, TraitDef } from './types';
 
 // Per level, index 0 = first breakpoint. Tune with `bun run balance`.
@@ -30,13 +29,12 @@ export const necromancer: TraitDef = {
   icon: '⚰️',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
+  // Short: the grave's reward milestones are listed under the description (see stacks.rewards).
   desc:
-    'The grave gains {fight} souls after every fight and {deployed} per deployed unit at the start of every round ' +
-    `(max ${NECROMANCER.maxSouls}). Necromancers gain +${+(NECROMANCER.skillAmp * 100).toFixed(2)}% skill damage and +${+(NECROMANCER.hp * 100).toFixed(2)}% max HP per soul. ` +
-    `The grave's rewards: ${NECROMANCER.rewards.map((r) => `${r.at}: ${rewardText(r, 'your Plane Wanderer')}`).join(', ')}. ` +
-    `Your Plane Wanderer is a 5-gold hero, one of ${NECROMANCER.wanderers.length}: when your grave first appears, pick one of ${NECROMANCER.choices} offered (open the grave). ` +
-    'It takes no board slot and gets the Necromancer bonus without counting as one. ' +
-    `At 10, the grave fills to ${NECROMANCER.maxSouls} at once and you gain {gold} gold at the start of every round.`,
+    'Gain {fight} souls per fight, plus {deployed} per fielded unit each round. ' +
+    `Necromancers get +${+(NECROMANCER.skillAmp * 100).toFixed(2)}% skill damage and max HP per soul. ` +
+    `Souls unlock rewards, including your Plane Wanderer: a 5-gold hero you pick (1 of ${NECROMANCER.choices}) that needs no board slot. ` +
+    `At 10, the grave fills to ${NECROMANCER.maxSouls} and you gain +${NECROMANCER.goldPerRound[NECROMANCER.fullAt - 1]} gold every round.`,
   values: () => ({
     fight: NECROMANCER.perFight.map(String),
     deployed: NECROMANCER.perDeployed.map(String),
@@ -58,6 +56,7 @@ export const necromancer: TraitDef = {
     rewards: NECROMANCER.rewards,
     rewardUnits: NECROMANCER.wanderers,
     rewardChoices: NECROMANCER.choices,
+    rewardName: 'Plane Wanderer',
     fullAt: NECROMANCER.fullAt,
   },
 };

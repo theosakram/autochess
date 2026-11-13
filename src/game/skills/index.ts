@@ -111,7 +111,7 @@ export { SHADE_BOLTS } from './shadeBolts';
 export { SHOVEL_SLAM } from './shovelSlam';
 export { STALKERS_MARK } from './stalkersMark';
 export { BEAST_MAUL } from './beastMaul';
-export { SPECTRAL_CATACLYSM } from './spectralCataclysm';
+export { BEAM_DIRS, beamCells, SPECTRAL_CATACLYSM } from './spectralCataclysm';
 export { STARWARD } from './starward';
 export { STORM_FISTS } from './stormFists';
 export { STORM_FLURRY } from './stormFlurry';

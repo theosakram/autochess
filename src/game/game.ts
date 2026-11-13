@@ -34,9 +34,9 @@ import { cardRolls } from './luckyDice';
 import { addXp, recordFight, roundIncome, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop, rollFreeHero } from './shop';
-import { applyAction, claimShopSlot, canClaim, trimBoard } from './actions';
+import { applyAction, claimShopSlot, canClaimToBoard, trimBoard } from './actions';
 import { checkRally, payHeirs } from './cyclops';
-import { syncPlayer } from './sync';
+import { deliverGifts, syncPlayer } from './sync';
 import { grantOrbs } from './orb';
 import { ageTurrets, cashFortunes, gloriousClaim, checkChestTriggers, freeBuyOf, traitGoldOf, lendArms, returnArms, cycleChests, cycleRefreshes, transmute, hurtExtraOf, offerPowerCards, roundHealOf } from './powerCards';
 import { hurtPlayer, offerCards, powersOf } from './commanders';
@@ -197,6 +197,11 @@ export function startRound(state: GameState): RoundBonus[] {
     essenceRound(state, p, (rule) => loot(state, p, rule));
   }
   for (const p of alive) syncPlayer(state, p);
+  // Heroes still waiting with bench and board both full: a random bench hero is sold for each.
+  for (const p of alive) if (p.gifts?.length) {
+    deliverGifts(state, p, true);
+    syncPlayer(state, p);
+  }
   for (const p of alive) {
     if (p.isBot) runBot(state, p);
   }
@@ -219,8 +224,8 @@ function loot(state: GameState, p: Player, rule: 'cheapest' | 'random'): string 
   if (slots.length === 0) return null;
   const slot = slots[nextInt(state, slots.length)];
   const defId = p.shop[slot]!;
-  if (!canClaim(p, defId)) return null;
-  claimShopSlot(state, p, slot);
+  if (!canClaimToBoard(p, defId)) return null;
+  claimShopSlot(state, p, slot, true);
   return defId;
 }
 

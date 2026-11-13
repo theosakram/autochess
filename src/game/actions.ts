@@ -126,8 +126,20 @@ export function sellAt(state: GameState, p: Player, slots: (Unit | null)[], inde
   p.gold += unitPrice(unit.defId) * copiesOf(unit);
 }
 
+// Frees a bench slot by selling a random bench hero (never a piece or turret). Its index, or -1 if none could go.
+export function makeBenchRoom(state: GameState, p: Player): number {
+  const free = p.bench.indexOf(null);
+  if (free >= 0) return free;
+  const sellable = p.bench.flatMap((u, i) => (u && !UNIT_BY_ID[u.defId].piece && !UNIT_BY_ID[u.defId].turret ? [i] : []));
+  if (!sellable.length) return -1;
+  const i = sellable[nextInt(state, sellable.length)];
+  sellAt(state, p, p.bench, i);
+  return i;
+}
+
 // At the start of a fight, a board past the level limit loses its weakest units (lowest star, then cheapest;
-// ties at random) one by one: to the bench, or sold when the bench is full.
+// ties at random) one by one to the bench. A full bench first sells a random bench hero to make room; only with
+// nothing there to sell does the board unit itself get sold.
 export function trimBoard(state: GameState, p: Player): void {
   while (boardCount(p) > heroCapOf(p)) {
     const cabled = markedUid(p, 'cable'); // Fanny's: takes no slot, so moving it frees none
@@ -136,7 +148,7 @@ export function trimBoard(state: GameState, p: Player): void {
     const low = Math.min(...cells.map(weight));
     const weakest = cells.filter((i) => weight(i) === low);
     const cell = weakest[nextInt(state, weakest.length)];
-    const free = p.bench.indexOf(null);
+    const free = makeBenchRoom(state, p);
     if (free >= 0) {
       p.bench[free] = p.board[cell];
       p.board[cell] = null;
@@ -145,15 +157,15 @@ export function trimBoard(state: GameState, p: Player): void {
 }
 
 // Moves a shop unit onto the bench (no payment) and merges. Check canClaim first.
-export function claimShopSlot(state: GameState, p: Player, slot: number): void {
+export function claimShopSlot(state: GameState, p: Player, slot: number, board = false): void {
   const defId = p.shop[slot]!;
   p.shop[slot] = null;
   if (p.freeSlot === slot) p.freeSlot = null;
-  gainUnit(state, p, defId);
+  gainUnit(state, p, defId, board);
 }
 
 // An empty board cell a unit may stand on (any row), picked at random, or -1.
-function freeBoardCell(state: GameState, p: Player, defId: string): number {
+export function freeBoardCell(state: GameState, p: Player, defId: string): number {
   const cells = p.board.flatMap((u, i) => (!u && !pieceBlock(p, defId, { area: 'board', index: i }) ? [i] : []));
   return cells.length ? cells[nextInt(state, cells.length)] : -1;
 }
@@ -428,11 +440,15 @@ function buyAt(state: GameState, p: Player, slot: number): Result {
   if (isItemCard(defId)) return upgradeItem(state, p, slot);
   const cost = shopPrice(p, slot);
   if (p.gold < cost) return fail('Not enough gold');
-  // A free buy (Opening Promotion, Harley) used up, unless Guiness had made the hero free anyway.
-  if (p.freeBuy && p.freeSlot !== slot) p.freeBuy = p.freeBuy - 1 || undefined;
+  // A free buy (Opening Promotion, Harley) used up, unless Guiness had made the hero free anyway. Only once the
+  // buy goes through: a failed one keeps it.
+  const useFreeBuy = () => {
+    if (p.freeBuy && p.freeSlot !== slot) p.freeBuy = p.freeBuy - 1 || undefined;
+  };
   // Fast Promotion: it comes 2★ (bench, else the board).
   if (p.promoteNext) {
     if (!p.bench.includes(null) && !p.board.includes(null)) return fail('No room');
+    useFreeBuy();
     p.gold -= cost;
     p.shop[slot] = null;
     if (p.freeSlot === slot) p.freeSlot = null;
@@ -441,9 +457,11 @@ function buyAt(state: GameState, p: Player, slot: number): Result {
     p.boughtRound = state.round;
     return OK;
   }
-  if (!canClaim(p, defId)) return fail('Bench is full');
+  // A full bench sends it to the board (trimmed when the fight starts).
+  if (!canClaimToBoard(p, defId)) return fail('No room on the bench or board');
+  useFreeBuy();
   p.gold -= cost;
-  claimShopSlot(state, p, slot);
+  claimShopSlot(state, p, slot, true);
   p.boughtRound = state.round; // Aurora: a round with a hero bought (item cards don't count)
   return OK;
 }

@@ -4,7 +4,7 @@ import { MAX_COMBAT_TICKS, TICKS_PER_SECOND } from './config';
 import { createGame } from './game';
 import { dist, GRID_H, GRID_W, type Point } from './grid';
 import { JIMAT } from './items';
-import { KERIS_SLASH, PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, STALKERS_MARK, FATE_THREAD, SOUTHERN_TIDE, SUMPAH_PALAPA, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, bestLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
+import { KERIS_SLASH, PARTY_CRASHER, ahead3x3, beyond, coneAhead, coneBehind, facingStrip, lineThrough, wideLine, SPECTRAL_CATACLYSM, BEAM_DIRS, beamCells, STALKERS_MARK, FATE_THREAD, SOUTHERN_TIDE, SUMPAH_PALAPA, CRATER_FALL, BLADE_DESCENT, WANDERERS_VOLLEY, STORM_FISTS, PHANTOM_STEP, PRAJURITS_OATH, WYRM_FRENZY, ALTAR_SPARK, ASH_STORM, ASHEN_WALL, CRYPT_SEAL, DRAGONS_DOMINION, UNDYING_FURY, SKY_REAP, DRAKE_REND, KINDLE_TWICE, DREAD_DESCENT, PYRE_BLAST, PUPPET_SNARE, THUNDER_WHIRL, COMET_LUNGE, COMMANDERS_MARK, ZODIAC_SLAM, STARWARD, ETHER_BEAM, GRAVE_WHISPER, bestLine, GALE_SHOT, SHADE_BOLTS, STORM_FLURRY, TALES_END, within, MYTH_MADE_FLESH, INKED_STRIKE, UNFOLDING_TALE, MIST_BOOMERANG, MIST_WARD, MISTY_JAB, pathTo, TIDAL_SURGE, GUARDIANS_STRIKE, SHOVEL_SLAM, TARI_PENYEMBUH, SAPPING_TOUCH, SPIRIT_ARCHERS, POLAR_BARRAGE, DRAGON_LANCE, FALLING_STAR, GLOOM_VOLLEY, PYRE_FRENZY, RAMPAGE, STORM_PURSUIT, orbCells, SOUL_ORBIT, MOURNFUL_SHOT, PHANTOM_EXECUTION, POWER_OF_CHAOS, RENDING_BITE, SKILLS, STARFALL_AEGIS, type SkillApi, type SkillFighter } from './skills';
 import { DAUNTLESS, TRAITS, unitStats } from './traits';
 import type { GameState, Player, Star } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
@@ -3156,39 +3156,63 @@ describe('Spectral Cataclysm', () => {
     expect([UNIT_BY_ID.bossalpha.name, UNIT_BY_ID.bossalpha.tier, UNIT_BY_ID.bossalpha.range]).toEqual(['Boss Alpha', 7, 1]);
   });
 
-  test('leaps into the densest spot: impact on the tiles around, then a bigger blast out to 3 tiles', () => {
-    // A cluster around (5,1); (2,3) is within 3 of it, (0,5) isn't.
-    const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }, { x: 2, y: 3 }, { x: 0, y: 5 }]);
+  // Runs the cast through: the landing, the charge, then every step of the lasers.
+  const runAll = (b: ReturnType<typeof fakeBattle>) => {
+    for (let n = 0; n < b.log.repeats.length; n++) for (let k = 0; k < b.log.repeats[n].times; k++) b.log.repeats[n].fn();
+  };
+
+  test('leaps into the densest spot, lands (impact), charges, then lasers in 8 directions hit as they reach', () => {
+    // A cluster around (5,1); others scattered, some on its lines and some off them.
+    const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }, { x: 2, y: 4 }, { x: 0, y: 5 }, { x: 5, y: 5 }, { x: 3, y: 4 }]);
     b.caster.stats = unitStats(UNIT_BY_ID.bossalpha, 1);
     b.cast('spectralcataclysm');
+    expect(b.log.busy).toEqual([true]);
     expect(b.log.dashes).toHaveLength(1);
     const land = b.log.dashes[0];
     const atk = b.caster.stats.atk;
+    expect(b.log.hits).toHaveLength(0); // nothing until it lands
+    expect(b.log.repeats[0]).toMatchObject({ seconds: SPECTRAL_CATACLYSM.leap, times: 1 });
+    b.log.repeats[0].fn();
     const impact = b.log.hits.filter((h) => h.effect === 'spectralimpact');
     expect(impact.length).toBeGreaterThan(0);
     for (const h of impact) {
       expect(dist(land, b.enemies[h.target - 1])).toBe(1);
       expect(h.raw).toBe(atk * SPECTRAL_CATACLYSM.impact[0]);
     }
-    expect(b.log.repeats[0]).toMatchObject({ seconds: SPECTRAL_CATACLYSM.delay, times: 1 });
-    b.log.repeats[0].fn();
-    const blast = b.log.hits.filter((h) => h.effect === 'spectralcataclysm');
-    const reached = [1, 2, 3, 4, 5].filter((id) => dist(land, b.enemies[id - 1]) <= SPECTRAL_CATACLYSM.radius);
-    expect(blast.map((h) => h.target).sort()).toEqual(reached);
-    expect(reached).not.toContain(5);
-    expect(blast.every((h) => h.raw === atk * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
+    expect(b.log.repeats[1]).toMatchObject({ seconds: SPECTRAL_CATACLYSM.delay, times: 1 });
+    b.log.repeats[1].fn();
+    expect(b.log.hits.filter((h) => h.effect === 'spectralcataclysm')).toHaveLength(0); // fired, not arrived yet
+    const beam = b.log.repeats[2];
+    expect(beam.seconds).toBe(SPECTRAL_CATACLYSM.beamStep);
+    // Step by step: each step reaches one tile further along every line.
+    const onLine = (e: Point) => { const dx = e.x - land.x, dy = e.y - land.y; return dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy); };
+    for (let k = 1; k <= beam.times; k++) {
+      beam.fn();
+      const hit = b.log.hits.filter((h) => h.effect === 'spectralcataclysm').map((h) => h.target).sort();
+      const due = b.enemies.filter((e) => onLine(e) && dist(land, e) <= k && !(e.x === land.x && e.y === land.y)).map((e) => e.id).sort();
+      expect(hit).toEqual(due);
+    }
+    expect(b.enemies.some((e) => !onLine(e))).toBe(true); // someone off the lines, never hit
+    expect(b.log.hits.filter((h) => h.effect === 'spectralcataclysm').every((h) => h.raw === atk * SPECTRAL_CATACLYSM.beam[0])).toBe(true);
+    expect(b.log.busy).toEqual([true, false]);
     expect(b.log.hitTypes.every((t) => t === 'adaptive')).toBe(true); // physical here: attack is the higher
+  });
+
+  test('beamCells: a line from the centre to the board edge, nearest first', () => {
+    expect(beamCells({ x: 3, y: 2 }, BEAM_DIRS[0])).toEqual([{ x: 3, y: 1 }, { x: 3, y: 0 }]);
+    expect(beamCells({ x: 5, y: 4 }, { x: 1, y: 1 })).toEqual([{ x: 6, y: 5 }]);
+    expect(beamCells({ x: 6, y: 0 }, { x: 1, y: 0 })).toEqual([]);
   });
 
   test('adaptive: scales off magic attack when it is the higher', () => {
     const b = fakeBattle([{ x: 5, y: 0 }, { x: 6, y: 1 }, { x: 4, y: 2 }]);
     b.caster.stats = { ...unitStats(UNIT_BY_ID.bossalpha, 1), ap: 900 };
     b.cast('spectralcataclysm');
-    b.log.repeats[0].fn();
-    const hits = b.log.hits;
-    expect(hits.length).toBeGreaterThan(0);
+    runAll(b);
+    const beams = b.log.hits.filter((h) => h.effect === 'spectralcataclysm');
+    expect(beams.length).toBeGreaterThan(0);
     expect(b.log.hitTypes.every((t) => t === 'adaptive')).toBe(true); // lands as magic in a fight (see combat tests)
-    expect(hits.filter((h) => h.effect === 'spectralcataclysm').every((h) => h.raw === 900 * SPECTRAL_CATACLYSM.blast[0])).toBe(true);
+    expect(beams.every((h) => h.raw === 900 * SPECTRAL_CATACLYSM.beam[0])).toBe(true);
   });
 });
 

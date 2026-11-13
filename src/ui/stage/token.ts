@@ -1,9 +1,10 @@
 import { Container, Graphics, GraphicsContext, Rectangle, Text, Ticker } from 'pixi.js';
-import { ITEMS } from '../../game/items';
+import { baseItemOf, ITEMS } from '../../game/items';
 import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
 import { portraitOf } from '../portraits';
 import { HERO_SVGS } from '../icons';
+import { itemSvg } from '../itemIcons';
 import { badgeSvg, BEARER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
 import { bloodStars } from '../../game/blood';
 import { FORESHORTENING, WORLD } from './layout';
@@ -43,6 +44,9 @@ export interface TokenView {
   flash(color: number): Graphics; // a coloured overlay at full strength; fade its alpha to animate
   ring(color: number, width: number): Graphics; // a ring on the floor around the plinth (timed buffs)
   setLift(height: number): void; // raise (or, negative, lower) the shield by a world height, on top of its float
+  // Turn the shield on the spot (radians about the vertical axis; 0 faces the camera): it narrows as it turns,
+  // showing its blank back past a quarter turn. The bars and items over it stay put.
+  setTurn(angle: number): void;
 }
 
 const text = (value: string, size: number, fill: number, weight: '400' | '700' | '900' = '400') =>
@@ -50,6 +54,22 @@ const text = (value: string, size: number, fill: number, weight: '400' | '700' |
 
 // One parsed drawing per badge, shared by every token: a board rebuilds its tokens on each action.
 const ICONS = new Map<TraitBadge, GraphicsContext>();
+// An item's icon, `size` tall: its hand-drawn SVG when it has one (parsed once, shared), else its emoji.
+const ITEM_FACES = new Map<string, GraphicsContext>();
+function itemIconView(id: string, size: number): Container {
+  const svg = itemSvg(id);
+  if (!svg) return text(ITEMS[id].icon, size, COLORS.text);
+  const key = baseItemOf(id);
+  const g = new Graphics(ITEM_FACES.get(key) ?? ITEM_FACES.set(key, new GraphicsContext().svg(svg)).get(key)!);
+  const b = g.getLocalBounds();
+  g.pivot.set(b.x, b.y);
+  g.scale.set((size * 1.15) / Math.max(b.width, b.height, 1));
+  // Wrapped, so the row's bounds see it at its scaled size.
+  const holder = new Container();
+  holder.addChild(g);
+  return holder;
+}
+
 // A hero's face, `size` tall, centred on (0, 0): its hand-made SVG (icons/) when it has one, else its emoji.
 const FACES = new Map<string, GraphicsContext>();
 export function heroFace(defId: string, size: number): Container {
@@ -265,19 +285,22 @@ export function makeToken(s: TokenSpec): TokenView {
   const w = P.shieldW * u;
   const h = P.shieldH * u;
   const icon = HERO_SVGS[s.defId];
+  // What turns when the piece spins (setTurn): the shield and all that's on it. Bars and items stay outside.
+  const turn = new Container();
+  body.addChild(turn);
   // A soft halo in the cost colour (gold and brighter for a trait leader), the shield, then the side's edge.
-  body.addChild(shieldPath(new Graphics(), w * 1.16, h * 1.12).fill({ color: leads ? COLORS.leader : tier, alpha: leads ? 0.4 : 0.18 }));
-  body.addChild(
+  turn.addChild(shieldPath(new Graphics(), w * 1.16, h * 1.12).fill({ color: leads ? COLORS.leader : tier, alpha: leads ? 0.4 : 0.18 }));
+  turn.addChild(
     shieldPath(new Graphics(), w, h)
       .fill(icon?.plate ?? mix(COLORS.bg, tier, 0.7))
       .stroke({ width: Math.max(2, u * 0.04), color: leads ? mix(tier, COLORS.leader, 0.6) : tier }),
   );
   if (side || s.selected) {
-    body.addChild(shieldPath(new Graphics(), w + 5, h + 5).stroke({ width: s.selected ? 3 : 2, color: s.selected ? COLORS.selected : side! }));
+    turn.addChild(shieldPath(new Graphics(), w + 5, h + 5).stroke({ width: s.selected ? 3 : 2, color: s.selected ? COLORS.selected : side! }));
   }
   const face = heroFace(s.defId, w * (icon ? 0.78 : 0.62));
   face.y = -h * 0.06; // the shield's point leaves less room below
-  body.addChild(face);
+  turn.addChild(face);
 
   const small = Math.max(9, u * 0.14);
   if (u >= BADGE_MIN_SIZE) {
@@ -285,7 +308,7 @@ export function makeToken(s: TokenSpec): TokenView {
     [...def.traits.map((id) => TRAIT_BADGES[id]), ...(def.honorary ? [BEARER_BADGES[def.honorary.trait]] : [])].forEach((b, i) => {
       const badge = drawBadge(b, size);
       badge.position.set(-w / 2, -h / 2 + size / 2 + i * (size + 1)); // down the shield's left edge
-      body.addChild(badge);
+      turn.addChild(badge);
     });
   }
   const label = (value: string, x: number, y: number, ax: number, ay: number) => {
@@ -300,7 +323,18 @@ export function makeToken(s: TokenSpec): TokenView {
   let itemsH = 0;
   if (s.itemIds?.length) {
     itemsH = small + 2;
-    label(s.itemIds.map((id) => ITEMS[id].icon).join(''), 0, -h / 2 - 1, 0.5, 1);
+    // One icon each, side by side and centred: a hand-drawn one (icons/items.ts) as a drawing, else its emoji.
+    const row = new Container();
+    let x = 0;
+    for (const id of s.itemIds) {
+      const icon = itemIconView(id, small);
+      const b = icon.getLocalBounds();
+      icon.position.set(x - b.x, -b.y - b.height);
+      x += b.width + 1;
+      row.addChild(icon);
+    }
+    row.position.set(-(x - 1) / 2, -h / 2 - 1);
+    body.addChild(row);
   }
 
   let barsTop = -h / 2 - itemsH;
@@ -315,7 +349,7 @@ export function makeToken(s: TokenSpec): TokenView {
 
   const overlay = shieldPath(new Graphics(), w, h);
   overlay.alpha = 0;
-  body.addChild(overlay);
+  turn.addChild(overlay);
   const flash = (color: number) => {
     shieldPath(overlay.clear(), w, h).fill({ color, alpha: 0.55 });
     overlay.alpha = 1;
@@ -341,7 +375,13 @@ export function makeToken(s: TokenSpec): TokenView {
     lift = height;
   };
 
-  return { root, body, setBar, flash, ring, setLift };
+  const setTurn = (angle: number) => {
+    const c = Math.cos(angle);
+    turn.scale.x = (c < 0 ? -1 : 1) * Math.max(0.06, Math.abs(c)); // never quite edge-on: it has some thickness
+    face.visible = c >= 0; // its back is blank
+  };
+
+  return { root, body, setBar, flash, ring, setLift, setTurn };
 }
 
 // A five-pointed star's outline around (cx, cy), outer radius r, point up.

@@ -24,7 +24,8 @@ import {
   teamBuilderHtml,
   TEAMS_KEY,
 } from './teamBuilder';
-import { DIFFICULTIES, homeGalleryHtml, homeHtml, type HomeTab, traitDetailHtml, unitInfoHtml } from './views';
+import { layoutMasonry } from './masonry';
+import { DIFFICULTIES, homeGalleryHtml, homeHtml, type HomeTab, itemInfoHtml, pickLevel, traitDetailHtml, unitInfoHtml } from './views';
 
 // The screen before a game: Play, browse the gallery (heroes, commanders, items, synergies), or try out
 // lineups in the Team Builder. Resolves with the bot difficulty once Play is clicked; by then its listeners
@@ -42,6 +43,7 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
   let cardTier: PowerTier = 'blue'; // the Cards tab's tier pill
   let openUnit: string | null = null;
   let openTrait: string | null = null;
+  let openItem: string | null = null; // item type whose info popup is open (from a trait card's item chips)
   const builder: BuilderView = { board: emptyBoard(), tab: 'heroes', filter: NO_FILTER, filterOpen: false, teams: parseTeams(localStorage.getItem(TEAMS_KEY)), name: '', selected: '', message: '' };
   const storeTeams = () => localStorage.setItem(TEAMS_KEY, JSON.stringify(builder.teams));
   // The draft: the board, name and selected save, restored on the next visit (checked like a saved team).
@@ -72,7 +74,9 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
       : view === 'builder' ? teamBuilderHtml(builder, viewer)
       : homeGalleryHtml(viewer, tab, cardTier)) +
       (openTrait ? traitDetailHtml(openTrait, viewer, {}, false) : '') +
-      (openUnit ? unitInfoHtml(openUnit, viewer) : '');
+      (openUnit ? unitInfoHtml(openUnit, viewer) : '') +
+      (openItem ? itemInfoHtml(openItem) : '');
+    layoutMasonry(root);
     for (const el of root.querySelectorAll<HTMLElement>('[data-keep-scroll]')) el.scrollTop = scrolls.get(el.dataset.keepScroll!) ?? 0;
   }
 
@@ -98,6 +102,12 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
   return new Promise((resolve) => {
     on('click', (e) => {
       const target = e.target as HTMLElement;
+      if (pickLevel(target)) return;
+      const itemInfo = target.closest<HTMLElement>('[data-item-info]');
+      if (itemInfo) {
+        openItem = itemInfo.dataset.itemInfo!;
+        return render();
+      }
       const info = target.closest<HTMLElement>('[data-unit-info]');
       if (info) {
         openUnit = info.dataset.unitInfo!;
@@ -161,6 +171,7 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
       else if (a === 'cardTier') cardTier = btn.dataset.tier as PowerTier;
       else if (a === 'closeUnitInfo') openUnit = null;
       else if (a === 'closeTrait') openTrait = null;
+      else if (a === 'closeItemInfo') openItem = null;
       else return;
       render();
     });
@@ -230,7 +241,8 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
       'keydown',
       (e) => {
         if (e.key !== 'Escape') return;
-        if (openUnit) openUnit = null;
+        if (openItem) openItem = null;
+        else if (openUnit) openUnit = null;
         else if (openTrait) openTrait = null;
         else if (view !== 'home') view = 'home';
         else return;

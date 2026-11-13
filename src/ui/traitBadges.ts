@@ -53,7 +53,7 @@ export const BEARER_BADGES: Record<string, TraitBadge> = {
   cultoffire: { color: 0x6b3a00, ink: 0xffc46b, d: 'M6 3H18C18 9 16 12 13.5 13V18H17V21H7V18H10.5V13C8 12 6 9 6 3Z' },
 };
 
-const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
+export const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 export const paths = (d: string) => d.split(/(?=M)/).map((s) => s.trim());
 

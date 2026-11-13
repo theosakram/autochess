@@ -7,7 +7,7 @@ import { onTwoStar, syncMirrorBar } from './mirrorBar';
 import { mergeUnits } from './merge';
 import { openMistShop, syncMistOrbs } from './mistShop';
 import { nextInt } from './rng';
-import { giveTwoStar } from './actions';
+import { freeBoardCell, giveTwoStar, makeBenchRoom } from './actions';
 import { allyCall, checkChestTriggers, deliverSignatures, deliverTurrets, starGiftOf, syncRift } from './powerCards';
 import { playerTraits, TRAITS } from './traits';
 import type { GameState, Player } from './types';
@@ -96,11 +96,20 @@ function payWaiting(state: GameState, p: Player, levels: Record<string, number>)
   if (!p.promotionsWaiting.length) p.promotionsWaiting = undefined;
 }
 
-// Waiting free units go to the bench while there's room, merging as they land.
-function deliverGifts(state: GameState, p: Player): void {
-  while (p.gifts?.length && p.bench.includes(null)) {
-    const defId = p.gifts.shift()!;
-    p.bench[p.bench.indexOf(null)] = { uid: state.nextUid++, defId, star: 1 };
+// Waiting free units land on the bench, else an empty board cell (past the level limit if need be: trimmed when
+// the fight starts), merging as they land. With bench and board both full they keep waiting, unless `force` (round
+// start): then a random bench hero is sold to make room.
+export function deliverGifts(state: GameState, p: Player, force = false): void {
+  while (p.gifts?.length) {
+    const defId = p.gifts[0];
+    const bench = p.bench.indexOf(null);
+    const cell = bench < 0 ? freeBoardCell(state, p, defId) : -1;
+    const spot = bench >= 0 || cell >= 0 ? bench : force ? makeBenchRoom(state, p) : -1;
+    if (spot < 0 && cell < 0) return;
+    p.gifts.shift();
+    const unit = { uid: state.nextUid++, defId, star: 1 as const };
+    if (spot >= 0) p.bench[spot] = unit;
+    else p.board[cell] = unit;
     mergeUnits(p, defId);
   }
 }

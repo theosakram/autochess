@@ -93,7 +93,8 @@ describe('synergy gallery', () => {
 
   test("each unit in a trait card lists its other traits as clickable chips", () => {
     const html = galleryHtml(p, state.chosen);
-    const card = html.slice(html.indexOf('Skybringer'), html.indexOf('</article>', html.indexOf('Skybringer')));
+    const at = html.indexOf('id="gtrait-skybringer"');
+    const card = html.slice(at, html.indexOf('</article>', at));
     const row = card.slice(card.indexOf('Balang'), card.indexOf('</li>', card.indexOf('Balang')));
     expect(row).toContain('data-trait="fighter"');
     expect(row).not.toContain('data-trait="skybringer"');
@@ -101,18 +102,19 @@ describe('synergy gallery', () => {
 
   test('the crossover grid puts each unit where its faction and role meet', () => {
     const html = galleryHtml(p, state.chosen, 'grid');
-    const rows = [...html.matchAll(/<tr><th scope="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+    const rows = [...html.matchAll(/<tr[^>]*><th scope="row"[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
     const row = (role: string) => rows.find((r) => r.includes(`data-trait="${role}"`))!;
-    const cols = [...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map((m) => m[1]);
+    const cols = [...html.matchAll(/<th scope="col"[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1]);
     const col = cols.findIndex((c) => c.includes('data-trait="skybringer"'));
-    const cell = (role: string) => [...row(role).matchAll(/<td>([\s\S]*?)<\/td>/g)][col][1];
+    const cell = (role: string) => [...row(role).matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)][col][1];
     expect(cell('fighter')).toContain('Balang');
     expect(cell('mage')).not.toContain('Balang');
-    // Frank has two roles, so it's in both rows.
-    const gw = cols.findIndex((c) => c.includes('data-trait="gustiwana"'));
-    const at = (role: string) => [...row(role).matchAll(/<td>([\s\S]*?)<\/td>/g)][gw][1];
-    expect(at('weaponmaster')).toContain('Frank');
-    expect(at('dauntless')).toContain('Frank');
+    // Frank has two roles: their rows sit together and his cell spans both, so he shows once, with both badges.
+    const roleOrder = rows.map((r) => r.match(/data-trait="(\w+)"/)?.[1]);
+    expect(roleOrder.indexOf('dauntless')).toBe(roleOrder.indexOf('weaponmaster') + 1);
+    expect(html.match(/data-unit-info="frank"/g)).toHaveLength(1);
+    const merged = row('weaponmaster').match(/<td[^>]*rowspan="2"[^>]*>([\s\S]*?)<\/td>/)!;
+    expect(merged[1]).toContain('Frank');
   });
 });
 
@@ -133,11 +135,11 @@ describe('Plane Wanderers in the gallery', () => {
 
   test('in the crossover grid they sit under Necromancer, in their role row', () => {
     const html = galleryHtml(p, state.chosen, 'grid');
-    const rows = [...html.matchAll(/<tr><th scope="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
-    const cols = [...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map((m) => m[1]);
+    const rows = [...html.matchAll(/<tr[^>]*><th scope="row"[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+    const cols = [...html.matchAll(/<th scope="col"[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1]);
     const necro = cols.findIndex((c) => c.includes('data-trait="necromancer"'));
     const fighterRow = rows.find((r) => r.includes('data-trait="fighter"'))!;
-    expect([...fighterRow.matchAll(/<td>([\s\S]*?)<\/td>/g)][necro][1]).toContain('Gatotkaca');
+    expect([...fighterRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)][necro][1]).toContain('Gatotkaca');
   });
 });
 

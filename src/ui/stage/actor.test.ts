@@ -20,6 +20,7 @@ function fakeToken() {
     },
     ring: () => ({}) as Graphics,
     setLift: (h) => lifts.push(h),
+    setTurn: () => {},
   };
   return { token, overlay, lifts };
 }

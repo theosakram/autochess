@@ -159,7 +159,7 @@ describe('Spectre', () => {
     expect(draws(other)).toBe(0);
   });
 
-  test('a gift waits for bench room', () => {
+  test('a gift lands on the board when the bench is full', () => {
     const state = newGame();
     const p = state.players[0];
     put(p, 'phove', 0);
@@ -171,10 +171,8 @@ describe('Spectre', () => {
     p.shop[0] = 'phove';
     state.pool.phove--;
     expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
-    expect(p.gifts).toEqual(['ginger']);
-    applyAction(state, p.id, { type: 'sell', from: { area: 'bench', index: 0 } });
     expect(p.gifts).toEqual([]);
-    expect(p.bench.some((u) => u?.defId === 'ginger')).toBe(true);
+    expect(p.board.some((u) => u?.defId === 'ginger')).toBe(true);
   });
 
   test('Boss Alpha costs 7 and is never in anyone\'s shop before it is unlocked', () => {

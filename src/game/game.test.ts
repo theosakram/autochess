@@ -112,12 +112,22 @@ describe('shop', () => {
     expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(false);
   });
 
-  test('buy fails when bench is full', () => {
+  test('full bench: a bought hero goes to the board; fails only with the board full too, keeping a free buy', () => {
     const state = newGame();
     const p = you(state);
     p.gold = 100;
+    p.board.fill(null);
     for (let i = 0; i < BENCH_SIZE; i++) p.bench[i] = { uid: 1000 + i, defId: 'footman', star: 1 };
-    expect(applyAction(state, p.id, { type: 'buy', slot: 0 })).toEqual({ ok: false, error: 'Bench is full' });
+    p.shop[0] = 'archer';
+    expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true);
+    expect(p.board.some((u) => u?.defId === 'archer')).toBe(true);
+
+    p.board.forEach((_, i) => (p.board[i] ??= { uid: 2000 + i, defId: 'imp', star: 1 }));
+    p.shop[1] = 'natalie';
+    p.freeBuy = 1;
+    expect(applyAction(state, p.id, { type: 'buy', slot: 1 })).toEqual({ ok: false, error: 'No room on the bench or board' });
+    expect(p.freeBuy).toBe(1);
+    expect(p.shop[1]).toBe('natalie');
   });
 
   test('sell refunds gold and returns the copy to the pool', () => {
@@ -156,7 +166,7 @@ describe('board', () => {
     expect(p.bench.filter(Boolean)).toHaveLength(1);
   });
 
-  test('trimming: the weakest (lowest star, then cheapest) to the bench; sold when the bench is full', () => {
+  test('trimming: the weakest (lowest star, then cheapest) to the bench; a full bench sells a random bench hero for room', () => {
     const state = newGame();
     const p = you(state);
     p.level = 2;
@@ -169,17 +179,19 @@ describe('board', () => {
     expect(p.bench.find(Boolean)?.uid).toBe(901);
     expect(p.board.some((u) => u?.uid === 900)).toBe(true);
 
-    // Bench full: sold, its copies back to the pool.
+    // Bench full: a random bench hero is sold (copies back to the pool) and the board unit takes its slot.
     p.level = 1;
-    for (let i = 0; i < p.bench.length; i++) p.bench[i] ??= { uid: 950 + i, defId: 'imp', star: 2 };
+    for (let i = 0; i < p.bench.length; i++) p.bench[i] ??= { uid: 950 + i, defId: 'archer', star: 2 };
     const left = p.board.find((u) => u && u.uid !== 900)!;
     const gold = p.gold;
-    const pool = state.pool[left.defId];
+    const before = p.bench.map((u) => u!);
     trimBoard(state, p);
     expect(boardCount(p)).toBe(1);
-    expect(p.board.some((u) => u?.uid === left.uid)).toBe(false);
-    expect(state.pool[left.defId]).toBe(pool + 1);
-    expect(p.gold).toBe(gold + UNIT_BY_ID[left.defId].tier);
+    expect(p.bench.some((u) => u?.uid === left.uid)).toBe(true);
+    expect(p.bench.every(Boolean)).toBe(true);
+    const sold = before.filter((u) => !p.bench.includes(u));
+    expect(sold).toHaveLength(1);
+    expect(p.gold).toBe(gold + UNIT_BY_ID[sold[0].defId].tier * copiesOf(sold[0]));
   });
 
   test('rejects out-of-range locations', () => {
@@ -246,7 +258,8 @@ describe('merge', () => {
     p.shop[0] = 'archer';
     expect(applyAction(state, p.id, { type: 'buy', slot: 0 }).ok).toBe(true); // took the freed slot
     p.shop[1] = 'imp';
-    expect(applyAction(state, p.id, { type: 'buy', slot: 1 })).toEqual({ ok: false, error: 'Bench is full' });
+    expect(applyAction(state, p.id, { type: 'buy', slot: 1 }).ok).toBe(true); // no merge, no bench: to the board
+    expect(p.board.some((u) => u?.defId === 'imp')).toBe(true);
   });
 });
 
@@ -340,12 +353,26 @@ describe('scavenger', () => {
     expect(p.gold).toBe(gold + income + SCAVENGER.gold[1]);
   });
 
-  test('skipped when the bench is full and the unit would not merge', () => {
+  test('a full bench sends the loot to the board', () => {
     const { state, p } = setup(['phove', 'angela']);
     p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: 600 + i, defId: 'titan', star: 1 }));
     const mine = startRound(state).find((b) => b.playerId === p.id)!;
-    expect(mine.looted).toBeNull();
-    expect(p.shop.filter(Boolean)).toHaveLength(5);
+    expect(mine.looted).not.toBeNull();
+    expect(p.board.some((u) => u?.defId === mine.looted)).toBe(true);
+  });
+
+  test('round start: a waiting hero with bench and board full sells a random bench hero for its slot', () => {
+    const state = newGame();
+    const p = you(state);
+    p.board.fill(null).forEach((_, i) => (p.board[i] = { uid: 3000 + i, defId: 'imp', star: 1 }));
+    p.bench.fill(null).forEach((_, i) => (p.bench[i] = { uid: 4000 + i, defId: 'footman', star: 1 }));
+    state.pool.archer--;
+    p.gifts = ['archer'];
+    applyAction(state, p.id, { type: 'reroll' }); // any sync: no room, it keeps waiting
+    expect(p.gifts).toEqual(['archer']);
+    startRound(state);
+    expect(p.gifts).toEqual([]);
+    expect([...p.bench, ...p.board].some((u) => u?.defId === 'archer')).toBe(true);
   });
 
   test('no Scavenger active, no payout', () => {

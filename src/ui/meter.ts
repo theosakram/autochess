@@ -6,6 +6,7 @@ import { ITEMS } from '../game/items';
 import { TRAITS } from '../game/traits';
 import { UNIT_BY_ID } from '../game/units';
 import { portraitOf } from './portraits';
+import { itemIcon } from './itemIcons';
 
 // Damage dealt, damage taken and healing done by the viewer's side in one fight, filled in as playback
 // replays events. A summon's numbers count for its owner.
@@ -82,7 +83,7 @@ export function meterHtml(m: Meter | null, tab: MeterTab = 'dealt'): string {
   if (tab === 'dealt') {
     const traits = [...m.byTrait].map(([id, dmg]) => {
       const src = TRAITS[id] ?? ITEMS[id] ?? COMMANDER_EFFECTS[id];
-      return { key: id, label: `${src.icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
+      return { key: id, label: `${ITEMS[id] && !TRAITS[id] ? itemIcon(id) : src.icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
     });
     rows = [...[...m.byUnit].map(([id, d]) => unitRow(id, d.attack, d.skill)), ...traits];
   } else if (tab === 'taken') {
