@@ -12,6 +12,7 @@ import { angela } from './angela';
 import { cyclops } from './cyclops';
 import { dyroth } from './dyroth';
 import { guiness } from './guiness';
+import { fanny } from './fanny';
 import { freya } from './freya';
 import { johnson } from './johnson';
 import { kaela } from './kaela';
@@ -42,6 +43,7 @@ export { ANGELA } from './angela';
 export { CYCLOPS } from './cyclops';
 export { DYROTH } from './dyroth';
 export { GUINESS } from './guiness';
+export { FANNY } from './fanny';
 export { enhanceValues, FREYA } from './freya';
 export { JOHNSON } from './johnson';
 export { KAELA } from './kaela';
@@ -64,7 +66,7 @@ export { MOSCOW } from './moscow';
 export { VEX } from './vex';
 export { term, type Term } from './terms';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow, vex].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow, vex, fanny].map((c) => [c.id, c]));
 
 // Every commander's glossary terms, by id (see terms.ts).
 export const TERMS: Record<string, Term> = Object.assign({}, ...Object.values(COMMANDERS).map((c) => c.terms ?? {}));
@@ -106,7 +108,7 @@ export const beastOf = (p: Player): BeastPower | null => powersOf(p).beast ?? nu
 
 // Hero marks: each is its own pick, made while its power works for the player. They can sit on the
 // same hero or on different ones (shield the tank, boost the carry).
-export type MarkKind = 'ward' | 'boost' | 'halo' | 'halo2' | 'iceArrow';
+export type MarkKind = 'ward' | 'boost' | 'halo' | 'halo2' | 'iceArrow' | 'cable';
 type Powers = ReturnType<typeof powersOf>;
 export const MARKS: Record<MarkKind, { icon: string; name: string; action: string; available: (pw: Powers) => boolean }> = {
   ward: { icon: '☂️', name: 'Umbrella', action: 'Shield with your umbrella', available: (pw) => !!pw.ward },
@@ -114,6 +116,7 @@ export const MARKS: Record<MarkKind, { icon: string; name: string; action: strin
   halo: { icon: '😇', name: 'Halo', action: 'Protect with your halo', available: (pw) => (pw.protect?.picks ?? 0) >= 1 },
   halo2: { icon: '😇', name: 'Second Halo', action: 'Protect with your second halo', available: (pw) => (pw.protect?.picks ?? 0) >= 2 },
   iceArrow: { icon: '❄️', name: 'Ice Arrow Blessing', action: 'Give the Ice Arrow Blessing', available: (pw) => !!pw.iceArrow },
+  cable: { icon: '🪢', name: 'Steel Cable', action: 'Tie your steel cable', available: (pw) => !!pw.cable },
 };
 export const MARK_KINDS = Object.keys(MARKS) as MarkKind[];
 

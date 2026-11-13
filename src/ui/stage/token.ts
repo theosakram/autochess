@@ -296,13 +296,18 @@ export function makeToken(s: TokenSpec): TokenView {
   };
   const icons = carried(s);
   if (icons) label(icons, w / 2 + 2, -h / 2, 1, 0.3);
-  if (s.itemIds?.length) label(s.itemIds.map((id) => ITEMS[id].icon).join(''), -w / 2, h / 2, 0, 1);
+  // Items in a row on top of the shield, under the bars.
+  let itemsH = 0;
+  if (s.itemIds?.length) {
+    itemsH = small + 2;
+    label(s.itemIds.map((id) => ITEMS[id].icon).join(''), 0, -h / 2 - 1, 0.5, 1);
+  }
 
-  let barsTop = -h / 2;
+  let barsTop = -h / 2 - itemsH;
   let setBar: TokenView['setBar'] = () => {};
   if (s.bars || s.hpBar) {
     const bars = makeBars(w * 1.05, Math.max(4, u * 0.065), Math.max(3, u * 0.045), { mana: !!s.bars, foe: !!s.foe, maxHp: s.maxHp });
-    barsTop = -h / 2 - bars.height - 4;
+    barsTop = -h / 2 - itemsH - bars.height - 4;
     bars.view.y = barsTop;
     body.addChild(bars.view);
     setBar = bars.setBar;

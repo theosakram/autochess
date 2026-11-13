@@ -5,7 +5,7 @@ import { EQUIPMENT, itemCard } from './items';
 import { openChest } from './inventory';
 import { killsBy, type CombatResult } from './combat';
 import { countDuels, earnChests, payBounty } from './game';
-import { ALICE, AMON, CYCLOPS, FREYA, GUINESS, JOHNSON, KATARINA, LUNG, LUNOX, MIYA } from './commanders';
+import { ALICE, AMON, CYCLOPS, FANNY, FREYA, GUINESS, JOHNSON, KATARINA, LUNG, LUNOX, MIYA } from './commanders';
 import { refreshShop, rollFreeHero, shopPrice } from './shop';
 import { claimable } from './freya';
 import { checkRally, heroValue, payHeirs } from './cyclops';
@@ -25,7 +25,7 @@ import { simulateCombat, defenseMult } from './combat';
 import { BOARD_COLS, COMMANDER_CARD_ROUND, roundAt, WIN_GOLD } from './config';
 import { createGame, resolveCombat, startRound } from './game';
 import { cardRolls, payPrize, PRIZE_VALUES } from './luckyDice';
-import { boardCount } from './player';
+import { boardCount, heroCapOf } from './player';
 import type { GameState, Player } from './types';
 import { openTreasure, raisedTier } from './treasure';
 import { offerPowerCards, powerPool } from './powerCards';
@@ -327,6 +327,39 @@ describe('the Divine Beast in combat', () => {
     expect(hits).toHaveLength(1);
     for (const e of hits) if (e.type === 'effect') expect(side(e.target)).toBe(1);
     for (const e of r.events) if (e.type === 'stun' && e.t === 0) expect(side(e.id)).toBe(1);
+  });
+});
+
+describe('Fanny', () => {
+  test('her cabled hero gets +35% attack and magic attack and takes no slot; her card: +1 capacity and 6 gold', () => {
+    const state = createGame(5, SEEDS);
+    expect(applyAction(state, 'you', { type: 'pickCommander', commander: 'fanny' }).ok).toBe(true);
+    const p = state.players[0];
+    p.board.fill(null);
+    p.board[0] = { uid: 900, defId: 'cici', star: 1 };
+    p.board[1] = { uid: 901, defId: 'cici', star: 1 };
+    const before = fieldStats(p, playerTraits(p), {}).get(900)!;
+    expect(boardCount(p)).toBe(2);
+    expect(applyAction(state, p.id, { type: 'mark', kind: 'cable', unit: 900 }).ok).toBe(true);
+    expect(boardCount(p)).toBe(1);
+    const after = fieldStats(p, playerTraits(p), {}).get(900)!;
+    expect(after.atk).toBe(Math.round(before.atk * (1 + FANNY.cable.hybridAtk)));
+    expect(after.ap).toBe(Math.round(before.ap * (1 + FANNY.cable.hybridAtk)));
+    const [cap, gold] = [heroCapOf(p), p.gold];
+    p.cardOffer = ['fanny'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'fanny' }).ok).toBe(true);
+    expect([heroCapOf(p), p.gold]).toEqual([cap + FANNY.card.heroCap, gold + FANNY.card.gold]);
+  });
+
+  test('her card on another commander is the same: +1 capacity and 6 gold, no cable', () => {
+    const state = createGame(5, SEEDS);
+    expect(applyAction(state, 'you', { type: 'pickCommander', commander: 'lukas' }).ok).toBe(true);
+    const p = state.players[0];
+    const [cap, gold] = [heroCapOf(p), p.gold];
+    p.cardOffer = ['fanny'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'fanny' }).ok).toBe(true);
+    expect([heroCapOf(p), p.gold]).toEqual([cap + FANNY.card.heroCap, gold + FANNY.card.gold]);
+    expect(markKinds(p)).not.toContain('cable');
   });
 });
 

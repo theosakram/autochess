@@ -7,20 +7,34 @@ export const POWER_OF_CHAOS = {
   assaults: 3,
 };
 
+const EFFECT = 'chaosassault';
+
 export const powerOfChaos: SkillDef = {
   id: 'powerofchaos',
   name: 'Power of Chaos',
   desc:
-    `Releases ${POWER_OF_CHAOS.assaults} Chaos Assaults, enhanced basic attacks at the nearest enemy, ` +
-    'each dealing {ap} of magic attack as magic damage. Killing an enemy grants 1 more Chaos Assault.',
+    `Her next ${POWER_OF_CHAOS.assaults} attacks become Chaos Assaults, enhanced basic attacks at the nearest enemy, ` +
+    'each dealing {ap} of magic attack as magic damage. The first one dashes her to a safe location first. ' +
+    'Killing an enemy grants 1 more Chaos Assault.',
   damage: { ap: 'magic' },
   values: () => ({ ap: POWER_OF_CHAOS.ap.map(pct) }),
   cast(api, caster) {
-    const raw = caster.stats.ap * POWER_OF_CHAOS.ap[caster.star - 1];
-    for (let left = POWER_OF_CHAOS.assaults; left > 0; left--) {
-      const target = api.nearestEnemy(caster);
-      if (!target) return;
-      if (api.basicHit(caster, target, raw, 'magic', 'chaosassault')) left++;
+    caster.skill.left = POWER_OF_CHAOS.assaults;
+    caster.skill.dashed = 0;
+    api.showMarks(caster, caster.skill.left, EFFECT);
+  },
+  // While charged, each attack is a Chaos Assault instead.
+  enhancedAttack(api, caster) {
+    if (!(caster.skill.left > 0)) return false;
+    if (!caster.skill.dashed) {
+      caster.skill.dashed = 1;
+      const safe = api.safestCell(caster);
+      if (safe.x !== caster.x || safe.y !== caster.y) api.dashTo(caster, safe);
     }
+    const target = api.nearestEnemy(caster);
+    caster.skill.left--;
+    if (target && api.basicHit(caster, target, caster.stats.ap * POWER_OF_CHAOS.ap[caster.star - 1], 'magic', EFFECT)) caster.skill.left++;
+    api.showMarks(caster, caster.skill.left, EFFECT);
+    return true;
   },
 };

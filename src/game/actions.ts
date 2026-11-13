@@ -4,7 +4,7 @@ import { pickJohnnie } from './johnnie';
 import { claimEnhance, setEnhance } from './freya';
 import { bless } from './twilight';
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { COMMANDERS, MARKS, payCard, payCommander, pieceBlock, powersOf, rerollCard, type MarkKind } from './commanders';
+import { COMMANDERS, MARKS, markedUid, payCard, payCommander, pieceBlock, powersOf, rerollCard, type MarkKind } from './commanders';
 import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { cardRolls, openTrove, rollTrove } from './luckyDice';
@@ -52,7 +52,7 @@ export type Action =
   | { type: 'pickPower'; card: string } // one of the power cards on offer
   | { type: 'rerollPower'; slot: number } // swap one offered power card, once per slot
   | { type: 'pickFactionOrb'; trait: string } // Prime Selection: one of the faction orbs on offer
-  | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura)
+  | { type: 'mark'; kind: MarkKind; unit: number } // unit uid: the hero a commander mark goes on (Kagura, Miya, Fanny)
   | { type: 'pickItem'; item: string } // one of the basic items on offer
   | { type: 'pickBox'; prize: number } // the Box round: a prize, on your turn
   | { type: 'rollDice' } // Kaela: roll the Trove's Lucky Dice (a roll a round, unused ones bank up)
@@ -130,7 +130,8 @@ export function sellAt(state: GameState, p: Player, slots: (Unit | null)[], inde
 // ties at random) one by one: to the bench, or sold when the bench is full.
 export function trimBoard(state: GameState, p: Player): void {
   while (boardCount(p) > heroCapOf(p)) {
-    const cells = p.board.flatMap((u, i) => (u && !UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece ? [i] : []));
+    const cabled = markedUid(p, 'cable'); // Fanny's: takes no slot, so moving it frees none
+    const cells = p.board.flatMap((u, i) => (u && !UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece && u.uid !== cabled ? [i] : []));
     const weight = (i: number) => p.board[i]!.star * 100 + unitPrice(p.board[i]!.defId);
     const low = Math.min(...cells.map(weight));
     const weakest = cells.filter((i) => weight(i) === low);

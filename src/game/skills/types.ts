@@ -133,6 +133,8 @@ export interface SkillDef {
   // A passive: runs once after each of the unit's whole basic attacks, Fighter's hit-again included
   // (counters too; not enhanced basic hits from skills).
   afterAttack?(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
+  // Replaces a whole basic attack (hit-again and all) when it returns true: e.g. a skill's charged attacks.
+  enhancedAttack?(api: SkillApi, caster: SkillFighter, target: SkillFighter): boolean;
   // A passive: each of its basic attacks is `shots` basic hits of `power` x a normal one (each sets off
   // on-hit and item effects; mana comes once per attack). Asked anew for every attack.
   volley?(caster: SkillFighter): { shots: number; power: number };

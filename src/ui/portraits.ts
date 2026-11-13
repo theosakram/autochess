@@ -69,6 +69,8 @@ export const PORTRAITS: Record<string, string> = {
   cyborg: '🏯',
   novaria: '🃏',
   kenarok: '🐍',
+  roro: '🧜',
+  gadjahmada: '🐘',
 
   mythbeast: '🦄',
   spiritarcher: '🦋',

@@ -1562,6 +1562,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   // `mult` scales its damage (a skill's attack, e.g. 140% of attack); items and on-hit effects work as usual.
   function fullBasicAttack(f: SimFighter, target: SimFighter, t: number, mult = 1): void {
     const skill = UNIT_BY_ID[f.defId].skill;
+    if (skill && SKILLS[skill].enhancedAttack?.(api, f, target)) return;
     // A volley skill makes one attack several shots (see SkillDef.volley); the hit-again repeats the whole volley.
     const volley = skill ? SKILLS[skill].volley?.(f) : undefined;
     const once = (again: boolean) => {

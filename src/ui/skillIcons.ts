@@ -52,6 +52,8 @@ export const SKILL_ICONS: Record<string, string> = {
   taripenyembuh: '💃',
   thunderwhirl: '⛈️',
   tidalsurge: '🌊',
+  southerntide: '🐚',
+  sumpahpalapa: '🤝',
   undyingfury: '😡',
   unfoldingtale: '📚',
   wanderersvolley: '🧭',

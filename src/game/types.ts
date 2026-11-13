@@ -178,7 +178,7 @@ export interface Player {
   altarUses?: Partial<Record<'altar' | 'secondAltar', number>>; // uses banked when the last one was spent
   altarLast?: { key: 'altar' | 'secondAltar'; offered: string; gifts: string[] }; // the latest offering, for the UI
   // Heroes marked by commander powers (Kagura's umbrella and dance), by mark kind. See commanders/.
-  marks?: Partial<Record<'ward' | 'boost' | 'halo' | 'halo2' | 'iceArrow', { uid: number; defId: string } | null>>;
+  marks?: Partial<Record<'ward' | 'boost' | 'halo' | 'halo2' | 'iceArrow' | 'cable', { uid: number; defId: string } | null>>;
 }
 
 // Plain data only, so the whole state can be serialized and sent over the wire later.

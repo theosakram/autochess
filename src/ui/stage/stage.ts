@@ -366,15 +366,6 @@ export class Stage {
       const p = actor(id).position;
       return vec3(p.x, WORLD.piece.bodyY, p.z);
     };
-    // How many hits each source has sent out this tick (by source and effect), so a volley's bolts take turns.
-    const volleys = { t: -1, sent: new Map<string, number>() };
-    const volleyIndex = (t: number, key: string) => {
-      if (t !== volleys.t) volleys.sent.clear();
-      volleys.t = t;
-      const n = volleys.sent.get(key) ?? 0;
-      volleys.sent.set(key, n + 1);
-      return n;
-    };
     const moveTo = (id: number, p: Point, ms: number, arc = 0) => actor(id).moveTo(at(p), ms, arc);
     const flash = (id: number, color: number, ms = 250) => actor(id).flash(color, ms);
     // A blow landing: the target jolts.
@@ -390,7 +381,7 @@ export class Stage {
         if (swing && by !== target) attacker.actor.lunge(actor(target).position);
         return land();
       }
-      const color = attacker.attack === 'bolt' ? COLORS.spell : COLORS.arrow;
+      const color = attacker.attack === 'bolt' ? COLORS.spell : attacker.attack === 'comet' ? COLORS.comet : COLORS.arrow;
       fireShot(fx, attacker.attack, shieldOf(by), shieldOf(target), color, land);
     };
     const pop = (id: number, label: string, color: number, size = 14, weight: '700' | '900' = '700') => {
@@ -489,6 +480,7 @@ export class Stage {
         case 'skill':
           flash(e.id, COLORS.mana, 400);
           setBar(e.id, 'mana', 0);
+          SKILL_LOOKS[e.skill]?.cast?.(fx, views.get(e.id)!);
           break;
         case 'effect': {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
@@ -501,10 +493,8 @@ export class Stage {
             pop(e.target, e.crit ? `${e.damage}!` : String(e.damage), e.crit ? COLORS.crit : color, e.crit ? 22 : 18, '900');
           };
           // A skill whose hits fly: the hit plays when its projectile arrives.
-          if (look?.shot && e.by !== undefined && e.by !== e.target && views.has(e.by)) {
-            const index = volleyIndex(e.t, `${e.by}:${e.effect}`);
-            look.shot(fx, { from: shieldOf(e.by), to: shieldOf(e.target), index }, land);
-          } else land();
+          if (look?.shot && e.by !== undefined && e.by !== e.target && views.has(e.by)) look.shot(fx, { from: shieldOf(e.by), to: shieldOf(e.target) }, land);
+          else land();
           break;
         }
         case 'heal':
@@ -607,12 +597,14 @@ export class Stage {
           const color = EFFECT_COLORS[e.effect] ?? COLORS.spell;
           const ms = Math.max(1, e.until - e.t) * TICK_MS;
           const slash = SLASHES[e.effect];
-          if (slash) sweepSlash(fx, at(e.from), at(e.to), slash, color, ms);
+          const own = SKILL_LOOKS[e.effect]?.projectile;
+          if (own) own(fx, at(e.from), at(e.to), ms);
+          else if (slash) sweepSlash(fx, at(e.from), at(e.to), slash, color, ms);
           else flyOrb(fx, at(e.from, WORLD.piece.bodyY), at(e.to, WORLD.piece.bodyY), color, ms);
           break;
         }
         case 'orbit':
-          // Orbs circling the unit, fading at the end; one turn per 16 ticks.
+          // Shurikens circling the unit, fading at the end; one turn per 16 ticks.
           orbit(fx, views.get(e.id)!, e.count, EFFECT_COLORS[e.effect] ?? COLORS.spell, (e.until - e.t) * TICK_MS, (e.until - e.t) / 16);
           break;
         case 'buff': {

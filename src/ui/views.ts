@@ -392,7 +392,7 @@ export function rewardPickHtml(p: Player, traitId: string): string {
       ${skill}
       <footer class="rp-actions">
         <button class="rp-more" data-unit-info="${id}">Full card</button>
-        <button class="rp-take" data-action="pickReward" data-trait="${traitId}" data-unit="${id}">Choose ${def.name}</button>
+        <button class="rp-take" data-action="pickReward" data-trait="${traitId}" data-unit="${id}" aria-label="Choose ${def.name}">Choose</button>
       </footer>
     </article>`;
   });
@@ -403,7 +403,7 @@ export function rewardPickHtml(p: Player, traitId: string): string {
       <h2>${traitBadgeHtml(traitId)} Choose your Plane Wanderer</h2>
       <p>Joins you at <b>${at} ${rule.label.toLowerCase()}</b>, then rises with the grave. Takes no board slot. The choice is for the whole game.</p>
     </header>
-    <div class="rp-cards">${cards.join('')}</div>`,
+    <div class="rp-cards" style="--rp-n: ${Math.max(1, cards.length)}">${cards.join('')}</div>`,
   );
 }
 

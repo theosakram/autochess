@@ -216,6 +216,9 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
         { stat: 'spellLifesteal', add: boost.hybridLifesteal },
       );
     }
+    // Fanny: the hero on her steel cable.
+    const cable = u.uid === markedUid(p, 'cable') ? powersOf(p).cable : undefined;
+    if (cable) mods.push({ stat: 'atk', pct: cable.hybridAtk }, { stat: 'ap', pct: cable.hybridAtk });
     // Alice: a Blood Pact hero's piled-up copies (and her card).
     mods.push(...bloodMods(p, u));
     // Johnson's card: every Johnnie.

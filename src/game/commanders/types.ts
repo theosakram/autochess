@@ -31,6 +31,12 @@ export interface BoostPower {
   hybridLifesteal: number;
 }
 
+// Fanny's steel cable: the player ties it to one hero (Player.marks.cable). That hero fights with more attack
+// and magic attack, and takes no slot on the board.
+export interface CableMarkPower {
+  hybridAtk: number; // + share of attack and magic attack
+}
+
 // Angela's protection: `picks` heroes the player marks (halos), plus one picked automatically (the
 // fielded hero with the most items, not already picked). Protected heroes deal more skill damage and get
 // a share of their max mana back every time they cast.
@@ -112,6 +118,8 @@ export interface CommanderPower {
   loveBeam?: LoveBeamPower; // Angela's card: protected heroes fire Love Beams
   enhance?: EnhancePower; // Freya (see freya.ts in game/)
   enhanceExtra?: { gold: number }; // Freya's card: more with every reward claimed
+  cable?: CableMarkPower; // Fanny: a hero mark
+  heroCap?: number; // Fanny's card: more heroes on the board
 }
 
 // Moscow: the Shadow Altar names a random hero of each of `costs`; all offered, a charge: `copies` more copies of

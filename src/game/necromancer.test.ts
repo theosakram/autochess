@@ -189,7 +189,7 @@ function fieldFoe(p: Player) {
 }
 
 describe('Plane Wanderer', () => {
-  test('six 5-gold variants, one per role: Fighter, Deadeye, Hunter, Dauntless, Stargazer, Weapon Master', () => {
+  test('eight 5-gold variants, one per role: Fighter, Deadeye, Hunter, Dauntless, Stargazer, Weapon Master, Mage, Defender', () => {
     expect(NECROMANCER.wanderers.map((id) => [UNIT_BY_ID[id].tier, ...UNIT_BY_ID[id].traits])).toEqual([
       [5, 'fighter'],
       [5, 'deadeye'],
@@ -197,10 +197,12 @@ describe('Plane Wanderer', () => {
       [5, 'dauntless'],
       [5, 'stargazer'],
       [5, 'weaponmaster'],
+      [5, 'mage'],
+      [5, 'defender'],
     ]);
   });
 
-  test('two different ones offered when the grave first appears; the pick is kept even after the Necromancers leave and come back', () => {
+  test('three different ones offered when the grave first appears; the pick is kept even after the Necromancers leave and come back', () => {
     const offered = new Set<string>();
     for (let seed = 1; seed <= 12; seed++) {
       const state = createGame(seed, [{ id: 'a', name: 'A', isBot: false }]);

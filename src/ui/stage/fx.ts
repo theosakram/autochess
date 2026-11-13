@@ -2,6 +2,7 @@ import { Container, Graphics } from 'pixi.js';
 import type { Placer } from './actor';
 import { lerp3, vec3, type Vec3 } from './camera';
 import { FORESHORTENING, WORLD, type StageLayout } from './layout';
+import { mix } from './theme';
 import type { TokenView } from './token';
 import type { Tweens } from './tween';
 
@@ -16,12 +17,10 @@ export interface FxContext {
   floor: Container; // on the board, under the pieces (shadows)
 }
 
-// How a flight bends: its peak height per cell travelled, and at most; and optionally how far it swings out
-// sideways at the midpoint (cells, + to the right of its heading), for volleys that fan out and curve in.
+// How high a flight arcs: its peak per cell travelled, and at most.
 export interface Arc {
   perCell: number;
   max: number;
-  swerve?: number;
 }
 const LOB: Arc = { perCell: 0.22, max: 1.2 }; // skill orbs, lobbed
 const ARROW_ARC: Arc = { perCell: 0.08, max: 0.4 }; // arrows fly nearly flat
@@ -37,16 +36,8 @@ export interface Part {
 // Flies `parts` from `from` to `to` (world points) over `ms` along an arc, a shadow of `shadowRadius` cells sliding
 // on the floor under the head. With `orient`, the head turns to point where it's going. `onLand` runs on arrival.
 export function flight(fx: FxContext, parts: Part[], from: Vec3, to: Vec3, ms: number, arc: Arc, shadowRadius: number, orient: boolean, onLand?: () => void): void {
-  const [dx, dz] = [to.x - from.x, to.z - from.z];
-  const length = Math.hypot(dx, dz);
-  const peak = Math.min(arc.max, length * arc.perCell);
-  // Sideways: perpendicular to the heading on the floor (right of it for a positive swerve).
-  const [sx, sz] = length && arc.swerve ? [(-dz / length) * arc.swerve, (dx / length) * arc.swerve] : [0, 0];
-  const ground = (k: number) => {
-    const p = lerp3(from, to, k);
-    const out = Math.sin(Math.PI * k);
-    return vec3(p.x + sx * out, p.y, p.z + sz * out);
-  };
+  const peak = Math.min(arc.max, Math.hypot(to.x - from.x, to.z - from.z) * arc.perCell);
+  const ground = (k: number) => lerp3(from, to, k);
   const path = (k: number) => {
     const p = ground(k);
     return vec3(p.x, p.y + Math.sin(Math.PI * k) * peak, p.z);
@@ -116,12 +107,29 @@ function bolt(unit: number, color: number): Part[] {
   return [{ sprite: head, lag: 0 }, ...trail];
 }
 
-export type ShotLook = 'arrow' | 'bolt';
+// A comet: a rhombus pointing along +x, white-edged, trailing a tail that fades from pale to deep violet.
+const COMET_TRAIL = Array.from({ length: 7 }, (_, i) => ({ lag: 0.03 * (i + 1), alpha: 0.7 - i * 0.09, size: 0.85 - i * 0.1 }));
+function comet(unit: number, color: number): Part[] {
+  const [l, w] = [unit * 0.13, unit * 0.065];
+  const head = new Graphics()
+    .poly([l * 1.4, 0, 0, -w * 1.5, -l * 1.4, 0, 0, w * 1.5])
+    .fill({ color, alpha: 0.35 })
+    .poly([l, 0, 0, -w, -l, 0, 0, w])
+    .fill(mix(color, 0xffffff, 0.35))
+    .stroke({ width: 1.5, color: 0xffffff, alpha: 0.9 });
+  const trail = COMET_TRAIL.map(({ lag, alpha, size }, i) => ({
+    sprite: new Graphics().circle(0, 0, w * size).fill({ color: mix(color, 0xffffff, 0.4 - i * 0.06), alpha }),
+    lag,
+  }));
+  return [{ sprite: head, lag: 0 }, ...trail];
+}
+
+export type ShotLook = 'arrow' | 'bolt' | 'comet';
 
 // A ranged unit's basic attack in flight, `from` its shield to `to` its target's; bursts on arrival, then `onLand`.
 export function fireShot(fx: FxContext, look: ShotLook, from: Vec3, to: Vec3, color: number, onLand: () => void): void {
-  const parts = look === 'arrow' ? [{ sprite: arrow(fx.L.unit, color) as Container, lag: 0 }] : bolt(fx.L.unit, color);
-  flight(fx, parts, from, to, shotMs(from, to), look === 'arrow' ? ARROW_ARC : BOLT_ARC, 0.07, look === 'arrow', () => {
+  const parts = look === 'arrow' ? [{ sprite: arrow(fx.L.unit, color) as Container, lag: 0 }] : look === 'comet' ? comet(fx.L.unit, color) : bolt(fx.L.unit, color);
+  flight(fx, parts, from, to, shotMs(from, to), look === 'arrow' ? ARROW_ARC : BOLT_ARC, 0.07, look !== 'bolt', () => {
     impact(fx, to, color);
     onLand();
   });
@@ -155,7 +163,7 @@ export const SLASHES: Record<string, { radius: number; sweep: number }> = {
 };
 
 // A half-moon facing +x: its outer edge an arc of `radius`, thickest (`thickness`) in the middle and sharp at the tips.
-function crescent(radius: number, thickness: number, color: number, alpha: number): Graphics {
+export function crescent(radius: number, thickness: number, color: number, alpha: number): Graphics {
   const spread = Math.PI * 0.42;
   const steps = 24;
   const points: number[] = [];
@@ -199,15 +207,32 @@ export function sweepSlash(fx: FxContext, from: Vec3, to: Vec3, look: { radius: 
 }
 
 const ORBIT_RADIUS = 0.62; // in cells
-const ORBIT_ORB = 0.07;
+const ORBIT_ORB = 0.11; // a shuriken's point-to-centre
+const SHURIKEN_SPIN = 3; // its own spins per turn round the ring
+
+// A four-pointed throwing star with a hole in the middle, in `color` with a pale edge.
+function shuriken(r: number, color: number): Graphics {
+  const points: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    const d = i % 2 ? r * 0.32 : r;
+    points.push(Math.cos(a) * d, Math.sin(a) * d);
+  }
+  return new Graphics()
+    .poly(points)
+    .fill(color)
+    .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
+    .circle(0, 0, r * 0.14)
+    .fill(0x1a1a24);
+}
 const ORBIT_FAR_ALPHA = 0.55; // orbs on the far side of the circle are dimmer, so the ring reads as round
 
-// `count` orbs circling a piece's shield flat (a ring around it, not a wheel), `turns` times over `ms`.
+// `count` spinning shurikens circling a piece's shield flat (a ring around it, not a wheel), `turns` times over `ms`.
 export function orbit(fx: FxContext, owner: TokenView, count: number, color: number, ms: number, turns: number): void {
   const { L } = fx;
   const ring = new Container();
   const r = L.unit * ORBIT_RADIUS;
-  for (let j = 0; j < count; j++) ring.addChild(new Graphics().circle(0, 0, L.unit * ORBIT_ORB).fill(color).stroke({ width: 1, color: 0xffffff, alpha: 0.6 }));
+  for (let j = 0; j < count; j++) ring.addChild(shuriken(L.unit * ORBIT_ORB, color));
   // Above the pieces so neighbours don't cover it; it follows the shield (and its depth) each frame.
   fx.air.addChild(ring);
   const step = (k: number) => {
@@ -218,6 +243,7 @@ export function orbit(fx: FxContext, owner: TokenView, count: number, color: num
     ring.children.forEach((orb, j) => {
       const a = k * Math.PI * 2 * turns + (j / count) * Math.PI * 2;
       orb.position.set(Math.cos(a) * r, Math.sin(a) * r * FORESHORTENING.floor);
+      orb.rotation = a * SHURIKEN_SPIN;
       orb.alpha = Math.sin(a) < 0 ? ORBIT_FAR_ALPHA : 1;
     });
     ring.alpha = k > 0.9 ? (1 - k) * 10 : 1;

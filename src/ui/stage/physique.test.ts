@@ -22,12 +22,13 @@ describe('physique', () => {
     expect(PLINTHS.melee.height).toBeGreaterThan(PLINTHS.ranged.height);
   });
 
-  test('melee swings, ranged shoot arrows or (magic) bolts', () => {
+  test('melee swings, ranged shoot arrows or (magic) bolts; Melina shoots comets', () => {
     for (const def of UNITS) {
       const look = attackLook(def);
-      if (def.range <= 1) expect(look).toBe('swing');
+      if (def.id === 'melina') expect(look).toBe('comet');
+      else if (def.range <= 1) expect(look).toBe('swing');
       else expect(look).toBe(def.attackType === 'magic' ? 'bolt' : 'arrow');
     }
-    expect(new Set(UNITS.map(attackLook))).toEqual(new Set(['swing', 'arrow', 'bolt']));
+    expect(new Set(UNITS.map(attackLook))).toEqual(new Set(['swing', 'arrow', 'bolt', 'comet']));
   });
 });

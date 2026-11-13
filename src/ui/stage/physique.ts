@@ -18,9 +18,10 @@ export const PLINTHS: Record<Physique, { radius: number; height: number }> = {
 };
 
 // How its basic attack looks: melee swings (the piece leans in); ranged fire an arrow, or a bolt if they hit with magic.
-export type AttackLook = 'swing' | 'arrow' | 'bolt';
+export type AttackLook = 'swing' | 'arrow' | 'bolt' | 'comet';
 
 export function attackLook(def: UnitDef): AttackLook {
+  if (def.id === 'melina') return 'comet'; // a violet rhombus with a comet tail
   if (def.range <= 1) return 'swing';
   return def.attackType === 'magic' ? 'bolt' : 'arrow';
 }

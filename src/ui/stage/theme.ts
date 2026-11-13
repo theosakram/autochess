@@ -17,6 +17,7 @@ export const COLORS = {
   crit: 0xff3b3b,
   spell: 0x8fb8ff,
   arrow: 0xf3e6c8, // a physical ranged attack's arrow (magic ones fly as spell-coloured bolts)
+  comet: 0xa66bff, // Melina's violet: his comet shots and the crescent moon of his cast
   selected: 0xffffff,
   leader: 0xffd76a, // the glow around a unit that leads a trait (Astral's Sovereign)
 };
@@ -134,6 +135,8 @@ export const EFFECT_COLORS: Record<string, number> = {
   lovebeam: 0xff6fb5,
   partythrow: 0xffd23f,
   fatethread: 0xc77dff,
+  southerntide: 0x2fd6a0, // Roro's sea green
+  sumpahpalapa: 0xffc94a, // Gadjah Mada's Majapahit gold
   fatelink: 0xc77dff,
   stalkersmark: 0xff5a36,
   stalkersknife: 0xff5a36,

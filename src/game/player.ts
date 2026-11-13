@@ -1,5 +1,6 @@
 import { baseReward, GOLD_PER_XP, INTEREST_PER_10, LOSE_STREAK_BONUS, MAX_INTEREST, MAX_LEVEL, WIN_STREAK_BONUS, XP_TO_LEVEL } from './config';
 import { heroCapBonusOf, interestCapOf, levelRefreshesOf, xpCutOf } from './powerCards';
+import { markedUid, powersOf } from './commanders';
 import type { Player } from './types';
 import { UNIT_BY_ID } from './units';
 
@@ -7,17 +8,20 @@ export function isAlive(p: Player): boolean {
   return p.hp > 0;
 }
 
-// Units counting toward the board limit (some, like the Plane Wanderer, take no slot).
+// Whether a fielded unit takes no slot: a free-slot unit (the Plane Wanderer), or Fanny's cabled hero.
+const takesNoSlot = (p: Player, u: { uid: number; defId: string }) => !!UNIT_BY_ID[u.defId].freeSlot || u.uid === markedUid(p, 'cable');
+
+// Units counting toward the board limit.
 export function boardCount(p: Player): number {
-  return p.board.filter((u) => u && !UNIT_BY_ID[u.defId].freeSlot).length;
+  return p.board.filter((u) => u && !takesNoSlot(p, u)).length;
 }
 
 // Fielded units that take no slot.
 // Commander pieces (the Divine Beast) aren't units, so they're not counted here either.
-export const freeSlotCount = (p: Player) => p.board.filter((u) => u && UNIT_BY_ID[u.defId].freeSlot && !UNIT_BY_ID[u.defId].piece).length;
+export const freeSlotCount = (p: Player) => p.board.filter((u) => u && takesNoSlot(p, u) && !UNIT_BY_ID[u.defId].piece).length;
 
-// How many heroes the player may field: their level, plus Party's Opening and Box round capacity.
-export const heroCapOf = (p: Player) => p.level + heroCapBonusOf(p) + (p.boxCap ?? 0);
+// How many heroes the player may field: their level, plus Party's Opening, Box round and Fanny's card capacity.
+export const heroCapOf = (p: Player) => p.level + heroCapBonusOf(p) + (p.boxCap ?? 0) + (powersOf(p).heroCap ?? 0);
 
 // The highest level the player can reach (Territory Agreement caps it).
 export const levelCapOf = (p: Player) => Math.min(MAX_LEVEL, p.levelCap ?? MAX_LEVEL);
