@@ -9,7 +9,6 @@ export const SCAVENGER = {
 export const scavenger: TraitDef = {
   id: 'scavenger',
   name: 'Scavenger',
-  icon: '🦝',
   kind: 'role',
   breakpoints: [2, 3],
   desc: 'Each round, after the shop refreshes, take the {pick} unit in your shop for free and gain {gold} gold.',

@@ -1,15 +1,17 @@
 import { EQUIPMENT, ITEMS } from '../items';
 import { BOARD_COLS, BOARD_ROWS, CARD_OFFER_SIZE } from '../config';
 import { nextInt, shuffle } from '../rng';
-import type { GameState, Loc, Player } from '../types';
+import type { GameState, Loc, Player, Unit } from '../types';
 import { UNIT_BY_ID } from '../units';
 import { addXp } from '../player';
 import { checkChestTriggers, spendFortunes } from '../powerCards';
 import { payEcho } from '../essence';
+import { summonAltars } from '../demonAltar';
 import { alice } from './alice';
 import { amon } from './amon';
 import { angela } from './angela';
 import { cyclops } from './cyclops';
+import { dracula } from './dracula';
 import { dyroth } from './dyroth';
 import { guiness } from './guiness';
 import { fanny } from './fanny';
@@ -18,6 +20,7 @@ import { johnson } from './johnson';
 import { kaela } from './kaela';
 import { kagura } from './kagura';
 import { kenzo } from './kenzo';
+import { lance } from './lance';
 import { lukas } from './lukas';
 import { lunox } from './lunox';
 import { luoyi } from './luoyi';
@@ -32,15 +35,17 @@ import { zhuyong } from './zhuyong';
 import { aurora } from './aurora';
 import { harley } from './harley';
 import { moscow } from './moscow';
+import { val } from './val';
 import { vex } from './vex';
 import type { BeastPower, CommanderDef, CommanderPower } from './types';
 import type { Term } from './terms';
 
-export type { DuelPower, AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TreasurePower, FrostPower, IdlePrizePower, TierShopPower, RitualPower, LadderPower, TwilightPower, WardPower } from './types';
+export type { DemonAltarPower, ScoutPower, DuelPower, AltarPower, BeastPower, BloodPower, BoostPower, CommanderDef, EnhancePower, CommanderPower, EchoPower, EssencePower, HurtGoldPower, IceArrowPower, JohnniePower, LoveBeamPower, MirrorBarPower, RallyPower, StarGoldPower, SurvivorGoldPower, TrovePower, ProtectPower, TreasurePower, FrostPower, IdlePrizePower, TierShopPower, RitualPower, LadderPower, TwilightPower, WardPower } from './types';
 export { ALICE } from './alice';
 export { AMON } from './amon';
 export { ANGELA } from './angela';
 export { CYCLOPS } from './cyclops';
+export { DRACULA } from './dracula';
 export { DYROTH } from './dyroth';
 export { GUINESS } from './guiness';
 export { FANNY } from './fanny';
@@ -49,6 +54,7 @@ export { JOHNSON } from './johnson';
 export { KAELA } from './kaela';
 export { KAGURA } from './kagura';
 export { KENZO } from './kenzo';
+export { LANCE } from './lance';
 export { LUKAS } from './lukas';
 export { LUNOX } from './lunox';
 export { LUO_YI } from './luoyi';
@@ -63,10 +69,11 @@ export { ZHU_YONG } from './zhuyong';
 export { AURORA } from './aurora';
 export { HARLEY } from './harley';
 export { MOSCOW } from './moscow';
+export { VAL } from './val';
 export { VEX } from './vex';
 export { term, type Term } from './terms';
 
-export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow, vex, fanny].map((c) => [c.id, c]));
+export const COMMANDERS: Record<string, CommanderDef> = Object.fromEntries([lukas, kagura, angela, kenzo, nana, kaela, ruby, dyroth, lunox, miya, alice, luoyi, johnson, amon, freya, cyclops, guiness, minos, katarina, lung, pacquiao, zhuyong, aurora, harley, moscow, vex, fanny, lance, val, dracula].map((c) => [c.id, c]));
 
 // Every commander's glossary terms, by id (see terms.ts).
 export const TERMS: Record<string, Term> = Object.assign({}, ...Object.values(COMMANDERS).map((c) => c.terms ?? {}));
@@ -202,6 +209,7 @@ export function payCard(state: GameState, p: Player, cardId: string): void {
   grantTwilight(p);
   // Luo Yi's card: its first copy.
   payEcho(state, p);
+  summonAltars(state, p); // Dracula's card
 }
 
 // Hands over what a commander's innate power gives once, when it's picked (Ruby's Cloak and Scythe).
@@ -212,6 +220,7 @@ export function payCommander(state: GameState, p: Player): void {
   if (innate.startEnhancers) p.enhancers = (p.enhancers ?? 0) + innate.startEnhancers;
   // Lunox: the Twilight Blessing is his innate power, there from the start.
   grantTwilight(p);
+  summonAltars(state, p); // Dracula
 }
 
 // Lunox's Twilight Blessing, once a game, with its gold: handed out now, placed later.
@@ -285,6 +294,15 @@ export function pieceBlock(p: Player, defId: string, to: Loc): string | null {
     return `The ${UNIT_BY_ID[defId].name} can only stand on the back two rows`;
   }
   return null;
+}
+
+// Lung: why this board can't stand as it is, or null: a hero holds the Dueling Ring and something stands in its arena.
+export function arenaBlock(p: Player, board: (Unit | null)[] = p.board): string | null {
+  const duel = powersOf(p).duel;
+  if (!duel) return null;
+  const holder = board[duel.cell];
+  if (!holder || UNIT_BY_ID[holder.defId].piece || !board[duel.arena]) return null;
+  return "The Dueling Ring's arena tile stays clear while a hero holds the ring";
 }
 
 // Puts the beast on the board when a power grants one (back row, as central as it gets), and takes it

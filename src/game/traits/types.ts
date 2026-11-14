@@ -49,7 +49,6 @@ export type StackReward = { at: number } & ({ star: 1 | 2 | 3 } | { gold: number
 export interface TraitDef {
   id: string;
   name: string;
-  icon: string; // shown in the synergy panel; emoji until there's art
   kind: 'faction' | 'role';
   breakpoints: number[];
   // One sentence for every level, e.g. 'Skybringers deal +{amp} damage'. Each {key}
@@ -83,7 +82,7 @@ export interface TraitDef {
   // While active, the fielded member carrying the most items leads the trait (ties: higher star,
   // then higher tier, then first on the board). Its mods see `leader: true`. `count` lets more
   // than one member lead at a given level (default 1).
-  leader?: { title: string; icon: string; count?: (level: number) => number };
+  leader?: { title: string; count?: (level: number) => number };
   // A counter the player keeps all game. It shows up the first time the trait is active and only
   // grows while it's active: after each fight, and at the start of each round.
   stacks?: {

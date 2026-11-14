@@ -26,7 +26,6 @@ export const NECROMANCER = {
 export const necromancer: TraitDef = {
   id: 'necromancer',
   name: 'Necromancer',
-  icon: '⚰️',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   // Short: the grave's reward milestones are listed under the description (see stacks.rewards).

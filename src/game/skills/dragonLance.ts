@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Wan (3g Dragon Altar / Deadeye). Per star, index 0 = 1★.
 export const DRAGON_LANCE = {
-  atk: [0.95, 0.95, 1.5], // of attack, physical: the enhanced attack, and the blast around its target
+  atk: [1.2, 1.2, 1.9], // of attack, physical: the enhanced attack, and the blast around its target
 };
 
 export const dragonLance: SkillDef = {

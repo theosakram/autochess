@@ -75,7 +75,8 @@ export interface SkillApi {
   counterAttack(f: SkillFighter, target: SkillFighter): void;
   // `f` makes a full basic attack on `target` right now, at any range, dealing `mult` x its usual damage:
   // crits, hit-again, lifesteal, mana and every item on-hit effect work as for any attack.
-  attack(f: SkillFighter, target: SkillFighter, mult: number): void;
+  // mana: false for attacks a skill throws in (punches, counters) that shouldn't refill the bar.
+  attack(f: SkillFighter, target: SkillFighter, mult: number, mana?: boolean): void;
   // Rooted: it never walks. No basic: it never basic-attacks, and casts (at any range) once its mana is full.
   stance(f: SkillFighter, s: { rooted?: boolean; noBasic?: boolean }): void;
   // No stuns, taunts or enemy displacement for the next `seconds` (never shortens immunity it has).
@@ -93,6 +94,8 @@ export interface SkillApi {
   // Sets cells on fire for `seconds`: every 0.5s, each enemy of `source` standing in one takes
   // half of `perSecond` as a skill hit of `type`. Re-burning a cell refreshes it.
   burn(source: SkillFighter, cells: Point[], perSecond: number, type: DamageType, seconds: number, effect: string): void;
+  // Purely cosmetic: lights up cells for `seconds` (e.g. Fanny's sonic walls); no damage.
+  showGround(cells: Point[], seconds: number, effect: string): void;
   // Purely cosmetic: tells the UI to draw `count` orbs circling `f` for `seconds`.
   showOrbit(f: SkillFighter, count: number, seconds: number, effect: string): void;
   // Purely cosmetic: `f` leaps in an arc to `to` over `seconds` (it doesn't move; dashTo does that).
@@ -128,11 +131,16 @@ export interface SkillDef {
   executeBelow?: number[];
   // A passive: runs when an enemy's basic attack hits this unit (and it survives). Not for counters.
   onAttacked?(api: SkillApi, caster: SkillFighter, attacker: SkillFighter): void;
+  // A passive: runs after this unit takes damage from an enemy, any source (and it survives), once per hit.
+  // Queued until the hit is done; never for damage dealt while a counter is resolving.
+  onDamaged?(api: SkillApi, caster: SkillFighter, dealer: SkillFighter): void;
   // A passive: runs after each of the unit's own basic attacks (the target may have died to it).
   onBasicHit?(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
   // A passive: runs once after each of the unit's whole basic attacks, Fighter's hit-again included
   // (counters too; not enhanced basic hits from skills).
   afterAttack?(api: SkillApi, caster: SkillFighter, target: SkillFighter): void;
+  // No mana while this returns true: e.g. a timed stance still running, so a recast doesn't eat an attack just to refresh it.
+  holdsMana?(api: SkillApi, caster: SkillFighter): boolean;
   // Replaces a whole basic attack (hit-again and all) when it returns true: e.g. a skill's charged attacks.
   enhancedAttack?(api: SkillApi, caster: SkillFighter, target: SkillFighter): boolean;
   // A passive: each of its basic attacks is `shots` basic hits of `power` x a normal one (each sets off

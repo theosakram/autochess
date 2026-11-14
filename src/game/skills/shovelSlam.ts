@@ -6,7 +6,7 @@ import type { SkillDef, SkillFighter } from './types';
 export const SHOVEL_SLAM = {
   slams: 3,
   every: 0.4, // seconds between slams
-  atk: [2, 2, 10], // of attack, physical, per slam to each enemy in the row
+  atk: [1.7, 1.7, 7], // of attack, physical, per slam to each enemy in the row
   stun: 0.5, // seconds, per slam
 };
 

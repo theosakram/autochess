@@ -10,7 +10,6 @@ export const CULT_OF_FIRE = {
 export const cultOfFire: TraitDef = {
   id: 'cultoffire',
   name: 'Cult of Fire',
-  icon: '🔥',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   desc:

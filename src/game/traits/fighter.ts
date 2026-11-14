@@ -10,7 +10,6 @@ export const FIGHTER = {
 export const fighter: TraitDef = {
   id: 'fighter',
   name: 'Fighter',
-  icon: '🥊',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: 'Fighters deal +{amp} basic attack damage and have {again} chance to hit again.',

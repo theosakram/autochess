@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Luo Yi (2g Dragon Altar / Stargazer). Per star, index 0 = 1★.
 export const ALTAR_SPARK = {
-  ap: [2.15, 2.25, 2.95], // of magic attack, magic, to the target and each enemy in the cone behind it
+  ap: [2.7, 2.8, 3.7], // of magic attack, magic, to the target and each enemy in the cone behind it
   depth: 2, // the cone: 3 cells wide just behind the target, 5 wide behind that
 };
 

@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Gadjah Mada (Plane Wanderer, Defender): the Palapa Oath, to unite the archipelago. Per star, index 0 = 1★.
 export const SUMPAH_PALAPA = {
-  shield: [0.08, 0.1, 0.2], // of his max hp, a shield on every ally
+  shield: [0.13, 0.16, 0.2], // of his max hp, a shield on every ally
   self: 2, // his own shield, this many times theirs
   seconds: 4, // how long the shields last
   taunt: 2, // seconds, every enemy around him

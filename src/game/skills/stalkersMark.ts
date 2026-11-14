@@ -10,8 +10,8 @@ export const STALKERS_MARK = {
   // knife turns and homes in on his target. 3★ throws twice as many, as sharp shards.
   knives: [8, 8, 16],
   perEnemy: [1, 1, 2],
-  out: [0.8, 0.95, 6], // of attack, physical, to each enemy a knife hits on the way out
-  home: [0.55, 0.6, 7], // of attack, physical, to his target per knife homing in
+  out: [1.1, 1.3, 6], // of attack, physical, to each enemy a knife hits on the way out
+  home: [0.75, 0.85, 7], // of attack, physical, to his target per knife homing in
   throw: 0.25, // seconds the knives fly out
   homeAfter: 0.4, // seconds after the throw that they turn and home in
   homeFlight: 0.3, // seconds they take to home in

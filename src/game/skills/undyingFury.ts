@@ -12,8 +12,9 @@ export const UNDYING_FURY = {
   slam: [0.5, 0.5, 16.5], // of attack, physical, to each enemy around where it lands (at 3 stars, every enemy)
   seconds: 4, // then rages this long
   attackSpeed: [1.1, 1.1, 2],
-  every: 0.5,
-  aura: [0.55, 0.6, 2.35], // of attack, physical, per tick to each enemy around it
+  every: 0.5, // seconds between aura ticks
+  aura: [0.55, 0.6, 2.35], // of attack, physical, per tick to each enemy around it (at 3 stars, every enemy)
+  centerEvery: 0.25, // ...and at 3 stars it ticks this often
   centerStar: 3,
 };
 
@@ -25,7 +26,7 @@ export const undyingFury: SkillDef = {
     'Active: leaps onto the spot with the most enemies around it and slams: every enemy around it takes {slam} of attack as physical damage. ' +
     `Then it rages for ${UNDYING_FURY.seconds}s: +{as} attack speed, and every ${UNDYING_FURY.every}s each enemy around it ` +
     `takes {aura} of attack as physical damage. At ${UNDYING_FURY.centerStar}★ it leaps to the middle of the board instead, ` +
-    'and the slam hits every enemy on the board.',
+    `the slam hits every enemy on the board, and the rage strikes every enemy on the board every ${UNDYING_FURY.centerEvery}s.`,
   damage: { empowered: 'physical', slam: 'physical', aura: 'physical' },
   values: () => ({
     empowered: UNDYING_FURY.empowered.map(pct),
@@ -59,8 +60,9 @@ export const undyingFury: SkillDef = {
     api.buff(caster, [{ stat: 'attackSpeed', add: U.attackSpeed[i] }], U.seconds, 'undyingfury', caster);
     const tick = () => {
       const raw = caster.stats.atk * U.aura[i];
-      for (const e of enemiesOn(api, caster, around(caster))) if (e.hp > 0) api.hit(caster, e, raw, 'physical', 'undyingfuryaura');
+      for (const e of center ? api.enemiesOf(caster) : enemiesOn(api, caster, around(caster))) if (e.hp > 0) api.hit(caster, e, raw, 'physical', 'undyingfuryaura');
     };
-    api.repeat(caster, U.every, Math.round(U.seconds / U.every), tick);
+    const every = center ? U.centerEvery : U.every;
+    api.repeat(caster, every, Math.round(U.seconds / every), tick);
   },
 };

@@ -17,7 +17,6 @@ const spectres = () => UNITS.filter((u) => u.traits.includes('spectre'));
 export const spectre: TraitDef = {
   id: 'spectre',
   name: 'Spectre',
-  icon: '👻',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   desc:

@@ -1,15 +1,12 @@
 import { pct } from '../traits/format';
 import type { SkillDef } from './types';
 
-// Zhizong (4g Skybringer / Weapon Master). Per star, index 0 = 1★.
+// Zhizong (4g Skybringer / Weapon Master). Per star, index 0 = 1★. No passive: on a Weapon Master board his
+// every-3rd-attack Masterstroke is the trait's, like any member's.
 export const SKY_REAP = {
-  // Passive: after `plain` plain attacks, the next one is empowered.
-  plain: 3,
-  frenzied: 2, // while the active lasts
-  empowered: [0.8, 0.8, 2.4], // of attack, physical, added to that attack
-  heal: [0.4, 0.4, 1.45], // of attack, healed on that attack
-  attackSpeed: 0.6, // active
-  seconds: 6, // active
+  damage: [0.5, 1.5, 4], // basic attack damage added while it lasts: x1.5 / x2.5 / x5 (3★ 4g must beat 2★ 5g)
+  attackSpeed: 0.6,
+  seconds: 6,
 };
 
 const EFFECT = 'skyreap';
@@ -17,32 +14,18 @@ const EFFECT = 'skyreap';
 export const skyReap: SkillDef = {
   id: 'skyreap',
   name: 'Sky Reap',
-  desc:
-    `Passive: every ${SKY_REAP.plain + 1}th attack is empowered: it deals {empowered} of attack more and heals it for {heal} of its attack. ` +
-    `Active: for ${SKY_REAP.seconds}s, gains +${pct(SKY_REAP.attackSpeed)} attack speed, and every ${SKY_REAP.frenzied + 1}rd attack is empowered.`,
-  damage: { empowered: 'physical' },
-  values: () => ({ empowered: SKY_REAP.empowered.map(pct), heal: SKY_REAP.heal.map(pct) }),
-  // The empowered attack: extra damage and a heal on each of its hits (a Fighter hit-again included).
-  onBasicHit(api, caster, target) {
-    if (!caster.skill.empowered) return;
-    const i = caster.star - 1;
-    if (target.hp > 0) api.basicHit(caster, target, caster.stats.atk * SKY_REAP.empowered[i], 'physical', EFFECT);
-    api.heal(caster, caster.stats.atk * SKY_REAP.heal[i]);
-  },
-  // Counts whole attacks: `plain` plain ones (fewer while the active lasts), then an empowered one.
-  afterAttack(api, caster) {
-    if (caster.skill.empowered) {
-      caster.skill.empowered = 0;
-      caster.skill.count = 0;
-      return;
-    }
-    caster.skill.count = (caster.skill.count ?? 0) + 1;
-    const plain = api.hasBuff(caster, EFFECT) ? SKY_REAP.frenzied : SKY_REAP.plain;
-    if (caster.skill.count >= plain) caster.skill.empowered = 1;
-  },
+  desc: `For ${SKY_REAP.seconds}s, gains +${pct(SKY_REAP.attackSpeed)} attack speed and his basic attacks deal {mult} damage.`,
+  values: () => ({ mult: SKY_REAP.damage.map((d) => `${1 + d}x`) }),
   cast(api, caster) {
-    api.buff(caster, [{ stat: 'attackSpeed', add: SKY_REAP.attackSpeed }], SKY_REAP.seconds, EFFECT, caster);
-    // Already two plain attacks in: the next one is empowered right away.
-    if ((caster.skill.count ?? 0) >= SKY_REAP.frenzied) caster.skill.empowered = 1;
+    api.buff(
+      caster,
+      [
+        { stat: 'attackSpeed', add: SKY_REAP.attackSpeed },
+        { stat: 'basicAmp', add: SKY_REAP.damage[caster.star - 1] },
+      ],
+      SKY_REAP.seconds,
+      EFFECT,
+      caster,
+    );
   },
 };

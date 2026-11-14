@@ -12,6 +12,28 @@ export const COMMANDER_CARD_SVGS: Record<string, string> = {
       line('M31 17l5 28', '#8a1f2b', 4) +
       line('M41 20l3 23', '#8a1f2b', 4),
   ),
+  // Dracula, Twin Altars: two stone altars, a drop of blood over each.
+  dracula: svg(
+    `<g fill="#5a5560"><rect x="4" y="50" width="24" height="8" rx="1"/><rect x="36" y="50" width="24" height="8" rx="1"/>` +
+      `<rect x="6" y="27" width="20" height="5" rx="1"/><rect x="38" y="27" width="20" height="5" rx="1"/></g>` +
+      `<g fill="#8a8494"><rect x="10" y="32" width="12" height="18"/><rect x="42" y="32" width="12" height="18"/></g>` +
+      `<path d="M16 5c-4 6-6 9-6 12a6 6 0 0 0 12 0c0-3-2-6-6-12zM48 5c-4 6-6 9-6 12a6 6 0 0 0 12 0c0-3-2-6-6-12z" fill="#e0394c"/>` +
+      `<path d="M13 16a3 3 0 0 0 2 3M45 16a3 3 0 0 0 2 3" fill="none" stroke="#ff9aa6" stroke-width="1.5"/>`,
+  ),
+  // Lance, Knight's Pay: a stack of gold coins under two level-up chevrons.
+  lance: svg(
+    `<g fill="#f2c531"><ellipse cx="24" cy="55" rx="15" ry="5"/><ellipse cx="24" cy="49" rx="15" ry="5"/>` +
+      `<ellipse cx="24" cy="43" rx="15" ry="5"/></g><ellipse cx="24" cy="37" rx="15" ry="5" fill="#ffe27a"/>` +
+      `<path d="M19 37h10" stroke="#c9a227" stroke-width="2"/>` +
+      line('M38 26l10-10 10 10', '#5fe08a', 4) +
+      line('M38 40l10-10 10 10', '#5fe08a', 4),
+  ),
+  // Val, Recruiting Bonus: a medal on its ribbon.
+  val: svg(
+    `<path d="M16 3h12l8 24H24z" fill="#3a7bd5"/><path d="M48 3H36l-8 24h12z" fill="#e0394c"/>` +
+      `<circle cx="32" cy="42" r="17" fill="#f2c531"/><circle cx="32" cy="42" r="12" fill="#ffe27a"/>` +
+      `<polygon points="${burst(32, 42, 5, 9, 4)}" fill="#c9a227"/>`,
+  ),
   // Kagura, Umbrella Dance: an open paper umbrella.
   kagura: svg(
     line('M32 30v20a5 5 0 0 1-10 0', '#6b3b1f', 3) +

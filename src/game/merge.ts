@@ -79,6 +79,7 @@ export function absorb(p: Player, keeper: Unit, loc: Loc): void {
   if (gone.shortfall) keeper.shortfall = (keeper.shortfall ?? 0) + gone.shortfall;
   if (gone.merc) keeper.merc = true; // Rogue Mercenary's buff stays with the hero
   if (gone.signature) keeper.signature = true; // so does a hero card's
+  if (gone.duelWins) keeper.duelWins = Math.max(keeper.duelWins ?? 0, gone.duelWins); // Lung: the best record of the copies
   for (const it of p.items) {
     if (it.holder !== gone.uid) continue;
     if (p.items.filter((i) => i.holder === keeper.uid).length < MAX_ITEMS_PER_UNIT) it.holder = keeper.uid;

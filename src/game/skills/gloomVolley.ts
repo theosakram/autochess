@@ -5,7 +5,7 @@ import type { SkillDef, SkillFighter } from './types';
 export const GLOOM_VOLLEY = {
   shots: 5,
   every: 0.15, // seconds between shots
-  shot: [2, 2, 2.75], // of attack, each shot
+  shot: [1, 1, 1.4], // of attack, each shot
 };
 
 export const gloomVolley: SkillDef = {

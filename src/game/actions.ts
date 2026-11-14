@@ -4,11 +4,13 @@ import { pickJohnnie } from './johnnie';
 import { claimEnhance, setEnhance } from './freya';
 import { bless } from './twilight';
 import { GOLD_PER_XP, REROLL_COST, SHOP_SIZE } from './config';
-import { COMMANDERS, MARKS, markedUid, payCard, payCommander, pieceBlock, powersOf, rerollCard, type MarkKind } from './commanders';
+import { arenaBlock, COMMANDERS, MARKS, markedUid, payCard, payCommander, pieceBlock, powersOf, rerollCard, type MarkKind } from './commanders';
 import { equipBlock, openChest, takeOfferedItem } from './inventory';
 import { buyMistWare, equipMistOrb, unequipMistOrb } from './mistShop';
 import { cardRolls, openTrove, rollTrove } from './luckyDice';
 import { useFullHouse } from './tierShop';
+import { useScout } from './scout';
+import { activateAltar, type DemonAltarKey } from './demonAltar';
 import { payLadder, ritualOffer, useRitualCopy } from './ritual';
 import { useMirror } from './mirror';
 import { DEATH_ORACLE, refreshXp, pickFactionOrb, pickPowerCard, rerollPowerCard, rollFreeRefresh } from './powerCards';
@@ -35,6 +37,8 @@ export type Action =
   | { type: 'levelUp' }
   | { type: 'toggleLock' }
   | { type: 'fullHouse'; tier: number }
+  | { type: 'demonAltar'; altar: DemonAltarKey; discard: number } // Dracula: the reward (index) to discard
+  | { type: 'scout'; unit: number } // Val: unit uid, the hero to scout by
   | { type: 'ritualOffer'; unit: number } // Moscow: offer a hero (uid) the Shadow Altar asks for
   | { type: 'ritualCopy'; unit: number } // Moscow: spend the Shadow charge on a hero (uid)
   | { type: 'buy'; slot: number }
@@ -236,6 +240,16 @@ function perform(state: GameState, p: Player, action: Action): Result {
       return why ? fail(why) : OK;
     }
 
+    case 'demonAltar': {
+      const why = activateAltar(state, p, action.altar, action.discard);
+      return why ? fail(why) : OK;
+    }
+
+    case 'scout': {
+      const why = useScout(state, p, action.unit);
+      return why ? fail(why) : OK;
+    }
+
     case 'toggleLock': {
       p.shopLocked = !p.shopLocked;
       return OK;
@@ -278,6 +292,13 @@ function perform(state: GameState, p: Player, action: Action): Result {
       // Past the level limit is fine: the board is trimmed when the fight starts (trimBoard).
       src[from.index] = other;
       dst[to.index] = unit;
+      // Lung: undone if it leaves something in the Dueling Ring's arena with a hero in the ring.
+      const arena = arenaBlock(p);
+      if (arena) {
+        dst[to.index] = other;
+        src[from.index] = unit;
+        return fail(arena);
+      }
       return OK;
     }
 

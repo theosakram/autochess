@@ -2,7 +2,7 @@ import type { SkillDef } from './types';
 
 // Uranus (1g Mistbender / Dauntless): a cheap shield to spam for Mist coins. Per star, index 0 = 1★.
 export const MIST_WARD = {
-  shield: [400, 650, 1500], // flat
+  shield: [400, 650, 2000], // flat
   seconds: 4,
 };
 

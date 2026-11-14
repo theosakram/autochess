@@ -7,6 +7,7 @@ import { TRAITS } from '../game/traits';
 import { UNIT_BY_ID } from '../game/units';
 import { portraitOf } from './portraits';
 import { itemIcon } from './itemIcons';
+import { traitBadgeHtml } from './traitBadges';
 
 // Damage dealt, damage taken and healing done by the viewer's side in one fight, filled in as playback
 // replays events. A summon's numbers count for its owner.
@@ -77,13 +78,13 @@ export function meterHtml(m: Meter | null, tab: MeterTab = 'dealt'): string {
   if (!m) return `<aside class="meter"><h3>${title}</h3>${tabs}<p class="meter-empty">Fight to see who carried.</p></aside>`;
   const unitRow = (id: number, attack: number, skill: number): Row => {
     const f = m.fight.result.fighters[id];
-    return { key: `u${id}`, label: `${portraitOf(f.defId)} ${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, attack, skill, dead: m.dead.has(id) };
+    return { key: `u${id}`, label: `<span data-emoji>${portraitOf(f.defId)}</span> ${UNIT_BY_ID[f.defId].name} ${'★'.repeat(f.star)}`, tier: UNIT_BY_ID[f.defId].tier, attack, skill, dead: m.dead.has(id) };
   };
   let rows: Row[];
   if (tab === 'dealt') {
     const traits = [...m.byTrait].map(([id, dmg]) => {
       const src = TRAITS[id] ?? ITEMS[id] ?? COMMANDER_EFFECTS[id];
-      return { key: id, label: `${ITEMS[id] && !TRAITS[id] ? itemIcon(id) : src.icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
+      return { key: id, label: `${TRAITS[id] ? traitBadgeHtml(id) : ITEMS[id] ? itemIcon(id) : COMMANDER_EFFECTS[id].icon} ${src.name}`, tier: 0, attack: 0, skill: dmg, dead: false };
     });
     rows = [...[...m.byUnit].map(([id, d]) => unitRow(id, d.attack, d.skill)), ...traits];
   } else if (tab === 'taken') {

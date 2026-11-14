@@ -1,3 +1,4 @@
+import { nextFloat } from './rng';
 import { altarStatus } from './altar';
 import { describe, expect, test } from 'bun:test';
 import { applyAction } from './actions';
@@ -25,16 +26,18 @@ import { simulateCombat, defenseMult } from './combat';
 import { BOARD_COLS, COMMANDER_CARD_ROUND, roundAt, WIN_GOLD } from './config';
 import { createGame, resolveCombat, startRound } from './game';
 import { cardRolls, payPrize, PRIZE_VALUES } from './luckyDice';
-import { boardCount, heroCapOf } from './player';
-import type { GameState, Player } from './types';
+import { addXp, boardCount, burnGold, heroCapOf, interestOf, roundIncome, xpToNext } from './player';
+import type { GameState, Player, Unit } from './types';
 import { openTreasure, raisedTier } from './treasure';
 import { offerPowerCards, powerPool } from './powerCards';
-import { AURORA, HARLEY, MOSCOW, ZHU_YONG } from './commanders';
+import { AURORA, HARLEY, LANCE, MOSCOW, VAL, ZHU_YONG } from './commanders';
 import { ritualLeft } from './ritual';
+import { ALTAR_REWARD_BY_ID, altarCharges } from './demonAltar';
 import { nextFullHouses } from './tierShop';
 import { shopPrice as priceAt } from './shop';
 import { POWER_CARD_ROUNDS } from './config';
 import { UNIT_BY_ID, UNITS } from './units';
+import { boardToGrid } from './grid';
 
 const SEEDS = [
   { id: 'you', name: 'You', isBot: false },
@@ -1773,10 +1776,50 @@ describe('Lung', () => {
     const stats = () => fieldStats(p, playerTraits(p));
     expect(stats().get(800)!.attackSpeed - stats().get(801)!.attackSpeed).toBeCloseTo(LUNG.duel.attackSpeed, 5);
     const atk = stats().get(800)!.atk;
-    p.duelWins = 5;
+    p.board[RING]!.duelWins = 5;
     expect(stats().get(800)!.atk / atk).toBeCloseTo(1 + 5 * LUNG.duel.perWin, 2);
-    p.duelWins = 40;
+    p.board[RING]!.duelWins = 40;
     expect(stats().get(800)!.atk / atk).toBeCloseTo(1 + 11 * LUNG.duel.perWin, 2);
+  });
+
+  test("a hero keeps its duel wins' bonus out of the ring (without the attack speed), and merging keeps the best record", () => {
+    const { p } = lungGame();
+    p.board[3] = { uid: 800, defId: 'minos', star: 1, duelWins: 3 };
+    p.board[4] = { uid: 801, defId: 'minos', star: 1 };
+    const stats = () => fieldStats(p, playerTraits(p));
+    expect(stats().get(800)!.atk / stats().get(801)!.atk).toBeCloseTo(1 + 3 * LUNG.duel.perWin, 2);
+    expect(stats().get(800)!.attackSpeed).toBeCloseTo(stats().get(801)!.attackSpeed, 5);
+    p.board[5] = { uid: 802, defId: 'minos', star: 1 };
+    mergeUnits(p, 'minos');
+    const merged = p.board.find((u) => u?.defId === 'minos')!;
+    expect(merged.star).toBe(2);
+    expect(merged.duelWins).toBe(3);
+  });
+
+  test('the ring is 1x2: with a hero in the ring, nothing can be moved into the arena tile, nor a hero into the ring past one', () => {
+    const { state, p } = lungGame();
+    expect(LUNG.duel.arena).toBe(RING - BOARD_COLS);
+    p.board[RING] = { uid: 800, defId: 'minos', star: 1 };
+    p.bench[0] = { uid: 801, defId: 'knight', star: 1 };
+    expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 0 }, to: { area: 'board', index: LUNG.duel.arena } }).ok).toBe(false);
+    expect(p.bench[0]?.uid).toBe(801);
+    // The ring empty, the arena tile is free to use; then a hero can't step into the ring.
+    expect(applyAction(state, p.id, { type: 'move', from: { area: 'board', index: RING }, to: { area: 'bench', index: 1 } }).ok).toBe(true);
+    expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 0 }, to: { area: 'board', index: LUNG.duel.arena } }).ok).toBe(true);
+    expect(applyAction(state, p.id, { type: 'move', from: { area: 'bench', index: 1 }, to: { area: 'board', index: RING } }).ok).toBe(false);
+    // Moving the arena's hero into the ring is fine: the arena ends up clear.
+    expect(applyAction(state, p.id, { type: 'move', from: { area: 'board', index: LUNG.duel.arena }, to: { area: 'board', index: RING } }).ok).toBe(true);
+  });
+
+  test('the duel enemy is dragged onto the arena tile', () => {
+    const { state, p, foe } = lungGame();
+    p.board[RING] = { uid: 800, defId: 'knight', star: 2 };
+    foe.board[20] = { uid: 901, defId: 'zhuxin', star: 1 };
+    const r = simulateCombat(state, p, foe, { traits: [false, false] });
+    const start = r.events.find((e) => e.type === 'effect' && e.effect === 'duel')!;
+    if (start.type !== 'effect') throw new Error();
+    const drag = r.events.find((e) => e.type === 'dash' && e.id === start.target && e.t === 0);
+    expect(drag).toMatchObject(boardToGrid(0, LUNG.duel.arena));
   });
 
   test('the duel: the farthest enemy is dragged next to the ring hero; basic attacks only, and nobody else touches them', () => {
@@ -1809,16 +1852,18 @@ describe('Lung', () => {
     }
   });
 
-  test('a duel won adds to the bonus; the enemy winning, or time running out, adds nothing', () => {
+  test("a duel won adds to the ring hero's own count; the enemy winning, or time running out, adds nothing", () => {
     const { p } = lungGame();
+    const hero: Unit = { uid: 800, defId: 'knight', star: 1 };
+    p.board[RING] = hero;
     const won = { events: [{ t: 5, type: 'effect', effect: 'duelWin', by: 1, target: 2, damage: 0, hp: 0 }], fighters: [{ id: 1, side: 0 }, { id: 2, side: 1 }] } as unknown as CombatResult;
     countDuels(p, won, 0);
-    expect(p.duelWins).toBe(1);
+    expect(hero.duelWins).toBe(1);
     countDuels(p, won, 1); // the other side's view: not theirs
-    expect(p.duelWins).toBe(1);
-    p.duelWins = 11;
+    expect(hero.duelWins).toBe(1);
+    hero.duelWins = 11;
     countDuels(p, won, 0);
-    expect(p.duelWins).toBe(11);
+    expect(hero.duelWins).toBe(11);
   });
 
   test('a real duel against a weak enemy ends in a logged win', () => {
@@ -2371,5 +2416,218 @@ describe('Alice Blood Pact: stats never drop as copies grow', () => {
         prev = { hp: s.hp, atk: s.atk, ap: s.ap };
       }
     }
+  });
+});
+
+describe('Lance', () => {
+  function lanceGame() {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) applyAction(state, p.id, { type: 'pickCommander', commander: 'lance' });
+    return state;
+  }
+
+  test('no interest, a stage bonus, and leftover gold burned into levels at round end', () => {
+    const state = lanceGame();
+    const p = state.players[0];
+    p.gold = 30;
+    p.streak = 0;
+    expect(interestOf(p, p.gold)).toBe(0);
+    expect(roundIncome(p, 1).bonus).toBe(LANCE.stageGold[0]);
+    expect(roundIncome(p, roundAt(2, 1)).bonus).toBe(LANCE.stageGold[1]);
+    expect(roundIncome(p, roundAt(5, 1)).bonus).toBe(LANCE.stageGold[2]);
+    const level = p.level;
+    const xp = p.xp;
+    burnGold(p);
+    expect(p.gold).toBe(0);
+    expect(p.level > level || p.xp > xp).toBe(true);
+  });
+
+  test('at the level cap, what is left stays', () => {
+    const state = lanceGame();
+    const p = state.players[0];
+    p.level = 10;
+    p.xp = 0;
+    p.gold = 17;
+    burnGold(p);
+    expect(p.gold).toBe(17);
+  });
+
+  test('a round start burns the gold, then pays base + streak + bonus, no interest', () => {
+    const state = lanceGame();
+    const p = state.players[0];
+    p.gold = 50;
+    p.streak = 0;
+    startRound(state);
+    expect(p.gold).toBe(roundIncome(p, state.round - 1).total);
+    expect(roundIncome(p, state.round - 1).interest).toBe(0);
+  });
+
+  test("the card pays from level 5, on Lance and on anyone else; the innate stays Lance's", () => {
+    const state = game();
+    const p = state.players[0];
+    p.cardOffer = ['lance'];
+    applyAction(state, p.id, { type: 'pickCard', card: 'lance' });
+    expect(powersOf(p).burnGold).toBeUndefined();
+    expect(powersOf(p).noInterest).toBeUndefined();
+    p.level = 4;
+    expect(roundIncome(p, 3).bonus).toBe(0);
+    p.level = 5;
+    expect(roundIncome(p, 3).bonus).toBe(LANCE.card.gold);
+    const l = lanceGame().players[0];
+    l.commanderCard = 'lance';
+    l.level = 5;
+    expect(roundIncome(l, 3).bonus).toBe(LANCE.stageGold[0] + LANCE.card.gold);
+  });
+});
+
+describe('Val', () => {
+  function valGame() {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) applyAction(state, p.id, { type: 'pickCommander', commander: 'val' });
+    return state;
+  }
+  const toLevel = (p: Player, level: number) => {
+    while (p.level < level) addXp(p, xpToNext(p)! - p.xp);
+  };
+
+  test('a Scout charge on reaching each of levels 5 to 10', () => {
+    const p = valGame().players[0];
+    toLevel(p, 4);
+    expect(p.scoutCharges ?? 0).toBe(0);
+    toLevel(p, 5);
+    expect(p.scoutCharges).toBe(1);
+    toLevel(p, 10);
+    expect(p.scoutCharges).toBe(VAL.scout.levels.length);
+  });
+
+  test('Scout fills the shop with heroes sharing a trait, and the next buy is free', () => {
+    const state = valGame();
+    const p = state.players[0];
+    p.scoutCharges = 1;
+    const hero = p.bench.find((u) => u)!;
+    const traits = UNIT_BY_ID[hero.defId].traits;
+    expect(applyAction(state, p.id, { type: 'scout', unit: hero.uid }).ok).toBe(true);
+    expect(p.scoutCharges).toBe(0);
+    for (const id of p.shop) expect(UNIT_BY_ID[id!].traits.some((t) => traits.includes(t))).toBe(true);
+    expect(shopPrice(p, 0)).toBe(0);
+    expect(applyAction(state, p.id, { type: 'scout', unit: hero.uid }).ok).toBe(false); // no charge left
+  });
+
+  test('a Scouted shop rolls the Scout odds, whatever the level: mostly 4- and 5-gold heroes', () => {
+    const costs: number[] = [];
+    for (let seed = 0; seed < 20; seed++) {
+      const state = valGame();
+      const p = state.players[0];
+      expect(p.level).toBeLessThan(5); // low level: its own odds would show no 5-gold at all
+      p.scoutCharges = 1;
+      const hero = p.bench.find((u) => u)!;
+      p.bench[p.bench.indexOf(hero)] = { ...hero, defId: 'melina' }; // Deadeye / Mooneater, cheap heroes plenty
+      for (let i = 0; i < seed; i++) nextFloat(state); // a different roll each time
+      expect(applyAction(state, p.id, { type: 'scout', unit: hero.uid }).ok).toBe(true);
+      costs.push(...p.shop.map((id) => UNIT_BY_ID[id!].tier));
+    }
+    const share = (pred: (c: number) => boolean) => costs.filter(pred).length / costs.length;
+    expect(share((c) => c >= 4)).toBeGreaterThan(0.6);
+    expect(share((c) => c === 5)).toBeGreaterThan(0.2);
+    expect(share((c) => c <= 2)).toBe(0);
+  });
+
+  test("the card on Val: every level up pays a free buy and gold, a round start's level included", () => {
+    const state = valGame();
+    const p = state.players[0];
+    p.commanderCard = 'val';
+    p.gold = 0;
+    addXp(p, xpToNext(p)! - p.xp);
+    expect(p.gold).toBe(VAL.card.gold);
+    expect(p.freeBuy).toBe(VAL.card.free);
+    p.xp = xpToNext(p)! - 1; // the round start's passive xp levels up
+    const level = p.level;
+    startRound(state);
+    expect(p.level).toBe(level + 1);
+    expect(p.freeBuy).toBe(VAL.card.free);
+  });
+
+  test("on another commander, Val's card is the same level-up pay, not the Scout", () => {
+    const state = game();
+    const p = state.players[0];
+    p.cardOffer = ['val'];
+    applyAction(state, p.id, { type: 'pickCard', card: 'val' });
+    expect(powersOf(p).scout).toBeUndefined();
+    p.gold = 0;
+    addXp(p, xpToNext(p)! - p.xp);
+    expect(p.gold).toBe(VAL.card.gold);
+    expect(p.freeBuy).toBe(VAL.card.free);
+  });
+});
+
+describe('Dracula', () => {
+  function draculaGame() {
+    const state = createGame(5, SEEDS);
+    for (const p of state.players) applyAction(state, p.id, { type: 'pickCommander', commander: 'dracula' });
+    return state;
+  }
+
+  test('the Demon Altar is summoned with 2 blue, 2 purple and 2 gold rewards', () => {
+    const p = draculaGame().players[0];
+    const rewards = p.demonAltars!.demonAltar!.rewards;
+    expect(rewards.map((id) => ALTAR_REWARD_BY_ID[id].tier)).toEqual(['blue', 'blue', 'purple', 'purple', 'gold', 'gold']);
+    expect(new Set(rewards).size).toBe(6);
+  });
+
+  test('an activation on I-3: discard one, get one of the rest; three activations empty it', () => {
+    const state = draculaGame();
+    const p = state.players[0];
+    state.round = roundAt(1, 2);
+    expect(altarCharges(state.round, p, 'demonAltar')).toBe(0);
+    expect(applyAction(state, p.id, { type: 'demonAltar', altar: 'demonAltar', discard: 0 }).ok).toBe(false);
+    state.round = roundAt(3, 3);
+    expect(altarCharges(state.round, p, 'demonAltar')).toBe(3);
+    const before = [...p.demonAltars!.demonAltar!.rewards];
+    expect(applyAction(state, p.id, { type: 'demonAltar', altar: 'demonAltar', discard: 0 }).ok).toBe(true);
+    const altar = p.demonAltars!.demonAltar!;
+    expect(altar.rewards).toHaveLength(4);
+    expect(altar.last!.discarded).toBe(before[0]);
+    expect(before.slice(1)).toContain(altar.last!.won);
+    for (let k = 0; k < 2; k++) {
+      p.factionOrbOffer = undefined;
+      p.itemOffer = undefined;
+      expect(applyAction(state, p.id, { type: 'demonAltar', altar: 'demonAltar', discard: 0 }).ok).toBe(true);
+    }
+    expect(altar.rewards).toHaveLength(0);
+    expect(altarCharges(state.round, p, 'demonAltar')).toBe(0);
+  });
+
+  test('every reward pays out', () => {
+    for (const r of Object.values(ALTAR_REWARD_BY_ID)) {
+      const state = draculaGame();
+      const p = state.players[0];
+      expect(typeof r.give(state, p)).toBe('string');
+    }
+  });
+
+  test('an Enhanced Equipment Chest offers enhanced equipment', () => {
+    const state = draculaGame();
+    const p = state.players[0];
+    p.itemOffer = undefined;
+    ALTAR_REWARD_BY_ID.enhancedChest.give(state, p);
+    expect(p.offerFrom).toBe('enhancedChest');
+    expect(p.itemOffer!.length).toBeGreaterThan(0);
+    for (const id of p.itemOffer!) expect(ITEMS[id].enhancedFrom).toBeDefined();
+  });
+
+  test("the card: a second altar active from I-2, on Dracula and on anyone else (without his own)", () => {
+    const state = game();
+    const p = state.players[0];
+    p.cardOffer = ['dracula'];
+    expect(applyAction(state, p.id, { type: 'pickCard', card: 'dracula' }).ok).toBe(true);
+    expect(p.demonAltars?.demonAltar).toBeUndefined();
+    expect(p.demonAltars!.demonAltarCard!.rewards).toHaveLength(6);
+    state.round = roundAt(1, 2);
+    expect(altarCharges(state.round, p, 'demonAltarCard')).toBe(1);
+    const d = draculaGame();
+    const own = d.players[0];
+    own.cardOffer = ['dracula'];
+    applyAction(d, own.id, { type: 'pickCard', card: 'dracula' });
+    expect(Object.keys(own.demonAltars!).sort()).toEqual(['demonAltar', 'demonAltarCard']);
   });
 });

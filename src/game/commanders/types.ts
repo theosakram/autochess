@@ -120,6 +120,28 @@ export interface CommanderPower {
   enhanceExtra?: { gold: number }; // Freya's card: more with every reward claimed
   cable?: CableMarkPower; // Fanny: a hero mark
   heroCap?: number; // Fanny's card: more heroes on the board
+  noInterest?: boolean; // Lance: no interest at the end of a round
+  stageGold?: number[]; // Lance: bonus gold at the end of every round, by stage (past the end, the last applies)
+  burnGold?: boolean; // Lance: when a round ends, all gold is spent on xp (up to the level cap)
+  levelGold?: { level: number; gold: number }; // Lance's card: `gold` at the end of every round from `level` on
+  // Dracula: Demon Altars (two fields, so his card's altar sits next to his own). See demonAltar.ts.
+  demonAltar?: DemonAltarPower;
+  demonAltarCard?: DemonAltarPower;
+  scout?: ScoutPower; // Val: Scout charges, by level (see scout.ts)
+  levelReward?: { free: number; gold: number }; // Val's card: on every level up, free buys (this round) and gold
+}
+
+// Dracula: an altar of 6 rewards, with an activation on each of `rounds`.
+export interface DemonAltarPower {
+  rounds: number[];
+}
+
+// Val: a Scout charge on reaching each of `levels`. Using one on a hero fills the shop with heroes sharing a trait
+// with it, and gives `free` free buys for the round.
+export interface ScoutPower {
+  levels: number[];
+  free: number;
+  odds: number[]; // % per cost (1 to 5 gold) for each slot of a Scouted shop, whatever the level
 }
 
 // Moscow: the Shadow Altar names a random hero of each of `costs`; all offered, a charge: `copies` more copies of
@@ -237,9 +259,10 @@ export interface AltarPower {
 // `targets` nearest enemies for `share` of each one's max hp, physical.
 // Lung's Dueling Ring: a board cell. The hero on it gets more attack speed and, when the fight starts, drags the
 // farthest enemy into a 1v1 of basic attacks for up to `seconds`. Each duel won: +perWin attack and magic attack
-// for the ring's hero, kept all game (Player.duelWins), up to maxWins.
+// for the hero that won it, kept all game wherever it stands (Unit.duelWins), up to maxWins.
 export interface DuelPower {
   cell: number;
+  arena: number; // the board cell in front of it where the duel's enemy is dragged (kept clear while a hero holds the ring)
   seconds: number;
   attackSpeed: number;
   perWin: number;

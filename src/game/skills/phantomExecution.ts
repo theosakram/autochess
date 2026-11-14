@@ -4,7 +4,7 @@ import type { SkillApi, SkillDef, SkillFighter } from './types';
 
 // Lance (5g Gustiwana / Phasewarper). Per star, index 0 = 1★.
 export const PHANTOM_EXECUTION = {
-  atk: [1.4, 1.6, 4.5], // of total physical attack, to every enemy along a dash (and again from a Phantom)
+  atk: [1.25, 1.4, 4.5], // of total physical attack, to every enemy along a dash (and again from a Phantom)
   dashesPerCast: 3,
   dashLength: 4, // cells
   dashSeconds: 0.3, // between dashes (whole ticks), and how long each is guarded
@@ -16,7 +16,7 @@ export const PHANTOM_EXECUTION = {
 // One dash along the line through the most enemies. False when there's no one left to dash at.
 function dash(api: SkillApi, caster: SkillFighter): boolean {
   const P = PHANTOM_EXECUTION;
-  const line = bestLine(api, caster, P.dashLength);
+  const line = bestLine(api, caster, P.dashLength, false, true);
   if (!line.length) return false;
   const raw = caster.stats.atk * P.atk[caster.star - 1];
   const struck = line.map((p) => api.occupant(p)).filter((f): f is SkillFighter => !!f && f.side !== caster.side);
@@ -24,7 +24,7 @@ function dash(api: SkillApi, caster: SkillFighter): boolean {
   for (const enemy of struck) api.hit(caster, enemy, raw, 'physical', 'phantomexecution');
   // The Phantom retraces the same path right behind him.
   if (phantom) for (const enemy of struck) if (enemy.hp > 0) api.hit(caster, enemy, raw, 'physical', 'phantom');
-  // Land on the farthest free cell of the line; stay put if there is none. With a Phantom, the dash looks it.
+  // Land on the farthest free cell of the line (bestLine only picks lines with one). With a Phantom, the dash looks it.
   const landing = [...line].reverse().find((p) => !api.occupant(p));
   if (landing) api.dashTo(caster, landing, P.dashAnim, phantom ? 'phantom' : 'phantomexecution');
   caster.skill.dashes = (caster.skill.dashes ?? 0) + 1;

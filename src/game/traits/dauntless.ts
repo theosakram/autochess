@@ -12,7 +12,6 @@ export const DAUNTLESS = {
 export const dauntless: TraitDef = {
   id: 'dauntless',
   name: 'Dauntless',
-  icon: '🔰',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: 'All allies start combat with a shield of {allies} of their max HP, Dauntless units {dauntless}.',

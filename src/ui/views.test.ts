@@ -1,3 +1,4 @@
+import { SOUL_ORBIT } from '../game/skills';
 import { describe, expect, test } from 'bun:test';
 import { createGame } from '../game/game';
 import { powerCardName } from '../game/powerCards';
@@ -179,8 +180,7 @@ describe('unit info popup', () => {
   test("stats at every star, and the skill with each star's numbers", () => {
     const html = unitInfoHtml('saber', p);
     expect(html).toContain('Soul Orbit');
-    expect(html).toContain('135%');
-    expect(html).toContain('210%');
+    for (const v of SOUL_ORBIT.atk) expect(html).toContain(`${Math.round(v * 100)}%`);
     for (const hp of [2575, 4635, 8760]) expect(html).toContain(`<td>${hp}</td>`);
     expect(html).toContain('data-trait="spectre"');
     expect(unitInfoHtml('gatotkaca', p)).toContain('Not in the shop');
@@ -403,14 +403,15 @@ test('shop pool modal: every shop hero by cost, copies left of the full set, you
   expect(shopDockHtml(p, state.round, false, {})).toContain('data-action="openPool"');
 });
 
-test('round timer: none while shopping; a fight counts down from 40s, red in the last 10s', () => {
-  expect(roundTimerHtml(null)).toContain('0:00');
-  expect(roundTimerHtml(0)).toContain('0:40');
+test('round timer: full bar while shopping; a fight counts down from 40s, red in the last 10s', () => {
+  expect(roundTimerHtml(null)).toContain('∞');
+  expect(roundTimerHtml(null)).toContain('width:100%');
+  expect(roundTimerHtml(0)).toContain('<b>40</b>');
   expect(roundTimerHtml(0)).not.toContain('round-timer overtime');
-  expect(roundTimerHtml(25 * 10)).toContain('0:15');
+  expect(roundTimerHtml(25 * 10)).toContain('<b>15</b>');
   expect(roundTimerHtml(32 * 10)).toContain('round-timer overtime');
-  expect(roundTimerHtml(32 * 10)).toContain('0:08');
-  expect(roundTimerHtml(99999)).toContain('0:00');
+  expect(roundTimerHtml(32 * 10)).toContain('<b>8</b>');
+  expect(roundTimerHtml(99999)).toContain('<b>0</b>');
 });
 
 describe('commander glossary terms', () => {

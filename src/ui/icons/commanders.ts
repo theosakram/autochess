@@ -155,6 +155,27 @@ export const COMMANDER_SVGS: Record<string, string> = {
       `<path d="M18.5 52.5l6.5 2M45.5 52.5l-6.5 2" stroke="#d4a514" stroke-width="2.5"/>` +
       `<rect x="25" y="23" width="14" height="15" rx="3" fill="#2e2e38"/>`,
   ),
+  // Dracula, Lord of the Night: a pale vampire in a high red collar, fangs bared.
+  dracula: svg(
+    `<path d="M4 60L12 26l20 18 20-18 8 34z" fill="#8a1020"/>` +
+      `<path d="M14 60l6-22 12 10 12-10 6 22z" fill="#2a0f1a"/>` +
+      `<ellipse cx="32" cy="30" rx="13" ry="16" fill="#e8e0f0"/>` +
+      `<path d="M19 27c0-12 6-18 13-18s13 6 13 18c-4-5-8-7-13-2-5-5-9-3-13 2z" fill="#1d1622"/>` +
+      `<path d="M23 31l6 1M41 31l-6 1" stroke="#1d1622" stroke-width="1.5"/>` +
+      `<circle cx="27" cy="33" r="1.8" fill="#e0394c" stroke="none"/><circle cx="37" cy="33" r="1.8" fill="#e0394c" stroke="none"/>` +
+      `<path d="M27 40q5 3 10 0" fill="none" stroke-width="1.6"/>` +
+      `<path d="M28.5 40.6l1.2 3.4 1.2-2.8zM35.5 40.6l-1.2 3.4-1.2-2.8z" fill="#ffffff" stroke-width="1"/>`,
+  ),
+  // Lance, Knight of Ambition: a rapier over a crimson rose.
+  lance: svg(
+    `<path d="M33 47c-6-1-10 2-11 7 6 1 10-2 11-7zM51 47c6-1 10 2 11 7-6 1-10-2-11-7z" fill="#3fa34d"/>` +
+      `<circle cx="42" cy="40" r="13" fill="#d62839"/>` +
+      `<path d="M42 40c3 0 4 3 2 5-3 3-8 1-8-3 0-5 6-8 10-6 5 2 6 8 3 12" fill="none" stroke="#8a1020" stroke-width="2"/>` +
+      line('M20 44L57 7', '#dfe6f0', 3.5) +
+      line('M13 38l13 13', '#ffd23f', 3) +
+      line('M19 45L8 56', '#6b3b1f', 4) +
+      `<circle cx="20" cy="44" r="4.5" fill="#ffd23f"/><circle cx="7" cy="57" r="3" fill="#ffd23f"/>`,
+  ),
   // Lukas, Keeper of the Divine Beast: a lion's head in its mane.
   lukas: svg(
     `<polygon points="${burst(32, 33, 12, 29, 22)}" fill="#d9822b"/>` +
@@ -256,6 +277,16 @@ export const COMMANDER_SVGS: Record<string, string> = {
       `<path d="M31 43a3 3 0 1 1 3 3c-4 0-6-3-6-6 0-4 6-6 9-2" fill="none" stroke="#8a1028" stroke-width="1.6"/>`,
   ),
   // Vex, Keeper of the Box: a ribboned gift box.
+  // Val, the Talent Scout: a telescope on a tripod, a star in its sight.
+  val: svg(
+    line('M30 42L20 60M30 42L40 60M30 42v18', '#6b3b1f', 3) +
+      `<g transform="rotate(-30 32 36)"><rect x="8" y="32" width="13" height="9" rx="2" fill="#5b3590"/>` +
+      `<rect x="20" y="30.5" width="16" height="12" rx="2" fill="#8a55c9"/>` +
+      `<rect x="35" y="29" width="18" height="15" rx="2" fill="#5b3590"/>` +
+      `<path d="M27 30.5v12M44 29v15" stroke="#ffd23f" stroke-width="2.5"/>` +
+      `<ellipse cx="54" cy="36.5" rx="3" ry="7.5" fill="#bfe6ff"/></g>` +
+      `<polygon points="${burst(50, 12, 5, 9, 4)}" fill="#ffd23f"/>`,
+  ),
   vex: svg(
     `<rect x="11" y="30" width="42" height="28" rx="2" fill="#7b3fd0"/>` +
       `<rect x="7" y="22" width="50" height="10" rx="2" fill="#9a5cf0"/>` +

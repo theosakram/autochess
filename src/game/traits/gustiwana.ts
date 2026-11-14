@@ -15,7 +15,6 @@ export const GUSTIWANA = {
 export const gustiwana: TraitDef = {
   id: 'gustiwana',
   name: 'Gustiwana',
-  icon: '🌳',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   desc:

@@ -7,6 +7,7 @@ import type { CommanderDef, DuelPower } from './types';
 export const LUNG = {
   duel: {
     cell: (BOARD_ROWS - 1) * BOARD_COLS, // the Dueling Ring: the back row's leftmost tile
+    arena: (BOARD_ROWS - 2) * BOARD_COLS, // and the tile in front of it, where the enemy is dragged
     seconds: 25, // the duel's limit
     attackSpeed: 1, // + attack speed for the hero in the ring
     perWin: 0.06, // + attack and magic attack for the hero in the ring, per duel won (kept all game)
@@ -23,8 +24,8 @@ export const lung: CommanderDef = {
   icon: '🥋',
   title: 'Master of the Dueling Ring',
   desc:
-    `A ${term('duelRing', 'Dueling Ring')} on your back row's leftmost tile. Its hero gets +${pct(d.attackSpeed)} attack speed and duels ` +
-    `the farthest enemy every fight; each win gives it +${pct(d.perWin)} attack and magic attack for good.`,
+    `A ${term('duelRing', 'Dueling Ring')} on your back row's leftmost tile and the tile in front of it. The hero on the back tile gets +${pct(d.attackSpeed)} attack speed and duels ` +
+    `the farthest enemy every fight, dragged onto the front tile; each win gives that hero +${pct(d.perWin)} attack and magic attack for good.`,
   innate: { duel: LUNG.duel },
   card: {
     name: 'Hidden Disciple',
@@ -39,11 +40,12 @@ export const lung: CommanderDef = {
       icon: '🥋',
       title: 'Dueling Ring',
       body: list(
+        'The ring is 1x2: your hero stands on the back tile, the tile in front of it is the arena. While a hero holds the ring, nothing else can stand in the arena.',
         `The hero in the ring gets +${pct(d.attackSpeed)} attack speed.`,
-        'When a fight starts, it drags the farthest enemy into a duel.',
+        'When a fight starts, it drags the farthest enemy onto the arena tile for a duel.',
         'The two fight each other alone: basic attacks only, no skills, no mana, and nobody else can touch them.',
         `The duel lasts up to ${d.seconds}s, or until one falls.`,
-        `Each duel won: +${pct(d.perWin)} attack and magic attack for the rest of the game, up to ${d.maxWins} times (+${pct(d.perWin * d.maxWins)}).`,
+        `Each duel won: +${pct(d.perWin)} attack and magic attack for that hero, for the rest of the game, even out of the ring, up to ${d.maxWins} wins (+${pct(d.perWin * d.maxWins)}). Its detail shows the count.`,
       ),
     },
   },

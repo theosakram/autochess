@@ -31,7 +31,7 @@ export interface UnitDef {
   piece?: true;
   monster?: true; // only fights in monster rounds (see monsters.ts): never owned, shown or sold
   // Gets this trait's member bonuses without being a member or counting toward it (like an item bearer).
-  honorary?: { trait: string; icon: string };
+  honorary?: { trait: string };
   attackType?: 'physical' | 'magic'; // damage type of basic attacks; physical if unset
   rooted?: true; // never walks in a fight, and enemy skills can't move it (Turret)
   turret?: true; // Turret of Guardians: one def per faction + role pair (see TURRETS)
@@ -49,6 +49,7 @@ export interface Unit {
   shortfall?: number; // copies the pool couldn't give it (Pas de Deux, Fast Promotion): never handed back to the pool
   merc?: boolean; // Rogue Mercenary: its permanent damage and hp
   signature?: boolean; // a hero card's 3★ hero: its permanent attack, magic attack and hp (SIGNATURE)
+  duelWins?: number; // Lung: duels this hero won in the Dueling Ring (each a bonus for good, up to the cap)
   turretFrom?: number; // Turret of Guardians: the round it came; it stars up with time (TURRET_STAR_ROUNDS)
 }
 
@@ -126,7 +127,7 @@ export interface Player {
   powerOffer?: PowerOffer; // waiting for a pick (no time limit)
   powerQueue?: PowerDeal[]; // later power card rounds, offered one by one once powerOffer is picked
   itemOffer?: string[]; // items on offer (round-2 basics, monster loot, an Equipment Chest), waiting for a pick
-  offerFrom?: 'basic' | 'loot' | 'chest'; // where the current itemOffer comes from
+  offerFrom?: 'basic' | 'loot' | 'chest' | 'enhancedChest'; // where the current itemOffer comes from
   basicPending?: boolean; // the basic item pick, waiting behind another item offer
   loot?: number; // monster loot picks not opened yet (each opens as the one before is picked)
   chests?: { kills: number; earned: number; waiting: number }; // Equipment Chests: kills toward the next, earned so far, not opened yet
@@ -139,7 +140,6 @@ export interface Player {
   duplicators?: number; // Equipment Duplicators (Copycat), waiting for an item to copy
   gloves?: string[]; // Pacquiao's boxing gloves waiting to be used (ids, see gloves.ts)
   glovesGiven?: number[]; // the glove rounds already paid out
-  duelWins?: number; // Lung: duels the Dueling Ring's hero has won (each a bonus, up to the cap)
   enhancers?: number; // Minos's Enhancement Charges, waiting for an item to enhance (see enhancer.ts)
   enhancedItems?: string[]; // Novel Equipment: equipment kept enhanced for this player (base ids), owned and future copies
   bloodRefreshes?: number; // Death Oracle: shop refreshes left that cost 1 hp instead of gold
@@ -154,6 +154,10 @@ export interface Player {
   heirGold?: number;
   treasures?: string[]; // Zhu Yong: what each Black Dragon Treasure gave, in order
   boughtRound?: number; // the last round this player bought a hero from the shop (Aurora)
+  // Dracula's Demon Altars: rewards still in each (reward ids, see demonAltar.ts), activations used, the latest.
+  demonAltars?: Partial<Record<'demonAltar' | 'demonAltarCard', { rewards: string[]; used: number; last?: { discarded: string; won: string; text: string } }>>;
+  enhancedChests?: number; // Enhanced Equipment Chests not opened yet (Dracula's altar)
+  scoutCharges?: number; // Val: Scout charges banked
   fullHouse?: Record<number, number>; // Harley: Full House charges banked, by hero cost
   ritual?: { want: string[]; offered: string[]; charges: number; last?: string }; // Moscow: the heroes the altar names, those offered, charges, the latest copied
   ladder?: { given: number; round: number; last?: string }; // Moscow's card: heroes given so far, the round of the latest, and which

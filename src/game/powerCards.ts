@@ -994,7 +994,7 @@ export const POWER_CARDS: Record<string, PowerCardDef> = {
         {
           id,
           name: `${TRAITS[trait].name} Badge`,
-          icon: TRAITS[trait].icon,
+          icon: '', // drawn: icons/powerCards.ts (medal)
           tiers: ['purple'],
           badge: { purple: trait },
           desc: () =>
@@ -1014,7 +1014,7 @@ export const POWER_CARDS: Record<string, PowerCardDef> = {
         {
           id,
           name: `${name} Blessing`,
-          icon: TRAITS[trait].icon,
+          icon: '', // drawn: icons/powerCards.ts (medal)
           tiers: ['gold'],
           badge: { gold: trait },
           ...(item ? { pickItem: { gold: item } } : { pickChests: { gold: 1 } }),

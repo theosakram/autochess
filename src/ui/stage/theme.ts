@@ -15,6 +15,7 @@ export const COLORS = {
   mana: 0x4a8ff0,
   heal: 0x3fae5a,
   crit: 0xff3b3b,
+  master: 0xffa62b, // a Weapon Master's Masterstroke
   spell: 0x8fb8ff,
   arrow: 0xf3e6c8, // a physical ranged attack's arrow (magic ones fly as spell-coloured bolts)
   comet: 0xa66bff, // Melina's violet: his comet shots and the crescent moon of his cast
@@ -71,6 +72,8 @@ export const EFFECT_COLORS: Record<string, number> = {
   stormpursuit: 0xffe066,
   rampage: 0xff5a36,
   rampagefireball: 0xff7a3a,
+  tornadobullet: 0x9be8ff, // Fanny's tornado bullets
+  sonicwall: 0x7fd8ff, // Fanny's 3★ sonic walls round the board
   rampageslash: 0xff5a36,
   rampageburn: 0xff8a3d,
   gloomvolley: 0xa98bff,

@@ -5,7 +5,7 @@ import type { SkillDef } from './types';
 // Val (1g Necromancer / Mage). Per star, index 0 = 1★.
 export const GRAVE_WHISPER = {
   mana: [10, 15, 20], // passive: to itself and the allies directly left and right of it when the fight starts
-  ap: [1.55, 1.55, 2.05], // active: of magic attack, magic, to the 3x1 row around its target
+  ap: [2.8, 2.8, 3.7], // active: of magic attack, magic, to the 3x1 row around its target
 };
 
 export const graveWhisper: SkillDef = {

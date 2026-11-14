@@ -12,7 +12,6 @@ export const SKYBRINGER = {
 export const skybringer: TraitDef = {
   id: 'skybringer',
   name: 'Skybringer',
-  icon: '⚡',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   desc:

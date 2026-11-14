@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Zhuxin (2g Cult of Fire / Mage). Per star, index 0 = 1★.
 export const ASH_STORM = {
-  ap: [1.8, 1.8, 2.95], // of magic attack, magic, every 0.5s to each enemy in the 3x3
+  ap: [1.3, 1.3, 2.15], // of magic attack, magic, every 0.5s to each enemy in the 3x3
   seconds: 2,
 };
 

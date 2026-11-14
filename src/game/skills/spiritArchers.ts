@@ -6,7 +6,7 @@ import type { SkillDef } from './types';
 export const SPIRIT_ARCHERS = {
   archer: 'spiritarcher',
   attackSpeed: [0.2, 0.2, 1], // passive, from the start of the fight
-  count: [1, 2, 6], // spirits at once
+  count: [2, 2, 6], // spirits at once
   landing: [2.2, 2.2, 2.8], // of attack, physical, to each enemy around a spirit as it lands
   mirror: [0.45, 0.45, 1.5], // of Melina's attack: each spirit repeats each of its basic attacks on the same target
   hp: 0.3, // of Melina's max hp, each

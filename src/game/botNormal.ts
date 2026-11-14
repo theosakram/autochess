@@ -1,5 +1,5 @@
 import { applyAction } from './actions';
-import { pickRewards, interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playHarley, playRitual, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
+import { pickRewards, interestBank, playEssence, placeMarks, playAltars, playBlood, playFreya, playHarley, playVal, playDemonAltars, playRing, playRitual, playJohnnie, playTrove, playTwilight, useOrb } from './bot';
 import { COMMANDERS } from './commanders';
 import { REROLL_COST, STAR_MULT, stageRound } from './config';
 import { equipBlock } from './inventory';
@@ -257,6 +257,8 @@ export function normalBot(state: GameState, p: Player): void {
   playTwilight(state, p);
   playBlood(state, p);
   playHarley(state, p);
+  playVal(state, p);
+  playDemonAltars(state, p);
   playRitual(state, p);
 
   const bank = interestBank(p);
@@ -288,5 +290,6 @@ export function normalBot(state: GameState, p: Player): void {
     applyAction(state, p.id, { type: 'move', from: { area: 'board', index: from }, to: { area: 'board', index: to } });
   }
   equip(state, p);
+  playRing(state, p);
   placeMarks(state, p);
 }

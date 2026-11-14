@@ -6,7 +6,7 @@ import type { SkillDef, SkillFighter } from './types';
 export const ETHER_BEAM = {
   ticks: 12,
   every: 0.15, // seconds between ticks
-  ap: [1.2, 1.2, 3.2], // of magic attack, magic, per tick to each enemy on the line
+  ap: [0.95, 0.95, 2.5], // of magic attack, magic, per tick to each enemy on the line
 };
 
 export const etherBeam: SkillDef = {

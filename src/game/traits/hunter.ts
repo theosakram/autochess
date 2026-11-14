@@ -9,7 +9,6 @@ export const HUNTER = {
 export const hunter: TraitDef = {
   id: 'hunter',
   name: 'Hunter',
-  icon: '🏹',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: "Allied attacks reduce the target's armor and magic resist by {ally}, Hunter attacks by {hunter}.",

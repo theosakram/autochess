@@ -4,8 +4,8 @@ import type { SkillDef } from './types';
 
 // Lola (4g Cult of Fire / Dauntless). Per star, index 0 = 1★.
 export const PYRE_BLAST = {
-  atk: [4.35, 4.35, 12.65], // of attack...
-  hp: [0.05, 0.05, 0.1], // ...plus this share of her max hp, physical, to each enemy in the cone ahead
+  atk: [3, 3, 12.65], // of attack...
+  hp: [0.03, 0.03, 0.1], // ...plus this share of her max hp, physical, to each enemy in the cone ahead
   depth: 2, // the cone: 3 cells wide next to her, 5 wide beyond
   stun: [1, 1, 2], // seconds
   shield: [0.15, 0.15, 0.25], // of her max hp

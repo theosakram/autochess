@@ -9,6 +9,7 @@ import { EQUIPMENT, ITEMS, type HealingSpring, type LowHpFury, type StackingPass
 import { nextFloat, nextInt, shuffle } from './rng';
 import { loveBeam, SKILLS, type SkillApi } from './skills';
 import { adaptivePower, adaptiveType, applyMods, attackInterval, BURN_SECONDS, type DamageType, type Stats, type StatKey, baseStats } from './stats';
+import { WEAPON_MASTER } from './traits/weaponMaster';
 import { chosenBy, playerTraits, traitPulses, traitTiles, unitOpeners, unitTriggers, type TraitLevels, type Trigger } from './traits';
 import type { Player, Star } from './types';
 import { UNIT_BY_ID } from './units';
@@ -54,6 +55,7 @@ export type CombatEvent =
       targetMana: number;
       crit?: true;
       again?: true; // a Fighter's extra hit
+      master?: true; // a Weapon Master's Masterstroke
     }
   // Damage from an effect (a trait pulse, or an item's when `by` is set) rather than an attack.
   | { t: number; type: 'effect'; effect: string; by?: number; target: number; damage: number; hp: number; crit?: true }
@@ -474,6 +476,8 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   // No mana while a skill keeps the unit busy, so a long skill can't chain straight into the next.
   const gainMana = (f: SimFighter, n: number) => {
     if (t < f.busyUntil || dueling(f)) return;
+    const skill = UNIT_BY_ID[f.defId].skill;
+    if (skill && SKILLS[skill].holdsMana?.(api, f)) return;
     f.mana = Math.min(f.maxMana, f.mana + n);
   };
 
@@ -493,7 +497,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     const lowered = target.debuffs.reduce((n, d) => n + (t < d.until ? d[stat] : 0), 0);
     const raw0 = type === 'pure' ? 0 : target.stats[stat] - target.shred - lowered;
     // Penetration ignores a share of what defense is left: magic pen of magic resist, armor pen of armor.
-    const pen = !dealer || raw0 <= 0 ? 0 : type === 'magic' ? dealer.stats.magicPen : type === 'physical' ? dealer.stats.armorPen : 0;
+    const pen = !dealer || raw0 <= 0 ? 0 : (type === 'magic' ? dealer.stats.magicPen : type === 'physical' ? dealer.stats.armorPen : 0) + (dealer === striking ? dealer.stats.masterPen : 0);
     const defense = raw0 * (1 - Math.min(1, pen));
     const guard = t < target.guardUntil ? 1 - target.guardReduction : 1;
     // Dimensional Shoot: tiles between dealer and target (none when next to each other).
@@ -520,6 +524,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     if (dealer && dealer.side !== target.side) target.lastDealer = dealer.id;
     // Blade Armor: queued, sent back once this hit is done (a reflection never reflects again).
     if (target.vengeance && dealer && dealer.side !== target.side && dealt > 0 && !reflecting) pendingVengeance.push({ holder: target, attacker: dealer, taken: dealt });
+    if (dealer && dealer.side !== target.side && dealt > 0 && !countering && reacts(target)) pendingCounters.push({ holder: target, attacker: dealer });
     if (target.hp <= 0 && dealer && target.killer === null) target.killer = dealer.id;
     if (lethal) freezeNow(target);
     if (dealer) dealer.dealt += dealt;
@@ -541,6 +546,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     reactToDamage(target, t);
     flushShares();
     flushVengeance(t);
+    flushCounters();
   }
 
   function reactToDamage(target: SimFighter, t: number): void {
@@ -745,7 +751,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
           const c = { x: f.x + dx, y: f.y + dy };
           if ((dx || dy) && c.x >= 0 && c.x < GRID_W && c.y >= 0 && c.y < GRID_H && occupied[gridIndex(c)] === -1) spots.push(c);
         }
-        const to = spots.sort((a, b) => dist(a, prey) - dist(b, prey))[0];
+        const arena = boardToGrid(f.side, ring.arena);
+        const free = (c: Point) => occupied[gridIndex(c)] === -1;
+        const to = free(arena) ? arena : spots.sort((a, b) => dist(a, prey) - dist(b, prey))[0];
         if (to) {
           occupied[gridIndex(prey)] = -1;
           prey.x = to.x;
@@ -941,6 +949,21 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // Blade Armor: any damage an enemy deals the holder sends a share of it back, physical. Queued by damage() and
   // sent once the hit is done; the reflected damage itself is never reflected (two Blade Armors don't ping-pong).
+  // Skills that react to being hurt (SkillDef.onDamaged, e.g. Balang's counter): queued like Blade Armor.
+  const pendingCounters: { holder: SimFighter; attacker: SimFighter }[] = [];
+  const reacts = (f: SimFighter) => {
+    const skill = UNIT_BY_ID[f.defId].skill;
+    return !!skill && !!SKILLS[skill].onDamaged;
+  };
+  function flushCounters(): void {
+    while (pendingCounters.length && !countering) {
+      const { holder, attacker } = pendingCounters.shift()!;
+      if (holder.hp <= 0 || attacker.hp <= 0) continue;
+      countering = true;
+      SKILLS[UNIT_BY_ID[holder.defId].skill!].onDamaged!(api, holder, attacker);
+      countering = false;
+    }
+  }
   const pendingVengeance: { holder: SimFighter; attacker: SimFighter; taken: number }[] = [];
   let reflecting = false;
   function flushVengeance(t: number): void {
@@ -1239,11 +1262,11 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     alliesOf: (f) => fighters.filter((e) => e.side === f.side && e.hp > 0),
     random: (n) => nextInt(rng, n),
     giveMana: (who, amount) => gainMana(fighters[who.id], amount),
-    attack: (who, at, mult) => {
+    attack: (who, at, mult, mana = true) => {
       const f = fighters[who.id];
       const target = fighters[at.id];
       if (f.hp <= 0 || target.hp <= 0) return;
-      fullBasicAttack(f, target, t, mult);
+      fullBasicAttack(f, target, t, mult, mana);
     },
     stance: (who, { rooted, noBasic }) => {
       const f = fighters[who.id];
@@ -1439,6 +1462,9 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       }
       events.push({ t, type: 'ground', effect, cells: cells.map(({ x, y }) => ({ x, y })), until });
     },
+    showGround: (cells, seconds, effect) => {
+      events.push({ t, type: 'ground', effect, cells: cells.map(({ x, y }) => ({ x, y })), until: t + Math.round(seconds * TICKS_PER_SECOND) });
+    },
     shred: (who, by) => {
       const target = fighters[who.id];
       target.shred = Math.max(target.shred, fighters[by.id].stats.armorShred);
@@ -1560,14 +1586,14 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // A basic attack plus Fighter's chance to hit again.
   // `mult` scales its damage (a skill's attack, e.g. 140% of attack); items and on-hit effects work as usual.
-  function fullBasicAttack(f: SimFighter, target: SimFighter, t: number, mult = 1): void {
+  function fullBasicAttack(f: SimFighter, target: SimFighter, t: number, mult = 1, mana = true): void {
     const skill = UNIT_BY_ID[f.defId].skill;
     if (skill && SKILLS[skill].enhancedAttack?.(api, f, target)) return;
     // A volley skill makes one attack several shots (see SkillDef.volley); the hit-again repeats the whole volley.
     const volley = skill ? SKILLS[skill].volley?.(f) : undefined;
     const once = (again: boolean) => {
-      if (!volley) return basicAttack(f, target, t, again, mult);
-      for (let n = 0; n < volley.shots && target.hp > 0 && f.hp > 0; n++) basicAttack(f, target, t, again, mult * volley.power, n === 0);
+      if (!volley) return basicAttack(f, target, t, again, mult, mana);
+      for (let n = 0; n < volley.shots && target.hp > 0 && f.hp > 0; n++) basicAttack(f, target, t, again, mult * volley.power, mana && n === 0);
     };
     once(false);
     // Only roll when there's a chance, so fights without it replay exactly as before.
@@ -1581,6 +1607,10 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
 
   // True while a counter-attack is resolving, so counters never set off more counters.
   let countering = false;
+  // Weapon Master: basic attacks each one has made (only counted for those with a Masterstroke), and the
+  // fighter whose Masterstroke is landing right now (its damage ignores some defense).
+  const strokes = new Map<number, number>();
+  let striking: SimFighter | null = null;
 
   function basicAttack(f: SimFighter, target: SimFighter, t: number, again: boolean, mult = 1, mana = true): void {
     // Shred lands before the damage, so the first hit already benefits.
@@ -1590,11 +1620,27 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     // Physical attackers hit with attack, magic attackers with magic attack.
     const type = UNIT_BY_ID[f.defId].attackType ?? 'physical';
     const power = type === 'magic' ? f.stats.ap : f.stats.atk;
-    const dealt = damage(target, power * mult * (1 + f.stats.basicAmp) * (crit ? f.stats.critDamage : 1), type, f);
+    // Masterstroke: every few basic attacks hits harder, through some defense, and heals.
+    let master = false;
+    if (f.stats.masterstroke > 0) {
+      const n = (strokes.get(f.id) ?? 0) + 1;
+      strokes.set(f.id, n);
+      master = n % WEAPON_MASTER.every === 0;
+    }
+    striking = master ? f : null;
+    const dealt = damage(target, power * mult * (1 + f.stats.basicAmp) * (crit ? f.stats.critDamage : 1) * (master ? 1 + f.stats.masterstroke : 1), type, f);
+    striking = null;
     if (mana) gainMana(f, MANA_PER_ATTACK + f.attackMana);
     stackUp(f, 'basic');
-    hitEvent(f, target, t, 'attack', dealt, crit, again);
+    hitEvent(f, target, t, 'attack', dealt, crit, again, master);
     leech(f, dealt, true, t);
+    if (master && f.stats.masterSteal > 0 && f.hp > 0) {
+      const amount = Math.min(f.maxHp - f.hp, Math.round(dealt * f.stats.masterSteal * healMult(f)));
+      if (amount > 0) {
+        f.hp += amount;
+        events.push({ t, type: 'heal', id: f.id, amount, hp: f.hp });
+      }
+    }
     engulf(f, target);
     rage(f, target);
     thunderStrike(f, target);
@@ -1624,7 +1670,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
   }
 
   // Logs an attack or placeholder cast, then lets the target react (mana, death, triggers).
-  function hitEvent(f: SimFighter, target: SimFighter, t: number, type: 'attack' | 'cast', dealt: number, crit: boolean, again = false): void {
+  function hitEvent(f: SimFighter, target: SimFighter, t: number, type: 'attack' | 'cast', dealt: number, crit: boolean, again = false, master = false): void {
     gainMana(target, MANA_PER_HIT_TAKEN * (1 + target.hurtMana));
     events.push({
       t,
@@ -1637,6 +1683,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
       targetMana: Math.floor(target.mana),
       ...(crit && { crit: true }),
       ...(again && { again: true }),
+      ...(master && { master: true }),
     });
     afterDamage(target, t);
   }
@@ -1954,6 +2001,7 @@ export function simulateCombat(rng: { rng: number }, home: Player, away: Player,
     fireDuels(t);
     updateProvoked(t);
     flushVengeance(t); // any reflection whose hit wasn't followed by afterDamage
+    flushCounters();
     expireBuffs(t);
     expireShields(t);
 

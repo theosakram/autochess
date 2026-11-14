@@ -12,7 +12,6 @@ export const MAGE = {
 export const mage: TraitDef = {
   id: 'mage',
   name: 'Mage',
-  icon: '✨',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: 'All allies gain +{allies} magic attack. Mages also deal +{damage} magic damage.',

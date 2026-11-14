@@ -9,7 +9,6 @@ export const STARGAZER = {
 export const stargazer: TraitDef = {
   id: 'stargazer',
   name: 'Stargazer',
-  icon: '🔭',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: 'Stargazers gain +{self} mana/sec, other allies +{team}.',

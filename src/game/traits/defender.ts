@@ -9,7 +9,6 @@ export const DEFENDER = {
 export const defender: TraitDef = {
   id: 'defender',
   name: 'Defender',
-  icon: '🛡️',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: 'All allies gain +{allies} armor and magic resist, Defenders +{defenders}.',

@@ -8,7 +8,7 @@ export const UNFOLDING_TALE = {
   allies: 2,
   seconds: 4,
   bolts: 3,
-  ap: [3.1, 3.1, 4.1], // of magic attack, magic, per bolt
+  ap: [2.4, 2.4, 3.15], // of magic attack, magic, per bolt
 };
 
 // `count` picks from `from`, all different while there are enough, then repeating.

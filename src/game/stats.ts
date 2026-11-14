@@ -37,6 +37,9 @@ export interface Stats {
   castMult: number; // placeholder skill damage = ap x castMult, for units without a real skill
   skillAmp: number; // skill damage (real skills and the placeholder cast) x (1 + skillAmp)
   lifesteal: number; // share of basic-attack damage healed back
+  masterstroke: number; // Weapon Master: every WEAPON_MASTER.every-th basic attack deals x (1 + masterstroke); 0: none
+  masterPen: number; // a Masterstroke ignores this share of armor and magic resist (0..1), on top of penetration
+  masterSteal: number; // a Masterstroke heals for this share of its damage, on top of lifesteal
   spellLifesteal: number; // share of all other damage dealt healed back
   range: number;
   attackTicks: number; // base ticks between attacks
@@ -84,6 +87,9 @@ export function baseStats(def: UnitDef, star: Star | 4, scale = 1): Stats {
     castMult: CAST_MULT,
     skillAmp: 0,
     lifesteal: 0,
+    masterstroke: 0,
+    masterPen: 0,
+    masterSteal: 0,
     spellLifesteal: 0,
     range: def.range,
     attackTicks: set?.attackTicks ? set.attackTicks[Math.min(star, 3) - 1] : def.attackTicks,

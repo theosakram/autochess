@@ -7,7 +7,8 @@ import type { SkillDef, SkillFighter } from './types';
 // The first cast of a fight also leaps him onto the enemy doing the most damage in between. Per star, index 0 = 1★.
 export const STORM_PURSUIT = {
   depth: 3, // the cone: 3 cells wide next to him, then 5, then 7
-  ap: [0.9, 0.9, 2.35], // of magic attack, magic, to each enemy in the cone on the throw, and along the way on the pull
+  knives: 5, // his target is struck by every knife, on the throw and on the pull; anyone else in the way by one
+  ap: [0.55, 0.55, 1.5], // of magic attack, magic, per knife
   throw: 0.25, // seconds the knives fly out
   jump: 0.3, // seconds after the throw that he leaps (first cast only)
   leap: 0.2, // how long the leap animates
@@ -20,10 +21,10 @@ export const stormPursuit: SkillDef = {
   id: 'stormpursuit',
   name: 'Storm Pursuit',
   desc:
-    `Throws a fan of knives into a cone toward his target (${STORM_PURSUIT.depth} rows deep, widening): ` +
-    'every enemy in it takes {ap} of magic attack as magic damage, and the knives stick in the floor. Then he pulls them back to him: ' +
-    'every enemy in the cone or in their way is hit again. On his first cast each fight, he leaps beside the enemy that has dealt ' +
-    'the most damage before the pull.',
+    `Throws ${STORM_PURSUIT.knives} knives in a fan toward his target (${STORM_PURSUIT.depth} rows deep, widening), each dealing {ap} ` +
+    'of magic attack as magic damage. His target is struck by all of them; every other enemy in the fan by one. The knives stick in ' +
+    'the floor, then he pulls them back: his target, if still in their way, is struck by all of them again, and every other enemy in ' +
+    'the fan or in their way by one. On his first cast each fight, he leaps beside the enemy that has dealt the most damage before the pull.',
   damage: { ap: 'magic' },
   values: () => ({ ap: STORM_PURSUIT.ap.map(pct) }),
   cast(api, caster, target) {
@@ -39,7 +40,11 @@ export const stormPursuit: SkillDef = {
     const far = Math.max(...cone.map((c) => dist(from, c)));
     const knives = cone.filter((c) => dist(from, c) === far);
     for (const k of knives) api.showProjectile(from, k, P.throw, 'stormknife');
-    for (const e of enemiesOn(api, caster, cone)) if (e.hp > 0) api.hit(caster, e, raw, 'magic', EFFECT);
+    // His target sits at the fan's point, so every knife goes through it; the rest of the fan is a bonus.
+    const strike = (e: SkillFighter) => {
+      for (let i = e === aim ? P.knives : 1; i > 0 && e.hp > 0; i--) api.hit(caster, e, raw, 'magic', EFFECT);
+    };
+    for (const e of enemiesOn(api, caster, cone)) strike(e);
     // First cast only: committed until the leap (no walking off first), onto the enemy doing the most damage
     // (the nearest on a tie; his target if no one has dealt any yet).
     if (!caster.skill.leapt) {
@@ -59,13 +64,13 @@ export const stormPursuit: SkillDef = {
     }
     api.repeat(caster, P.recall, 1, () => {
       // The knives sweep back through the cone and fly straight to him: whoever is in the cone or in their way
-      // is hit (once, however many knives pass).
+      // is hit: his target by every knife, anyone else once.
       const struck = new Set<SkillFighter>(enemiesOn(api, caster, cone));
       for (const k of knives) {
         api.showProjectile(k, caster, P.throw, 'stormrecall');
         for (const e of enemiesOn(api, caster, pathTo(k, caster))) struck.add(e);
       }
-      for (const e of struck) if (e.hp > 0) api.hit(caster, e, raw, 'magic', EFFECT);
+      for (const e of struck) strike(e);
     });
   },
 };

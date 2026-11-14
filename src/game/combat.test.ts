@@ -431,14 +431,18 @@ describe('storyweaver', () => {
     expect(simulateCombat({ rng: 1 }, a, b, { chosen }).fighters.filter((f) => f.side === 1 && f.chosen)).toHaveLength(0);
   });
 
-  test('protagonist gets the enhanced skill and damage per story', () => {
+  test('every Storyweaver (any cost) gets damage per story; no flat skill bonus on top', () => {
     const field = { levels: { storyweaver: 2 }, cell: 5, chosen: { storyweaver: 'altus' }, stacks: { storyweaver: 10 } };
     const hero = unitStats(UNIT_BY_ID.altus, 1, field);
-    const extra = unitStats(UNIT_BY_ID.vex, 1, field);
     expect(hero.damageAmp).toBeCloseTo(STORYWEAVER.perStack[1] * 10);
-    expect(hero.skillAmp).toBeCloseTo(STORYWEAVER.enhancedCast[1]); // levels: { storyweaver: 2 } is the second breakpoint
-    expect(extra.damageAmp).toBe(0);
-    expect(extra.skillAmp).toBe(0);
+    expect(hero.skillAmp).toBe(0); // its enhanced skill is in Tale's End itself
+    for (const id of ['vex', 'mathilda', 'belle']) {
+      const s = unitStats(UNIT_BY_ID[id], 1, field);
+      expect(s.damageAmp).toBeCloseTo(STORYWEAVER.perStack[1] * 10);
+      expect(s.skillAmp).toBe(0);
+    }
+    const outsider = unitStats(UNIT_BY_ID.footman, 1, field);
+    expect([outsider.damageAmp, outsider.skillAmp]).toEqual([0, 0]);
   });
 
   test('stories: +1 per enemy death, max 3 per fight and 30 total, only while active', () => {
@@ -611,22 +615,39 @@ describe('weapon master', () => {
     expect(units.map((u) => u.traits.filter((t) => t !== 'weaponmaster'))).toEqual([['cultoffire'], ['astral'], ['gustiwana', 'dauntless'], ['dragonaltar'], ['skybringer'], ['necromancer']]);
   });
 
-  test('every ally gains hybrid lifesteal; Weapon Masters double it and gain attack', () => {
+  test('every ally gains attack; only Weapon Masters get a Masterstroke', () => {
     const plain = (id: string) => unitStats(UNIT_BY_ID[id], 1);
     for (const level of [1, 2, 3]) {
       const i = level - 1;
       const ally = unitStats(UNIT_BY_ID.footman, 1, { levels: { weaponmaster: level } });
       const master = unitStats(UNIT_BY_ID.thamar, 1, { levels: { weaponmaster: level } });
-      expect(ally.lifesteal).toBeCloseTo(WEAPON_MASTER.lifesteal[i]);
-      expect(ally.spellLifesteal).toBeCloseTo(WEAPON_MASTER.lifesteal[i]);
-      expect(ally.atk).toBe(plain('footman').atk);
-      expect(master.lifesteal).toBeCloseTo(WEAPON_MASTER.lifesteal[i] * 2);
-      expect(master.spellLifesteal).toBeCloseTo(WEAPON_MASTER.lifesteal[i] * 2);
+      expect(ally.atk).toBe(Math.round(plain('footman').atk * (1 + WEAPON_MASTER.attack[i])));
+      expect([ally.masterstroke, ally.masterPen, ally.masterSteal]).toEqual([0, 0, 0]);
       expect(master.atk).toBe(Math.round(plain('thamar').atk * (1 + WEAPON_MASTER.attack[i])));
-      expect(master.ap).toBe(plain('thamar').ap);
+      expect(master.masterstroke).toBeCloseTo(WEAPON_MASTER.damage[i]);
+      expect(master.masterPen).toBeCloseTo(WEAPON_MASTER.pen[i]);
+      expect(master.masterSteal).toBeCloseTo(WEAPON_MASTER.steal[i]);
+      expect(master.lifesteal).toBe(0);
     }
     // Each breakpoint is a clear step up.
-    for (const arr of [WEAPON_MASTER.lifesteal, WEAPON_MASTER.attack]) expect(arr[0] < arr[1] && arr[1] < arr[2]).toBe(true);
+    for (const arr of [WEAPON_MASTER.attack, WEAPON_MASTER.damage, WEAPON_MASTER.pen, WEAPON_MASTER.steal]) expect(arr[0] < arr[1] && arr[1] < arr[2]).toBe(true);
+  });
+
+  test('every 3rd basic attack is a Masterstroke: it hits harder and heals', () => {
+    const state = newGame();
+    const [a, b] = state.players;
+    field(a, [['martin', 1, 3], ['cici', 1, 10]]);
+    field(b, [['titan', 3, 3]]);
+    const r = simulateCombat({ rng: 3 }, a, b);
+    const martin = r.fighters.findIndex((f) => f.defId === 'martin');
+    type Hit = Extract<CombatEvent, { type: 'attack' | 'cast' }>;
+    const hits = r.events.filter((e): e is Hit => e.type === 'attack' && e.id === martin);
+    expect(hits.length).toBeGreaterThanOrEqual(6);
+    hits.forEach((h, n) => expect(!!h.master).toBe((n + 1) % WEAPON_MASTER.every === 0));
+    const avg = (xs: Hit[]) => xs.reduce((sum, h) => sum + h.damage, 0) / xs.length;
+    expect(avg(hits.filter((h) => h.master))).toBeGreaterThan(avg(hits.filter((h) => !h.master)) * 1.4);
+    const strike = r.events.indexOf(hits.find((h) => h.master)!);
+    expect(r.events.slice(strike, strike + 4).some((e) => e.type === 'heal' && e.id === martin)).toBe(true);
   });
 });
 

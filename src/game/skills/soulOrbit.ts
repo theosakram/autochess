@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Saber (3g Spectre / Hunter). Per star, index 0 = 1★.
 export const SOUL_ORBIT = {
-  atk: [1.35, 1.35, 2.1], // of attack per orb hit, as physical damage
+  atk: [1.15, 1.15, 1.8], // of attack per orb hit, as physical damage
   orbs: 5,
   seconds: 4, // how long they orbit
   step: 0.5, // seconds per cell the orbs move

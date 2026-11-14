@@ -5,8 +5,8 @@ import type { SkillDef, SkillFighter } from './types';
 // Suyu (4g Dragon Altar / Weapon Master). Per star, index 0 = 1★.
 export const DRAKE_REND = {
   every: 0.3, // seconds between slashes
-  slash: [0.9, 0.9, 2.2], // of attack, physical, the first two slashes (each enemy in the 3x1 row)
-  finisher: [1.8, 1.8, 4.4], // of attack, physical, the third
+  slash: [0.9, 0.9, 3.6], // of attack, physical, the first two slashes (each enemy in the 3x1 row)
+  finisher: [1.8, 1.8, 7.2], // of attack, physical, the third
   heal: [2.4, 2.6, 7.2], // of attack: it heals this much when the finisher lands
 };
 

@@ -1,4 +1,5 @@
 import { createGame } from '../game/game';
+import { iconize } from './icons/emoji';
 import type { BotLevel, Player, PowerTier } from '../game/types';
 import {
   BUILDER_MAX_HEROES,
@@ -70,12 +71,12 @@ export function showHome(root: HTMLElement): Promise<BotLevel> {
     const viewer = view === 'builder' ? builderPlayer(blank, builder.board) : blank;
     if (view === 'builder') storeDraft(); // every builder change renders, so the draft is always current
     root.innerHTML =
-      (view === 'home' ? homeHtml(difficulty)
+      iconize((view === 'home' ? homeHtml(difficulty)
       : view === 'builder' ? teamBuilderHtml(builder, viewer)
       : homeGalleryHtml(viewer, tab, cardTier)) +
       (openTrait ? traitDetailHtml(openTrait, viewer, {}, false) : '') +
       (openUnit ? unitInfoHtml(openUnit, viewer) : '') +
-      (openItem ? itemInfoHtml(openItem) : '');
+      (openItem ? itemInfoHtml(openItem) : ''));
     layoutMasonry(root);
     for (const el of root.querySelectorAll<HTMLElement>('[data-keep-scroll]')) el.scrollTop = scrolls.get(el.dataset.keepScroll!) ?? 0;
   }

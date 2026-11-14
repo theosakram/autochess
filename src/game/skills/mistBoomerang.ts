@@ -5,8 +5,8 @@ import type { SkillDef, SkillFighter } from './types';
 // Nana (5g Mistbender / Stargazer): a boomerang of mist, thrown through its target and back.
 // Per star, index 0 = 1★.
 export const MIST_BOOMERANG = {
-  out: [3, 3, 20], // of magic attack, magic, to each enemy on the path on the way out
-  back: [3.3, 3.3, 11], // ...and on the way back
+  out: [4.6, 4.6, 20], // of magic attack, magic, to each enemy on the path on the way out
+  back: [5, 5, 11], // ...and on the way back
   past: 2, // tiles it flies on past its target before turning back
   turn: 0.4, // seconds before it flies back
 };

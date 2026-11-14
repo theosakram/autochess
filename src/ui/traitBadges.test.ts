@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { TRAITS } from '../game/traits';
 import { UNITS } from '../game/units';
 import { ITEMS } from '../game/items';
-import { badgeSvg, BEARER_BADGES, bearerBadgeHtml, centering, iconBounds, paths, shiftPath, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
+import { badgeSvg, BEARER_BADGES, LEADER_BADGES, bearerBadgeHtml, centering, iconBounds, paths, shiftPath, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
 
 describe('trait badges', () => {
   test('every trait has a badge, and no two share a colour or an icon', () => {
@@ -22,7 +22,7 @@ describe('trait badges', () => {
   test('every kind of bearer has a badge unlike any trait badge', () => {
     const carried = [...UNITS.flatMap((u) => (u.honorary ? [u.honorary.trait] : [])), ...Object.values(ITEMS).flatMap((i) => (i.grantsMembership ? [i.grantsMembership.trait] : []))];
     for (const trait of carried) expect(BEARER_BADGES[trait]).toBeDefined();
-    const all = [...Object.values(TRAIT_BADGES), ...Object.values(BEARER_BADGES)];
+    const all = [...Object.values(TRAIT_BADGES), ...Object.values(BEARER_BADGES), ...Object.values(LEADER_BADGES)];
     expect(new Set(all.map((b) => b.color)).size).toBe(all.length);
     expect(bearerBadgeHtml('necromancer')).not.toContain('#085d6c');
   });
@@ -32,11 +32,11 @@ describe('trait badges', () => {
     expect(html).toContain('<svg');
     expect(html).toContain('background:#5d6ea6');
     expect(html).toContain('fill="#211f63"');
-    expect(html).not.toContain(TRAITS.astral.icon);
+    expect(html).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 
   test('every icon is drawn dead centre on its badge, cut and all', () => {
-    for (const b of [...Object.values(TRAIT_BADGES), ...Object.values(BEARER_BADGES)]) {
+    for (const b of [...Object.values(TRAIT_BADGES), ...Object.values(BEARER_BADGES), ...Object.values(LEADER_BADGES)]) {
       const svg = badgeSvg(b);
       const ds = [...svg.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
       const icon = iconBounds(ds.slice(0, paths(b.d).length).join(' '));

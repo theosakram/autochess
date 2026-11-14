@@ -42,14 +42,16 @@ export function lineThrough(from: Point, to: Point): Point[] {
 }
 
 // The dash line (any angle, at most `length` cells) aimed through the living enemy that puts the most
-// enemies on it. Ties go to the nearest aim, or the farthest with `far`. Empty when there's no one to aim at.
-export function bestLine(api: SkillApi, f: SkillFighter, length: number, far = false): Point[] {
+// enemies on it. Ties go to the nearest aim, or the farthest with `far`. With `land`, only lines with a free
+// cell to land on count, so a dash always moves. Empty when there's nothing to aim at.
+export function bestLine(api: SkillApi, f: SkillFighter, length: number, far = false, land = false): Point[] {
   let best: Point[] = [];
   let most = -1;
   let bestD = 0;
   for (const e of api.enemiesOf(f)) {
     if (e.x === f.x && e.y === f.y) continue;
     const line = lineThrough(f, e).slice(0, length);
+    if (land && !line.some((p) => !api.occupant(p))) continue;
     const n = enemiesOn(api, f, line).length;
     const d = dist(f, e);
     if (n > most || (n === most && (far ? d > bestD : d < bestD))) [best, most, bestD] = [line, n, d];

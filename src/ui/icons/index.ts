@@ -9,6 +9,7 @@ import { CLINT } from './clint';
 import { CYBORG } from './cyborg';
 import { EUDORA } from './eudora';
 import { FANNY } from './fanny';
+import { GADJAH_MADA } from './gadjahmada';
 import type { GlyphIcon } from './glyph';
 import { GATOTKACA } from './gatotkaca';
 import { GUFRON } from './gufron';
@@ -25,6 +26,7 @@ import { MOSCOW } from './moscow';
 import { NANA } from './nana';
 import { NOVARIA } from './novaria';
 import { ODETTE } from './odette';
+import { RORO } from './roro';
 import { SABER } from './saber';
 import { SIYUNYIN } from './siyunyin';
 import { THAMAR } from './thamar';
@@ -33,7 +35,7 @@ import { ZHIZONG } from './zhizong';
 // Hand-made SVG icons, replacing a hero's emoji portrait or a skill's emoji icon. Anything not here keeps its
 // emoji (portraits.ts, skillIcons.ts), so heroes can move over one at a time. A hero's `plate` replaces its
 // cost-coloured background (the icon's own theme).
-export const HERO_SVGS: Record<string, GlyphIcon> = { saber: SABER, gufron: GUFRON, lance: LANCE, melina: MELINA, odette: ODETTE, bossalpha: ALPHA, thamar: THAMAR, fanny: FANNY, balia: BALIA, kenarok: KENAROK, moscow: MOSCOW, balang: BALANG, nana: NANA, alice: ALICE, amon: AMON, cyborg: CYBORG, novaria: NOVARIA, gatotkaca: GATOTKACA, minos: MINOS, siyunyin: SIYUNYIN, angela: ANGELA, clint: CLINT, cici: CICI, hilman: HILMAN, mia: MIA, lunox: LUNOX, eudora: EUDORA, harley: HARLEY, hilos: HILOS, zhizong: ZHIZONG };
+export const HERO_SVGS: Record<string, GlyphIcon> = { saber: SABER, gufron: GUFRON, lance: LANCE, melina: MELINA, odette: ODETTE, bossalpha: ALPHA, thamar: THAMAR, fanny: FANNY, balia: BALIA, kenarok: KENAROK, moscow: MOSCOW, balang: BALANG, nana: NANA, alice: ALICE, amon: AMON, cyborg: CYBORG, novaria: NOVARIA, gatotkaca: GATOTKACA, minos: MINOS, siyunyin: SIYUNYIN, angela: ANGELA, clint: CLINT, cici: CICI, hilman: HILMAN, mia: MIA, lunox: LUNOX, eudora: EUDORA, harley: HARLEY, hilos: HILOS, zhizong: ZHIZONG, roro: RORO, gadjahmada: GADJAH_MADA };
 export const SKILL_SVGS: Record<string, GlyphIcon> = {
   soulorbit: SABER,
   stormpursuit: GUFRON,
@@ -65,6 +67,8 @@ export const SKILL_SVGS: Record<string, GlyphIcon> = {
   skyreap: ZHIZONG,
   powerofchaos: LUNOX,
   pyrefrenzy: MIA,
+  southerntide: RORO,
+  sumpahpalapa: GADJAH_MADA,
 };
 
 // An <img> of the SVG for the HTML side (an image, so each copy's ids and styles stay its own).

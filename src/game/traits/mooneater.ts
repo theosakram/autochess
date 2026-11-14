@@ -10,7 +10,6 @@ export const MOONEATER = {
 export const mooneater: TraitDef = {
   id: 'mooneater',
   name: 'Mooneater',
-  icon: '🌑',
   kind: 'faction',
   breakpoints: [2, 3],
   desc:

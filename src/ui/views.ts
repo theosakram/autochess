@@ -1,8 +1,15 @@
+import { WEAPON_MASTER } from '../game/traits/weaponMaster';
 import { MAX_LEVEL } from '../game/config';
 import { skillIcon } from './skillIcons';
 import { raisedTier } from '../game/treasure';
 import { nextFullHouses } from '../game/tierShop';
 import { ritualCopyBlock, ritualLeft, ritualOfferBlock } from '../game/ritual';
+import { scoutBlock } from '../game/scout';
+import { ALTAR_REWARD_SVGS } from './icons/altarRewards';
+import { svgImg } from './icons';
+import { ALTAR_REWARD_BY_ID, altarCharges, DEMON_ALTAR_KEYS, nextAltarRound, type DemonAltarKey } from '../game/demonAltar';
+import { COMMANDER_CARD_SVGS } from './icons/commanderCards';
+import { COMMANDER_SVGS } from './icons/commanders';
 import { coreHolder, ESSENCE_ROLES, essenceBlock, essenceMods, essenceRoles } from '../game/essence';
 import { ESSENCE_CORE, baseItemOf, canEnhance, enhancedId } from '../game/items';
 import type { TraitLevels } from '../game/traits';
@@ -26,7 +33,7 @@ import { orbOptions } from '../game/orb';
 import { SKILLS, type SkillDef } from '../game/skills';
 import { copiesOf, findCopies, mergeSize } from '../game/merge';
 import { MAX_ITEMS_PER_UNIT } from '../game/config';
-import { boardCount, freeSlotCount, heroCapOf, interest, paydayGold, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
+import { boardCount, commanderGold, freeSlotCount, heroCapOf, interest, interestOf, paydayGold, roundIncome, streakBonus, levelUpCost, xpToNext } from '../game/player';
 import { adaptiveType, attackInterval, type DamageType, type StatKey, type StatMod, type Stats } from '../game/stats';
 import { fieldedMistOrbs, orbTraits, playerTraitCounts, playerTraits, traitCounts, traitLevel, TRAITS, unitStats } from '../game/traits';
 import type { BotLevel, BoxPrize, GameState, Item, Player, PowerTier, Unit, UnitDef } from '../game/types';
@@ -34,7 +41,7 @@ import { UNIT_BY_ID, UNITS, unitPrice } from '../game/units';
 import { portraitHtml } from './portraits';
 import { gloveIcon, itemIcon } from './itemIcons';
 import { commanderCardIcon, commanderIcon, powerCardIcon } from './commanderIcons';
-import { bearerBadgeHtml, hex, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
+import { bearerBadgeHtml, hex, leaderBadgeHtml, TRAIT_BADGES, traitBadgeHtml } from './traitBadges';
 
 // Pure HTML builders. No state, no DOM access: app.ts decides what to show.
 
@@ -313,7 +320,7 @@ export function essencePickHtml(p: Player): string {
     .map((u) => {
       const def = UNIT_BY_ID[u.defId];
       const roles = def.traits.filter((t) => ESSENCE_ROLES[t]);
-      return `<button class="chip" data-action="essenceIn" data-unit="${u.uid}" title="${roles.map((r) => `${TRAITS[r].name}: ${ESSENCE_ROLES[r].text}`).join('. ') || 'No role effect'}">${def.name} ${starsHtml(u)} <small>${roles.map((t) => TRAITS[t].icon).join(' ')}</small></button>`;
+      return `<button class="chip" data-action="essenceIn" data-unit="${u.uid}" title="${roles.map((r) => `${TRAITS[r].name}: ${ESSENCE_ROLES[r].text}`).join('. ') || 'No role effect'}">${def.name} ${starsHtml(u)} <small>${roles.map((t) => traitBadgeHtml(t)).join('')}</small></button>`;
     });
   return modalHtml(
     'closeEssence',
@@ -375,7 +382,7 @@ export function mistChoiceHtml(p: Player, slot: number): string {
 // A reward unit by its role icon and name: the names are new to the player, the role icons aren't.
 function rewardLabel(def: UnitDef): string {
   const roles = def.traits.filter((id) => TRAITS[id].kind === 'role').map((id) => traitBadgeHtml(id));
-  return `${roles.join('') || (def.honorary?.icon ?? '🎁')} ${def.name}`;
+  return `${roles.join('') || (def.honorary ? bearerBadgeHtml(def.honorary.trait) : '🎁')} ${def.name}`;
 }
 
 // The grave beside the board: every counting trait with rewards, once it has shown up this game.
@@ -413,7 +420,7 @@ export function rewardPickHtml(p: Player, traitId: string): string {
     const def = UNIT_BY_ID[id];
     const s = unitStats(def, 1);
     const chips = def.traits.map((t) => `<span class="rp-chip">${traitBadgeHtml(t)} ${TRAITS[t].name}</span>`).join('');
-    const honorary = def.honorary ? `<span class="rp-chip muted">${def.honorary.icon} ${TRAITS[def.honorary.trait].name} bonus</span>` : '';
+    const honorary = def.honorary ? `<span class="rp-chip muted">${bearerBadgeHtml(def.honorary.trait)} ${TRAITS[def.honorary.trait].name} bonus</span>` : '';
     const stat = (label: string, value: string) => `<div class="rp-stat"><small>${label}</small><b>${value}</b></div>`;
     const skill = def.skill
       ? `<section class="rp-skill">
@@ -461,7 +468,7 @@ function leaderLineHtml(traitId: string, p: Player): string {
     .map((uid) => p.board.find((x) => x?.uid === uid))
     .filter((u) => !!u)
     .map((u) => `${UNIT_BY_ID[u.defId].name} ${starsHtml(u)}`);
-  return `<p class="trait-stacks">${leader.icon} ${leader.title}: <b>${names.length ? names.join(', ') : 'none yet'}</b></p>`;
+  return `<p class="trait-stacks">${leaderBadgeHtml(traitId)} ${leader.title}: <b>${names.length ? names.join(', ') : 'none yet'}</b></p>`;
 }
 
 // Modal shell: backdrop and × both fire `closeAction`.
@@ -478,7 +485,7 @@ export function traitDetailHtml(traitId: string, p: Player, chosen: Record<strin
 }
 
 // Like a trait chip, for a unit that carries a trait's bonus without being a member.
-const bearerChipHtml = (h: { trait: string; icon: string }, mini = false) =>
+const bearerChipHtml = (h: { trait: string }, mini = false) =>
   `<button class="trait-chip bearer-chip${mini ? ' mini' : ''}" data-trait="${h.trait}" title="Gets the ${TRAITS[h.trait].name} bonus, doesn't count">${bearerBadgeHtml(h.trait)}${mini ? '' : ` ${TRAITS[h.trait].name} bearer`}</button>`;
 
 // A small button naming a trait; clicking it opens that trait's popup.
@@ -858,17 +865,20 @@ function incomePopHtml(p: Player, round: number): string {
     const next = interest(gold, cap) >= cap ? '' : `, ${10 - (gold % 10)} more for +${interest(gold, cap) + 2}`;
     return `${gold} banked${next}`;
   };
+  const noInterest = !!powersOf(p).noInterest;
   const streakNote = (n: number) => (n === 0 ? 'no streak' : n > 0 ? `${n} win${n === 1 ? '' : 's'} in a row` : `${-n} loss${n === -1 ? '' : 'es'} in a row`);
   const stage = `Basic reward<small>stage ${roman(stageOf(round))}${stageOf(round) < BASE_REWARD.length ? `; stage ${roman(stageOf(round) + 1)}: ${baseReward(roundAt(stageOf(round) + 1, 1))}` : ''}</small>`;
   const baseRow = `<div class="income-row"><span>${stage}</span><b>+${base}</b></div>`;
   const block = (title: string, cls: string, gold: number, next: number, winGold: number) => {
-    const total = winGold + base + interest(gold, interestCapOf(p)) + streakBonus(next) + paydayGold(p);
+    const bonus = commanderGold(p, round);
+    const total = winGold + base + interestOf(p, gold) + streakBonus(next) + paydayGold(p) + bonus;
     return `<section class="income-case ${cls}">
       <h4>${title}<b>+${total}</b></h4>
       ${winGold ? row('Win gold', winGold, 'right away, before interest') : ''}
       ${baseRow}
-      ${row('Interest', interest(gold, interestCapOf(p)), interestNote(gold))}
+      ${noInterest ? '' : row('Interest', interestOf(p, gold), interestNote(gold))}
       ${row(next > 0 ? 'Win streak' : next < 0 ? 'Lose streak' : 'Streak', streakBonus(next), streakNote(next))}
+      ${bonus ? row('Commander', bonus, COMMANDERS[p.commander ?? '']?.name ?? '') : ''}
       ${p.payday?.length ? row('Payday', paydayGold(p), `${Math.max(...p.payday.map((d) => d.rounds))} round${Math.max(...p.payday.map((d) => d.rounds)) > 1 ? 's' : ''} left`) : ''}
     </section>`;
   };
@@ -879,7 +889,7 @@ function incomePopHtml(p: Player, round: number): string {
   return `<div class="income-pop" role="dialog">
     <header><b>Next round's gold</b><small>💰 ${p.gold} now · ${roundLabel(round)}</small></header>
     ${cases}
-    <p class="income-note">Interest counts the gold you still hold when the round ends: spend it and it drops. A draw counts as a loss.</p>
+    <p class="income-note">${powersOf(p).burnGold ? 'Lance: no interest, and all gold you still hold when the round ends is spent on leveling up.' : noInterest ? 'No interest for you.' : 'Interest counts the gold you still hold when the round ends: spend it and it drops.'} A draw counts as a loss.</p>
   </div>`;
 }
 
@@ -911,7 +921,7 @@ export function shopDockHtml(p: Player, round: number, locked: boolean, chosen: 
   const streakText = streak > 0 ? `${streak} win${streak === 1 ? '' : 's'} in a row` : streak < 0 ? `${-streak} loss${streak === -1 ? '' : 'es'} in a row` : 'no streak';
   const incomeTitle =
     `End of round: +${income.base} basic reward, +${income.interest} interest (2 per 10 gold banked, up to ${MAX_INTEREST}), ` +
-    `+${income.streak} streak bonus (${streakText})${income.payday ? `, +${income.payday} Payday` : ''}. Winning a fight against a player also pays +${WIN_GOLD} right away.`;
+    `+${income.streak} streak bonus (${streakText})${income.payday ? `, +${income.payday} Payday` : ''}${income.bonus ? `, +${income.bonus} commander gold` : ''}. Winning a fight against a player also pays +${WIN_GOLD} right away.`;
   return `<section class="dock${locked ? ' fighting' : ''}" data-sell>
     <div class="dock-side">
       <div class="dock-gold" title="${incomeTitle}"><b>💰 ${p.gold}</b><small>+${income.total} next</small><button class="income-help${incomeOpen ? ' on' : ''}" data-action="toggleIncome" title="What next round pays">?</button></div>
@@ -1198,11 +1208,23 @@ const ROUND_ICONS = {
 // The player's streak, right of the stage legend: fights against players won (or lost) in a row, and its bonus.
 function streakHtml(streak: number): string {
   const n = Math.abs(streak);
-  if (streak === 0) return `<div class="hud-streak none" title="No streak: win or lose 2 fights against players in a row for a bonus"><small>Streak</small><b>—</b></div>`;
+  if (streak === 0) return `<div class="hud-chip hud-streak none" title="No streak: win or lose 2 fights against players in a row for a bonus"><svg viewBox="0 0 24 24" aria-hidden="true">${HUD_ICONS.flame}</svg><span><small>Streak</small><b>—</b></span></div>`;
   const win = streak > 0;
   const title = `${n} ${win ? `win${n === 1 ? '' : 's'}` : `loss${n === 1 ? '' : 'es'}`} in a row: +${streakBonus(streak)} gold at the end of every round while it lasts`;
-  return `<div class="hud-streak ${win ? 'win' : 'lose'}" title="${title}"><small>${win ? 'Win' : 'Lose'} streak</small><b>${win ? '🔥' : '💧'} ${n}</b></div>`;
+  return `<div class="hud-chip hud-streak ${win ? 'win' : 'lose'}" title="${title}"><svg viewBox="0 0 24 24" aria-hidden="true">${win ? HUD_ICONS.flame : HUD_ICONS.drop}</svg><span><small>${win ? 'Win' : 'Lose'} streak</small><b>${n}</b></span></div>`;
 }
+
+// The HUD's own glyphs, 24x24, filled with currentColor.
+const HUD_ICONS = {
+  flame: '<path d="M12 2.5c.6 3.2 2.6 4.9 4.3 6.8 1.6 1.8 2.7 3.6 2.7 6.1A7 7 0 0 1 12 22a7 7 0 0 1-7-6.6c0-2.6 1.3-4.6 3-6.1-.1 1.9.5 3.3 1.8 4C9.6 9.4 10.6 5.4 12 2.5Zm.2 10.6c-1.7 1.6-2.7 3-2.7 4.6a2.5 2.5 0 0 0 5 0c0-1.6-.9-3-2.3-4.6Z"/>',
+  drop: '<path d="M12 2.8c3.4 4.4 6.5 8.3 6.5 12A6.5 6.5 0 0 1 5.5 14.8c0-3.7 3.1-7.6 6.5-12Zm-2.6 11.6a1 1 0 0 0-1.4 1A4 4 0 0 0 11 18.9a1 1 0 1 0 .4-2 2 2 0 0 1-1.5-1.8 1 1 0 0 0-.5-.7Z"/>',
+  // A helmet, visor slit cut out.
+  hero: '<path fill-rule="evenodd" d="M12 2.5c4.4 0 7.5 3.3 7.5 7.8V20l-3 1.5V16h-9v5.5l-3-1.5v-9.7c0-4.5 3.1-7.8 7.5-7.8ZM6.5 11.5v2h11v-2Z"/><path d="M11 3h2v5h-2z" opacity=".55"/>',
+  // An open book.
+  book: '<path d="M3 5.2C5.6 4.3 8.6 4.4 11 6v14c-2.4-1.5-5.4-1.6-8-.8ZM21 5.2c-2.6-.9-5.6-.8-8 .8v14c2.4-1.5 5.4-1.6 8-.8Z"/>',
+  // A cup on a stem and base, with handles.
+  trophy: '<path fill-rule="evenodd" d="M7 3h10v1.5h3.5V7a4.5 4.5 0 0 1-4.1 4.5A5 5 0 0 1 13 14.4V17h3v2H8v-2h3v-2.6a5 5 0 0 1-3.4-2.9A4.5 4.5 0 0 1 3.5 7V4.5H7Zm-1.5 3.5V7a2.5 2.5 0 0 0 1.6 2.3A7 7 0 0 1 7 8V6.5Zm13 0H17V8c0 .5 0 .9-.1 1.3A2.5 2.5 0 0 0 18.5 7Z"/><path d="M6 20h12v1.5H6z"/>',
+};
 
 // A power card round's star, colored by the tier this match rolled for it.
 function powerStar(round: number, tiers: PowerTier[] | undefined): string {
@@ -1215,7 +1237,8 @@ const powerTitle = (round: number, tiers: PowerTier[] | undefined) => {
 };
 
 // `box`: the Box round is under way (after the stage's last fight).
-function stageLegendHtml(round: number, streak: number, tiers?: PowerTier[], box = false): string {
+// The HUD's centre: the round pill, the timer bar and the arrow that shows/hides the round icons beneath.
+function stageLegendHtml(round: number, tiers: PowerTier[] | undefined, box: boolean, fightTick: number | null, open: boolean): string {
   const { stage } = stageRound(round);
   const count = stage === 1 ? STAGE_ONE_ROUNDS : STAGE_ROUNDS;
   const icons = Array.from({ length: count }, (_, i) => {
@@ -1227,44 +1250,62 @@ function stageLegendHtml(round: number, streak: number, tiers?: PowerTier[], box
   }).concat(
     // After the stage's last fight: the Box round.
     `<span class="legend-round box ${box ? 'current' : 'ahead'}" title="Box round, after ${roundLabel(roundAt(stage, count))} · everyone takes a prize, lowest HP first"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ROUND_ICONS.box}</svg></span>`,
-  ).join('<span class="legend-link"></span>');
+  ).join('');
   const creeps = round === CREEP_ROUND;
   const monster = isMonsterRound(round);
   const title = box ? 'Box round: everyone takes a prize, lowest HP first' : creeps ? 'Creep round: everyone fights creeps; they drop a basic item pick' : monster ? 'Monster round: everyone fights monsters for equipment' : `Round ${roundLabel(round)} (stage ${roman(stage)})`;
-  return `<div class="stage-legend"><div class="legend-round-label" title="${title}"><small>Round</small><b>${box ? '📦 Box' : roundLabel(round)}</b></div><div class="legend-icons">${icons}</div>${streakHtml(streak)}</div>`;
+  return `<div class="stage-legend${open ? '' : ' closed'}">
+    <div class="legend-top">
+      <div class="legend-round-label" title="${title}">${box ? '📦 Box' : roundLabel(round)}</div>
+      ${roundTimerHtml(fightTick)}
+      <button class="legend-toggle" data-action="toggleLegend" title="${open ? 'Hide' : 'Show'} this stage's rounds" aria-expanded="${open}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+    </div>
+    <div class="legend-icons" aria-hidden="${!open}">${icons}</div>
+  </div>`;
 }
 
-// The round timer: a fight's time left (its last OVERTIME seconds in red, as everyone speeds up); shopping has no limit.
+// The round timer bar: a fight's seconds left, the bar draining as it runs (red in the last OVERTIME seconds,
+// as everyone speeds up); shopping has no limit, so the bar sits full.
 export function roundTimerHtml(fightTick: number | null): string {
-  if (fightTick === null) return `<div class="hud-stat round-timer" id="round-timer" title="Shopping has no time limit"><small>Timer</small><span><b>0:00</b></span></div>`;
+  if (fightTick === null) return `<div class="round-timer idle" id="round-timer" title="Shopping has no time limit"><span class="round-timer-fill" style="width:100%"></span><b>∞</b></div>`;
+  const total = MAX_COMBAT_TICKS / TICKS_PER_SECOND;
   const left = Math.max(0, Math.ceil((MAX_COMBAT_TICKS - fightTick) / TICKS_PER_SECOND));
   const over = fightTick >= OVERTIME_TICKS;
-  return `<div class="hud-stat round-timer${over ? ' overtime' : ''}" id="round-timer" title="${over ? 'Overtime: everyone attacks faster and hits harder' : `Fight time left (overtime in the last ${(MAX_COMBAT_TICKS - OVERTIME_TICKS) / TICKS_PER_SECOND}s)`}"><small>${over ? 'Overtime' : 'Fight'}</small><span><b>0:${String(left).padStart(2, '0')}</b></span></div>`;
+  return `<div class="round-timer${over ? ' overtime' : ''}" id="round-timer" title="${over ? 'Overtime: everyone attacks faster and hits harder' : `Fight time left (overtime in the last ${(MAX_COMBAT_TICKS - OVERTIME_TICKS) / TICKS_PER_SECOND}s)`}"><span class="round-timer-fill" style="width:${(left / total) * 100}%"></span><b>${left}</b></div>`;
 }
 
-export function hudHtml(state: GameState, p: Player, opponentName: string | null, fightTick: number | null = null): string {
+export function hudHtml(state: GameState, p: Player, opponentName: string | null, fightTick: number | null = null, legendOpen = true): string {
   const need = xpToNext(p);
   const cap = heroCapOf(p);
-  const free = cap - boardCount(p);
+  const count = boardCount(p);
+  const free = cap - count;
   const benched = p.bench.some(Boolean);
-  const stat = (label: string, value: string, title: string, cls = '') =>
-    `<div class="hud-stat ${cls}" title="${title}"><small>${label}</small><span>${value}</span></div>`;
-  const xp =
-    need === null
-      ? '<small>max</small>'
-      : `<span class="xp-bar"><span style="width:${(p.xp / need) * 100}%"></span></span><small>${p.xp}/${need}</small>`;
+  const extra = freeSlotCount(p);
+  const xpPct = need === null ? 100 : (p.xp / need) * 100;
+  const warn = free < 0 ? `${-free} too many` : free > 0 && benched ? `${free} free` : '';
+  const warnTitle = free < 0 ? ` ${-free} too many: the weakest leave at the fight.` : warn ? ` ${free} free slot${free === 1 ? '' : 's'}.` : '';
+  const iconBtn = (action: string, label: string, title: string, icon: string) =>
+    `<button class="hud-icon-btn" data-action="${action}" aria-label="${label}" title="${title}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
   return `<header class="hud">
     <div class="hud-side hud-left">
-    ${stat('Level', `<b>${p.level}</b> ${xp}`, need === null ? 'Max level' : `${p.xp}/${need} XP to level ${p.level + 1}`)}
-    ${stat('Heroes', `<b${free < 0 ? ' class="over"' : ''}>${boardCount(p)}/${cap}${freeSlotCount(p) ? ` +${freeSlotCount(p)}` : ''}</b>${free < 0 ? `<small class="warn">${-free} too many: the weakest leave at the fight</small>` : free > 0 && benched ? `<small class="warn">${free} free slot${free === 1 ? '' : 's'}</small>` : ''}`, 'Heroes on the board / how many you may field. Past the limit, the weakest go to the bench (or are sold if it is full) when the fight starts.')}
-    ${p.orbs.length ? stat('Orbs', `🔮 <b>${p.orbs.length}</b>`, 'Magic Orb ready: put it on a hero in the Equipment panel') : ''}
+      <div class="hud-level" title="${need === null ? 'Max level' : `${p.xp}/${need} XP to level ${p.level + 1}`}">
+        <div class="level-badge" style="--xp:${xpPct}"><b>${p.level}</b></div>
+        <div class="level-xp"><small>Level</small><small class="xp-num">${need === null ? 'Max' : `${p.xp}<i>/${need}</i> XP`}</small></div>
+      </div>
+      <div class="hud-chip hud-heroes${free < 0 ? ' over' : ''}" title="Heroes on the board / how many you may field. Past the limit, the weakest go to the bench (or are sold if it is full) when the fight starts.${warnTitle}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${HUD_ICONS.hero}</svg>
+        <span><small>Heroes${warn ? ` <span class="hud-warn">· ${warn}</span>` : ''}</small><b>${count}<i>/${cap}</i>${extra ? `<em>+${extra}</em>` : ''}</b></span>
+      </div>
+      ${p.orbs.length ? `<div class="hud-chip hud-orbs" title="Magic Orb ready: put it on a hero in the Equipment panel">🔮<b>${p.orbs.length}</b></div>` : ''}
     </div>
-    ${stageLegendHtml(state.round, p.streak ?? 0, state.powerTiers, !!state.box)}
+    ${stageLegendHtml(state.round, state.powerTiers, !!state.box, fightTick, legendOpen)}
     <div class="hud-side hud-right">
-      ${roundTimerHtml(fightTick)}
-      ${opponentName ? `<div class="hud-stat vs" title="Fighting"><small>Fighting</small><span><b>${opponentName}</b></span></div>` : ''}
-      <button class="hud-book" data-action="openGallery" title="All factions and roles">📖 Synergies</button>
-      <button class="hud-book" data-action="openMatch" title="Every player: standing, cards, heroes and synergies">🏆 Match</button>
+      ${opponentName ? `<div class="hud-chip vs" title="Fighting"><span><small>Fighting</small><b>${opponentName}</b></span></div>` : ''}
+      ${streakHtml(p.streak ?? 0)}
+      <div class="hud-btns">
+        ${iconBtn('openGallery', 'Synergies', 'Synergies: all factions and roles', HUD_ICONS.book)}
+        ${iconBtn('openMatch', 'Match', "Match: every player's standing, cards, heroes and synergies", HUD_ICONS.trophy)}
+      </div>
     </div>
   </header>`;
 }
@@ -1305,7 +1346,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       (g) => `<button class="chip" data-trait="${g.trait}" title="Gets the bonuses, doesn't count">${bearerBadgeHtml(g.trait)} ${TRAITS[g.trait].name} bearer</button>`,
     ),
     ...(area === 'board' ? leadsOf(p, levels, uid) : []).map(
-      (id) => `<button class="chip" data-trait="${id}">${TRAITS[id].leader!.icon} ${TRAITS[id].leader!.title}</button>`,
+      (id) => `<button class="chip" data-trait="${id}">${leaderBadgeHtml(id)} ${TRAITS[id].leader!.title}</button>`,
     ),
   ].join('');
 
@@ -1325,6 +1366,8 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
           : `<button class="orb-use" data-action="mark" data-kind="${k}" data-unit="${uid}">${MARKS[k].icon} ${MARKS[k].action}</button>`,
       )
       .join('')}
+    ${scoutButtonHtml(p, uid)}
+    ${duelLineHtml(p, u, area === 'board' && cell === powersOf(p).duel?.cell)}
     ${autoHalo(p) === uid ? `<p class="orb-line">${MARKS.halo.icon} Protected: the hero with the most items</p>` : ''}
     ${p.orb?.defId === def.id ? `<p class="orb-line">🔮 Magic Orb: +1 ${TRAITS[p.orb.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
     ${p.twilight?.trait && p.twilight.holder === uid ? `<p class="orb-line twilight-line">🌗 Twilight Blessing: +1 ${TRAITS[p.twilight.trait].name}${area === 'bench' ? ' (when fielded)' : ''}</p>` : ''}
@@ -1360,6 +1403,7 @@ export function unitDetailHtml(p: Player, uid: number, chosen: Record<string, st
       ${optStat('🔰', 'Starting shield (of max HP)', 'startShield', pctS, 'Shield')}
       ${optStat('❣️', 'Lifesteal', 'lifesteal', pctS)}
       ${optStat('💞', 'Spell lifesteal', 'spellLifesteal', pctS, 'Spell vamp')}
+      ${optStat('⚔️', `Masterstroke: every ${WEAPON_MASTER.every}rd basic attack deals this much more, ignores ${Math.round(s.masterPen * 100)}% of armor and magic resist, and heals ${Math.round(s.masterSteal * 100)}% of its damage`, 'masterstroke', pctS, 'Mastery')}
     </div>
     <div class="detail-kit">
       <div class="kit-part"><small>Skill</small>
@@ -1808,9 +1852,14 @@ export function itemOfferHtml(p: Player): string {
       </button>`;
     })
     .join('');
-  return `<div class="overlay"><div class="dialog modal commander-pick">
-    <h2 class="trait-title">${p.offerFrom === 'basic' || ITEMS[p.itemOffer?.[0] ?? '']?.basic ? 'Choose a basic item' : p.offerFrom === 'loot' ? `Monster loot: choose one${p.loot ? ` (${p.loot} more after this)` : ''}` : 'Equipment Chest: choose one'}</h2>
-    <p class="meta">It goes to your items: equip it on any hero.</p>
+  return `<div class="overlay"><div class="dialog modal commander-pick item-pick">
+    <header class="card-pick-head">
+      <div>
+        <h2 class="trait-title">${p.offerFrom === 'basic' || ITEMS[p.itemOffer?.[0] ?? '']?.basic ? 'Choose a basic item' : p.offerFrom === 'loot' ? `Monster loot: choose one${p.loot ? ` (${p.loot} more after this)` : ''}` : p.offerFrom === 'enhancedChest' ? 'Enhanced Equipment Chest: choose one' : 'Equipment Chest: choose one'}</h2>
+        <p class="meta">It goes to your items: equip it on any hero.</p>
+      </div>
+      <button class="card-pick-min" data-action="hideItems" title="Minimize: check your heroes and items, then pick from your commander panel" aria-label="Minimize">—</button>
+    </header>
     <div class="commander-options">${cards}</div>
   </div></div>`;
 }
@@ -1987,12 +2036,15 @@ export function commanderPanelHtml(p: Player, hp: number, round = 0, open: Comma
     ${twilightLineHtml(p)}
     ${p.echo ? `<p class="commander-card-line">🏔️ Earthen Echo: ${portraitHtml(p.echo.defId, 'tiny')} ${UNIT_BY_ID[p.echo.defId].name} <b>${p.echo.given}/${powersOf(p).echo?.total ?? p.echo.given}</b></p>` : ''}
     ${p.factionOrbOffer?.length ? `<button class="den-open" data-action="showCards">🔵 Orb: pick one</button>` : ''}
+    ${p.itemOffer?.length ? `<button class="den-open" data-action="showItems">🎁 Equipment: pick one</button>` : ''}
     ${p.johnnie?.offer.length ? `<button class="den-open" data-action="showDen">🎩 Johnnie's Den: pick one</button>` : ''}
     ${p.johnnie?.defId ? `<p class="commander-card-line">🎩 Your Johnnie: ${portraitHtml(p.johnnie.defId, 'tiny')} ${UNIT_BY_ID[p.johnnie.defId].traits.map((t) => `${traitBadgeHtml(t)} ${TRAITS[t].name}`).join(' · ')}</p>` : ''}
     ${cyclopsLineHtml(p)}
     ${treasureLineHtml(p)}
     ${frostLineHtml(p, round)}
     ${fullHouseLineHtml(p, round)}
+    ${scoutLineHtml(p)}
+    ${demonAltarButtonsHtml(p, round)}
     ${freyaHtml(p)}
     ${mirrorBarLineHtml(p)}
     ${bloodLineHtml(p)}
@@ -2019,6 +2071,127 @@ function cyclopsLineHtml(p: Player): string {
   const share = (pw.heirShare ?? 0) + (pw.heirShareCard ?? 0);
   if (share) lines.push(`<p class="commander-card-line">🍖 Knockouts: ${Math.round(share * 100)}% of their heroes' value · <b>${p.heirGold ?? 0}</b> gold so far</p>`);
   return lines.join('');
+}
+
+// Dracula's altars as they show in the UI.
+const altarName = (key: DemonAltarKey) => (key === 'demonAltar' ? 'Demon Altar' : 'Second Demon Altar');
+
+// The altar's activations: a rune per round of its (lit once reached) and the count ready.
+function demonAltarCountHtml(p: Player, round: number, key: DemonAltarKey): string {
+  const altar = p.demonAltars![key]!;
+  const charges = altarCharges(round, p, key);
+  const next = nextAltarRound(round, p, key);
+  const runes = powersOf(p)[key]!.rounds.map((r) => `<i class="${r <= round ? 'lit' : ''}"></i>`).join('');
+  const title = altar.rewards.length
+    ? `${charges ? `${charges} activation${charges === 1 ? '' : 's'} ready. ` : ''}${next ? `Next on ${roundLabel(next)}` : 'No more activations to come'}`
+    : 'Empty';
+  return `<span class="altar-count" title="${title}"><span class="altar-runes">${runes}</span><b class="altar-uses${charges ? ' ready' : ''}">×${charges}</b></span>`;
+}
+
+// Dracula: a button per Demon Altar in the commander panel; it opens the altar (demonAltarModalHtml).
+export function demonAltarButtonsHtml(p: Player, round: number): string {
+  return DEMON_ALTAR_KEYS.flatMap((key) => {
+    if (!p.demonAltars?.[key] || !powersOf(p)[key]) return [];
+    const ready = altarCharges(round, p, key) > 0;
+    return [
+      `<button class="demon-altar-btn${ready ? ' ready' : ''}" data-action="openDemonAltar" data-altar="${key}">
+        <span class="demon-altar-btn-icon">${svgImg(COMMANDER_CARD_SVGS.dracula)}</span><b>${altarName(key)}</b>${demonAltarCountHtml(p, round, key)}
+      </button>`,
+    ];
+  }).join('');
+}
+
+// The spin after a discard (app.ts runs it): the rewards as they were, the discarded one, the tile the highlight is
+// on, and once it stops, the one won and what it gave.
+export interface AltarSpin {
+  key: DemonAltarKey;
+  tiles: string[];
+  discarded: number;
+  at: number | null;
+  won: number;
+  done: boolean;
+  text: string;
+}
+
+const altarTileBody = (id: string) => {
+  const r = ALTAR_REWARD_BY_ID[id];
+  return `${svgImg(ALTAR_REWARD_SVGS[r.kind], 'altar-reward-icon')}<small>${r.short}</small>`;
+};
+
+// Dracula's altar, open: its rewards as tiles edged in their tier. With an activation ready, clicking one discards it
+// and pays one of the others at random; `spin` shows that draw playing out over the rewards as they were.
+export function demonAltarModalHtml(p: Player, round: number, key: DemonAltarKey, spin: AltarSpin | null): string {
+  const altar = p.demonAltars?.[key];
+  if (!altar) return '';
+  const charges = altarCharges(round, p, key);
+  const next = nextAltarRound(round, p, key);
+  let tiles: string;
+  let foot: string;
+  if (spin) {
+    tiles = spin.tiles
+      .map((id, i) => {
+        const cls = i === spin.discarded ? ' discarded' : spin.done && i === spin.won ? ' won' : !spin.done && i === spin.at ? ' spin-hi' : '';
+        return `<div class="altar-reward tier-${ALTAR_REWARD_BY_ID[id].tier}${cls}" data-spin-idx="${i}">${altarTileBody(id)}${i === spin.discarded ? '<span class="altar-x" aria-hidden="true">✕</span>' : ''}</div>`;
+      })
+      .join('');
+    foot = spin.done
+      ? `<p class="altar-result">You got <b>${spin.text}</b></p><button class="grove-btn altar-done" data-action="altarSpinDone">${charges ? 'Continue' : 'Done'}</button>`
+      : '<p class="altar-hint altar-rolling">The altar chooses…</p>';
+  } else {
+    tiles = altar.rewards
+      .map((id, i) => {
+        const r = ALTAR_REWARD_BY_ID[id];
+        return charges
+          ? `<button class="altar-reward tier-${r.tier}" data-action="demonAltar" data-altar="${key}" data-discard="${i}" title="${r.name}: discard it, and get one of the others at random">${altarTileBody(id)}<span class="altar-discard" aria-hidden="true">✕</span></button>`
+          : `<div class="altar-reward tier-${r.tier}" title="${r.name}">${altarTileBody(id)}</div>`;
+      })
+      .join('');
+    const hint = charges
+      ? 'Pick a reward to <b>discard</b>: you get one of the others at random.'
+      : altar.rewards.length
+        ? next
+          ? `Next activation on <b>${roundLabel(next)}</b>.`
+          : 'No more activations.'
+        : 'The altar is empty.';
+    const last = altar.last ? `<p class="altar-last">Last: <s>${ALTAR_REWARD_BY_ID[altar.last.discarded].short}</s> → <b>${altar.last.text}</b></p>` : '';
+    foot = `<p class="altar-hint">${hint}</p>${last}`;
+  }
+  return modalHtml(
+    'closeDemonAltar',
+    `trait-popup demon-altar-modal${charges && !spin ? ' ready' : ''}`,
+    `<h2 class="trait-title demon-altar-title"><span class="demon-altar-btn-icon">${svgImg(COMMANDER_CARD_SVGS.dracula)}</span>${altarName(key)}${demonAltarCountHtml(p, round, key)}</h2>
+    ${tiles ? `<div class="altar-rewards">${tiles}</div>` : ''}
+    ${foot}`,
+  );
+}
+
+// Lung: a hero's duel record (shown once it has won one, or while it holds the Dueling Ring) and what it's worth.
+function duelLineHtml(p: Player, u: Unit, inRing: boolean): string {
+  const duel = powersOf(p).duel;
+  const wins = Math.min(u.duelWins ?? 0, duel?.maxWins ?? 0);
+  if (!duel || (!wins && !inRing)) return '';
+  const pctWon = Math.round(wins * duel.perWin * 100);
+  const title = `${wins} duel${wins === 1 ? '' : 's'} won: +${pctWon}% attack and magic attack for good (up to ${duel.maxWins} wins)${inRing ? '. In the Dueling Ring: duels every fight, +' + Math.round(duel.attackSpeed * 100) + '% attack speed' : ''}`;
+  return `<p class="orb-line duel-line" title="${title}"><span class="duel-line-icon">${svgImg(COMMANDER_SVGS.lung)}</span>Duels won <b>${wins}/${duel.maxWins}</b>${wins ? ` · +${pctWon}% ATK/MAG` : ''}</p>`;
+}
+
+// Val: Scout charges, and the levels still to give one.
+function scoutLineHtml(p: Player): string {
+  const scout = powersOf(p).scout;
+  if (!scout) return '';
+  const have = p.scoutCharges ?? 0;
+  const next = scout.levels.filter((l) => l > p.level);
+  return `<p class="commander-card-line">🔭 Scout: <b>${have}</b> charge${have === 1 ? '' : 's'}${have ? ' · open a hero to use one' : ''}${next.length ? ` · next at level <b>${next[0]}</b>` : ''}</p>`;
+}
+
+// Val: the Scout button on a hero of the player's (shown with the power; disabled without a charge).
+function scoutButtonHtml(p: Player, uid: number): string {
+  if (!powersOf(p).scout) return '';
+  const why = scoutBlock(p, uid);
+  if (why === 'No such unit' || why === 'That one has no traits to scout by') return '';
+  const have = p.scoutCharges ?? 0;
+  const traits = traitNames(UNIT_BY_ID[[...p.board, ...p.bench].find((u) => u?.uid === uid)!.defId].traits);
+  return `<button class="orb-use" data-action="scout" data-unit="${uid}" title="Shop of heroes sharing a trait (${traits}), and a free buy" ${why ? 'disabled' : ''}>🔭 Scout by this hero (${have} charge${have === 1 ? '' : 's'})</button>`;
 }
 
 // Harley: each Full House's charges and a countdown to its next charge (his own, his card's).
@@ -2361,7 +2534,7 @@ function twilightLineHtml(p: Player): string {
   }
   const unit = blessedUnit(p);
   const trait = TRAITS[tw.trait!];
-  const where = unit ? `<b>${UNIT_BY_ID[unit.defId].name}</b> → +1 ${trait.icon} <b>${trait.name}</b>` : `lost (the hero is gone) · it was +1 ${trait.name}`;
+  const where = unit ? `<b>${UNIT_BY_ID[unit.defId].name}</b> → +1 ${traitBadgeHtml(tw.trait!)} <b>${trait.name}</b>` : `lost (the hero is gone) · it was +1 ${trait.name}`;
   const gifts = tw.gifts?.length ? ` · gave ${tw.gifts.map((id) => UNIT_BY_ID[id].name).join(', ')}` : '';
   const rule = powersOf(p).twilightGold;
   const goal = rule
@@ -2376,7 +2549,7 @@ export function blessPickHtml(p: Player): string {
     .flatMap((u) => (u && !blessBlock(p, u.uid) ? [u] : []))
     .map((u) => {
       const def = UNIT_BY_ID[u.defId];
-      return `<button class="chip" data-action="bless" data-unit="${u.uid}" title="Rolls one of: ${traitNames(def.traits)}">${def.name} ${starsHtml(u)} <small>${def.traits.map((t) => TRAITS[t].icon).join(' ')}</small></button>`;
+      return `<button class="chip" data-action="bless" data-unit="${u.uid}" title="Rolls one of: ${traitNames(def.traits)}">${def.name} ${starsHtml(u)} <small>${def.traits.map((t) => traitBadgeHtml(t)).join('')}</small></button>`;
     });
   return modalHtml(
     'closeBless',
@@ -2477,7 +2650,12 @@ function matchTableHtml(state: GameState, meId: string, animate = true): string 
       ].join('');
       // Knocked out: the lineup they had when they fell (their heroes went back to the pool).
       const L = p.finalLineup ?? p;
-      const heroes = L.board
+      const held = (uid: number) => L.items.filter((it) => it.holder === uid).length;
+      // Strongest first: stars, then equipment carried, then cost.
+      const ranked = L.board
+        .filter((u): u is NonNullable<typeof u> => !!u)
+        .sort((a, b) => b.star - a.star || held(b.uid) - held(a.uid) || UNIT_BY_ID[b.defId].tier - UNIT_BY_ID[a.defId].tier || UNIT_BY_ID[a.defId].name.localeCompare(UNIT_BY_ID[b.defId].name));
+      const heroes = ranked
         .flatMap((u) => {
           if (!u) return [];
           const def = UNIT_BY_ID[u.defId];

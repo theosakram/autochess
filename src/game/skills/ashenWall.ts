@@ -4,7 +4,7 @@ import type { SkillDef } from './types';
 
 // Edith (3g Cult of Fire / Defender). Per star, index 0 = 1★.
 export const ASHEN_WALL = {
-  atk: [5, 5, 8.9], // of attack, physical, to each enemy in the 3x3 ahead
+  atk: [5, 5, 6.5], // of attack, physical, to each enemy in the 3x3 ahead
   stun: [0.8, 0.9, 1], // seconds: knocked up
   shield: [0.08, 0.08, 0.1], // of its max hp, after the knock
   seconds: 4, // shield

@@ -4,11 +4,11 @@ import { nextFloat, nextInt } from './rng';
 import { playerTraits, TRAITS } from './traits';
 import { powersOf } from './commanders';
 import { shopOdds } from './powerCards';
-import type { GameState, Player } from './types';
+import type { GameState, Player, UnitDef } from './types';
 import { UNIT_BY_ID, UNITS } from './units';
 
 // `p`, when given, brings its Customize Recruitment cards in.
-function pickTier(state: GameState, level: number, p?: Player): number {
+export function pickTier(state: GameState, level: number, p?: Player): number {
   const odds = shopOdds(level, p);
   let r = nextFloat(state) * 100;
   for (let i = 0; i < odds.length; i++) {
@@ -20,9 +20,10 @@ function pickTier(state: GameState, level: number, p?: Player): number {
 
 // Weighted by remaining copies, so contested units get rarer for everyone. The player's own Johnnie
 // (Johnson) rolls with its tier as if it had a full pool that never runs out (Johnson's card adds copies): it's theirs alone.
-export function drawFromTier(state: GameState, tier: number, p?: Player): string | null {
-  const defs = UNITS.filter((u) => (u.shopTier ?? u.tier) === tier && u.shop !== false && (!u.locked || !!p?.unlocked?.includes(u.id)));
-  const johnnie = p?.johnnie?.defId && UNIT_BY_ID[p.johnnie.defId].tier === tier ? p.johnnie.defId : null;
+// `only`, when given, limits the draw to the units it accepts (Val's Scout).
+export function drawFromTier(state: GameState, tier: number, p?: Player, only?: (d: UnitDef) => boolean): string | null {
+  const defs = UNITS.filter((u) => (u.shopTier ?? u.tier) === tier && u.shop !== false && (!u.locked || !!p?.unlocked?.includes(u.id)) && (!only || only(u)));
+  const johnnie = p?.johnnie?.defId && UNIT_BY_ID[p.johnnie.defId].tier === tier && (!only || only(UNIT_BY_ID[p.johnnie.defId])) ? p.johnnie.defId : null;
   const own = johnnie ? POOL_SIZE[tier] + (powersOf(p!).johnniePool ?? 0) : 0;
   const total = defs.reduce((n, d) => n + state.pool[d.id], 0) + own;
   if (total === 0) return null;

@@ -3,7 +3,7 @@ import type { SkillDef } from './types';
 
 // Hilos (2g Mooneater / Defender): the temple guardian. Per star, index 0 = 1★.
 export const GUARDIANS_STRIKE = {
-  ap: [4.75, 6.4, 13.8], // of magic attack, magic damage, as an enhanced basic hit
+  ap: [4.75, 6.4, 9.5], // of magic attack, magic damage, as an enhanced basic hit
   shield: [360, 640, 1380], // flat
   seconds: 4,
 };

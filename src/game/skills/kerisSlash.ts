@@ -1,41 +1,51 @@
-import { dist, GRID_H, GRID_W } from '../grid';
+import { GRID_H, GRID_W } from '../grid';
 import { pct } from '../traits/format';
-import { enemiesOn, facingStrip } from './areas';
+import { around, enemiesOn } from './areas';
 import type { SkillDef } from './types';
 
-// Ken Arok (Plane Wanderer, Weapon Master). Per star, index 0 = 1★.
+// Ken Arok (Plane Wanderer, Weapon Master): the cursed keris wakes for a while. Per star, index 0 = 1★.
 export const KERIS_SLASH = {
-  atk: [3.6, 4.8, 10], // of attack, physical, to each enemy slashed
-  depth: 2, // rows the slash reaches ahead of him (3 wide); at 3★ it reaches the whole board
+  seconds: 5, // how long the stance lasts; no mana meanwhile, so the next cast comes after it
+  power: [1.8, 2, 3], // of attack: each of his basic hits while it lasts, his target and every splash alike
+  lifesteal: [0.5, 0.6, 0.8], // gained while it lasts
+  attackSpeed: [1.2, 1.2, 1.5], // gained while it lasts
+  boardStar: 3, // from this star, every enemy on the board is struck instead of those around him
 };
+
+const EFFECT = 'kerisslash';
 
 export const kerisSlash: SkillDef = {
   id: 'kerisslash',
   name: 'Cursed Keris',
   desc:
-    `One slash at the 3x${KERIS_SLASH.depth} in front of him (3 wide, ${KERIS_SLASH.depth} deep, toward his target), dealing {atk} of attack ` +
-    'as physical damage to each enemy in it. At 3★ the slash sweeps the entire board: every enemy is hit.',
-  damage: { atk: 'physical' },
-  values: () => ({ atk: KERIS_SLASH.atk.map(pct) }),
-  cast(api, caster, target) {
+    `For ${KERIS_SLASH.seconds}s his basic attacks deal {power} of attack and strike every enemy on the tiles around him, not only his target, ` +
+    'and he gains +{as} attack speed and +{steal} lifesteal. He gains no mana while it lasts. At 3★ they strike every enemy on the board.',
+  damage: { power: 'physical' },
+  values: () => ({ power: KERIS_SLASH.power.map(pct), steal: KERIS_SLASH.lifesteal.map(pct), as: KERIS_SLASH.attackSpeed.map(pct) }),
+  cast(api, caster) {
     const i = caster.star - 1;
-    let foes;
-    if (caster.star >= 3) {
-      foes = api.enemiesOf(caster);
-      // The look: one huge crescent across the whole board.
-      api.showProjectile(caster, { x: (GRID_W - 1) / 2, y: (GRID_H - 1) / 2 }, 0.45, 'kerisslashall');
-    } else {
-      const facing = target.hp > 0 ? target : api.nearestEnemy(caster);
-      if (!facing) return;
-      // The strip toward his target, cut to its first `depth` rows: 3 wide, 2 deep.
-      const block = facingStrip(caster, facing).filter((p) => dist(caster, p) <= KERIS_SLASH.depth);
-      foes = enemiesOn(api, caster, block);
-      // The look: a half-moon slash over the block (its middle), facing away from him.
-      if (block.length) {
-        const mid = { x: block.reduce((n, p) => n + p.x, 0) / block.length, y: block.reduce((n, p) => n + p.y, 0) / block.length };
-        api.showProjectile(caster, mid, 0.3, 'kerisslash');
-      }
-    }
-    for (const e of foes) api.hit(caster, e, caster.stats.atk * KERIS_SLASH.atk[i], 'physical', 'kerisslash');
+    api.buff(
+      caster,
+      [
+        { stat: 'basicAmp', add: KERIS_SLASH.power[i] - 1 },
+        { stat: 'lifesteal', add: KERIS_SLASH.lifesteal[i] },
+        { stat: 'attackSpeed', add: KERIS_SLASH.attackSpeed[i] },
+      ],
+      KERIS_SLASH.seconds,
+      EFFECT,
+      caster,
+    );
+  },
+  holdsMana: (api, caster) => api.hasBuff(caster, EFFECT),
+  // While the keris is awake, every basic hit also lands on the others in reach: enhanced basic hits (they
+  // crit and lifesteal like the attack), at his attack with the stance's bonus.
+  onBasicHit(api, caster, target) {
+    if (!api.hasBuff(caster, EFFECT)) return;
+    const board = caster.star >= KERIS_SLASH.boardStar;
+    // The look: a half-moon slash toward his target, or one huge crescent across the whole board.
+    if (board) api.showProjectile(caster, { x: (GRID_W - 1) / 2, y: (GRID_H - 1) / 2 }, 0.45, 'kerisslashall');
+    else api.showProjectile(caster, target, 0.3, EFFECT);
+    const others = board ? api.enemiesOf(caster) : enemiesOn(api, caster, around(caster));
+    for (const e of others) if (e !== target && e.hp > 0) api.basicHit(caster, e, caster.stats.atk, 'physical', EFFECT);
   },
 };

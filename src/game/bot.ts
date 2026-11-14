@@ -8,7 +8,8 @@ import { blessBlock } from './twilight';
 import { applyAction } from './actions';
 import { ALTAR_KEYS, altarStatus, offerBlock } from './altar';
 import { COMMANDERS, markedUid, markKinds, powersOf, protectedUids } from './commanders';
-import { MAX_INTEREST } from './config';
+import { MAX_INTEREST, POWER_TIERS } from './config';
+import { ALTAR_REWARD_BY_ID, altarCharges, DEMON_ALTAR_KEYS } from './demonAltar';
 import { nextInt } from './rng';
 import { equipBlock } from './inventory';
 import { isItemCard } from './items';
@@ -45,6 +46,8 @@ function easyBot(state: GameState, p: Player): void {
   playTwilight(state, p);
   playBlood(state, p);
   playHarley(state, p);
+  playVal(state, p);
+  playDemonAltars(state, p);
   playRitual(state, p);
 
   for (let i = 0; i < p.shop.length; i++) {
@@ -65,6 +68,7 @@ function easyBot(state: GameState, p: Player): void {
   for (const [from, to] of tileSeating(p.board, p.orb)) {
     applyAction(state, p.id, { type: 'move', from: { area: 'board', index: from }, to: { area: 'board', index: to } });
   }
+  playRing(state, p);
 
   // Hand loose items to fielded units that may hold them, in board order.
   for (const item of p.items.filter((it) => it.holder === null)) {
@@ -103,6 +107,7 @@ export function placeMarks(state: GameState, p: Player): void {
 
 // Gold to bank for the most interest (Vault Upgrade raises the limit).
 export function interestBank(p?: Player): number {
+  if (p && powersOf(p).noInterest) return 0; // Lance: nothing to bank for
   const cap = p ? interestCapOf(p) : MAX_INTEREST;
   let gold = 0;
   while (interest(gold, cap) < cap) gold += 10;
@@ -142,6 +147,45 @@ export function playRitual(state: GameState, p: Player): void {
 export function playHarley(state: GameState, p: Player): void {
   const tier = Object.keys(p.fullHouse ?? {}).map(Number).filter((t) => p.fullHouse![t] > 0).sort((a, b) => b - a)[0];
   if (tier) applyAction(state, p.id, { type: 'fullHouse', tier });
+}
+
+// Dracula: every activation banked, discarding the lowest-tier reward left.
+export function playDemonAltars(state: GameState, p: Player): void {
+  for (const key of DEMON_ALTAR_KEYS) {
+    for (let k = 0; k < 3 && altarCharges(state.round, p, key); k++) {
+      const rewards = p.demonAltars![key]!.rewards;
+      const order = rewards.map((id) => POWER_TIERS.indexOf(ALTAR_REWARD_BY_ID[id].tier));
+      applyAction(state, p.id, { type: 'demonAltar', altar: key, discard: order.indexOf(Math.min(...order)) });
+    }
+  }
+}
+
+// Lung: the strongest fielded hero (highest star, then cost; melee first, it duels) into the Dueling Ring, the arena
+// tile cleared first (its unit to a free board cell).
+export function playRing(state: GameState, p: Player): void {
+  const duel = powersOf(p).duel;
+  if (!duel) return;
+  const move = (from: number, to: number) => applyAction(state, p.id, { type: 'move', from: { area: 'board', index: from }, to: { area: 'board', index: to } });
+  if (p.board[duel.arena]) {
+    const free = p.board.findIndex((u, i) => !u && i !== duel.cell && i !== duel.arena);
+    if (free < 0) return;
+    move(duel.arena, free);
+  }
+  const rank = (u: { defId: string; star: number }) => (UNIT_BY_ID[u.defId].range <= 1 ? 100 : 0) + u.star * 10 + UNIT_BY_ID[u.defId].tier;
+  const best = p.board
+    .map((u, i) => ({ u, i }))
+    .filter(({ u, i }) => u && !UNIT_BY_ID[u.defId].piece && i !== duel.arena)
+    .sort((a, b) => rank(b.u!) - rank(a.u!))[0];
+  if (best && best.i !== duel.cell) move(best.i, duel.cell);
+}
+
+// Val: Scout by the best fielded hero (highest star, then cost) whenever there's a charge.
+export function playVal(state: GameState, p: Player): void {
+  if (!p.scoutCharges || !powersOf(p).scout) return;
+  const best = p.board
+    .filter((u) => u !== null && !UNIT_BY_ID[u.defId].piece)
+    .sort((a, b) => b!.star - a!.star || UNIT_BY_ID[b!.defId].tier - UNIT_BY_ID[a!.defId].tier)[0];
+  if (best) applyAction(state, p.id, { type: 'scout', unit: best.uid });
 }
 
 // Freya: bless the role with the most fielded units (ties: the one blessed already, then table order),

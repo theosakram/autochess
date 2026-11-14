@@ -17,6 +17,7 @@ import { attackLook, type AttackLook } from './physique';
 import { SKILL_LOOKS } from './skillFx';
 import { drawBackdrop, drawBase, drawTileDetails, padTop, tileTop } from './scene';
 import { COLORS, EFFECT_COLORS, FONT, SCENE_COLORS, TILE_COLORS, mix } from './theme';
+import { emojiView } from './emojiView';
 import { heroFace, makeToken, type TokenView } from './token';
 import { Tweens } from './tween';
 
@@ -182,8 +183,7 @@ export class Stage {
       const ghost = heroFace(defId, size * 0.42);
       ghost.alpha = 0.35;
       this.place(ghost, at);
-      const thumb = new Text({ text: '👍', style: { fontFamily: FONT, fontSize: size * 0.24 } });
-      thumb.anchor.set(1, 0);
+      const thumb = emojiView('👍', size * 0.24, 1, 0);
       this.place(thumb, vec3(at.x + 0.45, at.y, at.z - 0.45)); // the cell's back right corner
       for (const g of [glow, ghost, thumb]) g.eventMode = 'none'; // clicks still reach the cell under it
       this.layers.cells.addChild(glow, ghost, thumb);
@@ -203,7 +203,7 @@ export class Stage {
     for (const [cell, trait] of traitTiles(playerTraits(p))) tiles.set(gridIndex(boardToGrid(0, cell)), trait);
     // Lung's Dueling Ring.
     const ring = powersOf(p).duel;
-    if (ring) tiles.set(gridIndex(boardToGrid(0, ring.cell)), 'duelring');
+    if (ring) for (const cell of [ring.cell, ring.arena]) tiles.set(gridIndex(boardToGrid(0, cell)), 'duelring');
     const targets = new Set<string>();
     if (view.selectedUid !== null) {
       p.board.forEach((u, index) => !u && targets.add(key({ area: 'board', index })));
@@ -327,10 +327,11 @@ export class Stage {
       attack: AttackLook; // how its basic attack looks: a lean-in swing, or a shot
       maxHp: number;
       maxMana: number;
-      stun?: Text;
-      debuff?: Text;
+      stun?: Container;
+      stunIcon?: string;
+      debuff?: Container;
       marks?: Text;
-      taunt?: Text;
+      taunt?: Container;
     }
     const views = new Map<number, View>();
     const addView = (f: Fighter) => {
@@ -470,7 +471,10 @@ export class Stage {
           setBar(e.target, 'mana', e.targetMana);
           deliver(e.id, e.target, e.type === 'attack', () => {
             hit(e.target, e.damage);
-            if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 22, '900');
+            if (e.master) {
+              flash(e.target, COLORS.master, 260);
+              pop(e.target, `${e.damage}${e.crit ? '!!' : '!'}`, COLORS.master, e.crit ? 27 : 24, '900');
+            } else if (e.crit) pop(e.target, `${e.damage}!`, COLORS.crit, 22, '900');
             else pop(e.target, String(e.damage), e.type === 'cast' ? COLORS.spell : COLORS.text, e.type === 'cast' ? 19 : 16, '900');
           });
           break;
@@ -504,10 +508,13 @@ export class Stage {
         case 'stun': {
           const v = views.get(e.id)!;
           const icon = e.effect === 'sheep' ? '🐑' : '💫';
-          if (v.stun && v.stun.text !== icon) v.stun.text = icon;
+          if (v.stun && v.stunIcon !== icon) {
+            v.stun.destroy();
+            v.stun = undefined;
+          }
           if (!v.stun) {
-            v.stun = new Text({ text: icon, style: { fontFamily: FONT, fontSize: this.L.unit * 0.22 } });
-            v.stun.anchor.set(0.5);
+            v.stun = emojiView(icon, this.L.unit * 0.22);
+            v.stunIcon = icon;
             v.stun.position.set(this.L.unit * 0.32, -this.L.unit * 0.42);
             v.body.addChild(v.stun);
           }
@@ -516,8 +523,7 @@ export class Stage {
         }
         case 'link': {
           for (const id of e.ids) {
-            const mark = new Text({ text: '🔗', style: { fontFamily: FONT, fontSize: this.L.unit * 0.18 } });
-            mark.anchor.set(0.5);
+            const mark = emojiView('🔗', this.L.unit * 0.18);
             mark.position.set(this.L.unit * 0.32, this.L.unit * 0.3);
             views.get(id)!.body.addChild(mark);
           }
@@ -526,8 +532,7 @@ export class Stage {
         case 'taunt': {
           const v = views.get(e.id)!;
           if (!v.taunt) {
-            v.taunt = new Text({ text: '❗', style: { fontFamily: FONT, fontSize: this.L.unit * 0.22 } });
-            v.taunt.anchor.set(0.5);
+            v.taunt = emojiView('❗', this.L.unit * 0.22);
             v.taunt.position.set(0, -this.L.unit * 0.5);
             v.body.addChild(v.taunt);
           }
@@ -537,8 +542,7 @@ export class Stage {
         case 'debuff': {
           const v = views.get(e.id)!;
           if (!v.debuff) {
-            v.debuff = new Text({ text: '🔻', style: { fontFamily: FONT, fontSize: this.L.unit * 0.2 } });
-            v.debuff.anchor.set(0.5);
+            v.debuff = emojiView('🔻', this.L.unit * 0.2);
             v.debuff.position.set(-this.L.unit * 0.32, this.L.unit * 0.3);
             v.body.addChild(v.debuff);
           }

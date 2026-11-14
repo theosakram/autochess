@@ -53,6 +53,16 @@ export const BEARER_BADGES: Record<string, TraitBadge> = {
   cultoffire: { color: 0x6b3a00, ink: 0xffc46b, d: 'M6 3H18C18 9 16 12 13.5 13V18H17V21H7V18H10.5V13C8 12 6 9 6 3Z' },
 };
 
+// A trait's leader (TraitDef.leader) wears this instead of an emoji: Astral's Sovereign, a crown with a star.
+export const LEADER_BADGES: Record<string, TraitBadge> = {
+  astral: {
+    color: 0x2b2f6b,
+    ink: 0xffd76a,
+    d: 'M3 8L7.5 12L12 4L16.5 12L21 8L19 19H5Z M5 20.5H19V22H5Z',
+    cut: 'M12 10.5L12.9 12.6L15 13L13.4 14.4L13.8 16.5L12 15.4L10.2 16.5L10.6 14.4L9 13L11.1 12.6Z',
+  },
+};
+
 export const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 export const paths = (d: string) => d.split(/(?=M)/).map((s) => s.trim());
@@ -131,3 +141,5 @@ const badgeHtml = (b: TraitBadge, title: string) => `<span class="trait-badge" s
 export const traitBadgeHtml = (id: string) => badgeHtml(TRAIT_BADGES[id], TRAITS[id].name);
 
 export const bearerBadgeHtml = (trait: string) => badgeHtml(BEARER_BADGES[trait], `${TRAITS[trait].name} bearer`);
+
+export const leaderBadgeHtml = (trait: string) => badgeHtml(LEADER_BADGES[trait], TRAITS[trait].leader!.title);

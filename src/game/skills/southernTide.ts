@@ -4,9 +4,9 @@ import type { SkillDef } from './types';
 
 // Roro (Plane Wanderer, Mage): Nyi Roro Kidul, Queen of the Southern Sea. Per star, index 0 = 1★.
 export const SOUTHERN_TIDE = {
-  ap: [2.4, 3.3, 11], // of magic attack, magic, to each enemy the wave rolls over
+  ap: [4.5, 6, 11], // of magic attack, magic, to each enemy the wave rolls over
   stun: [0.75, 1, 1.5], // seconds, swept off their feet
-  heal: [0.8, 1.1, 3.5], // of magic attack, to each ally the wave rolls over
+  heal: [1.5, 2, 3.5], // of magic attack, to each ally the wave rolls over
   // Passive: the sea rises with every tide, for the rest of the fight.
   grow: 0.15, // more damage and healing per earlier cast
   maxGrow: 4, // casts that count

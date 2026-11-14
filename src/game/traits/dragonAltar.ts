@@ -25,7 +25,6 @@ export const DRAGON_ALTAR = {
 export const dragonAltar: TraitDef = {
   id: 'dragonaltar',
   name: 'Dragon Altar',
-  icon: '🐉',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   tiles: (level) => DRAGON_ALTAR.tiles[level - 1],

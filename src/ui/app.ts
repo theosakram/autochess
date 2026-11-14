@@ -1,4 +1,5 @@
 import { powersOf, type MarkKind } from '../game/commanders';
+import { iconize } from './icons/emoji';
 import { applyAction, type Action } from '../game/actions';
 import type { CombatEvent } from '../game/combat';
 import { isGameOver, resolveCombat, startRound, type Fight } from '../game/game';
@@ -24,6 +25,8 @@ import {
   rewardPickHtml,
   mistChoiceHtml,
   mirrorPickHtml,
+  demonAltarModalHtml,
+  type AltarSpin,
   duplicatorPickHtml,
   enhancerPickHtml,
   glovePickHtml,
@@ -59,6 +62,7 @@ import {
   pickLevel,
   unitDetailHtml,
 } from './views';
+import { altarCharges, type DemonAltarKey } from '../game/demonAltar';
 import { layoutMasonry } from './masonry';
 import { lineupGuide, lineupPanelHtml, loadSavedTeams, type SavedTeam } from './teamBuilder';
 
@@ -105,13 +109,18 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   let boxSelected: number | null = null; // the prize clicked, waiting for Take
   let boxFresh: number | null = null; // the prize whose pick was just revealed (its stamp animates once)
   let fightTick: number | null = null; // the fight replay's clock, for the round timer (null: shopping)
+  let legendOpen = localStorage.getItem('legendOpen') !== '0'; // the HUD's round icons, under the timer bar
   // Which of Dyroth's altars has its hero picker open.
   let altarOpen: AltarKey | null = null;
+  let demonAltarOpen: DemonAltarKey | null = null; // Dracula's altar modal
+  let altarSpin: AltarSpin | null = null; // its draw playing out, after a discard
+  let spinTimer = 0;
   let ritualOpen: 'offer' | 'copy' | null = null; // Moscow's Shadow Altar picker
   let blessOpen = false; // Lunox's blessing picker
   let essenceOpen = false; // Luo Yi's altar picker
   let cardsHidden = false; // the card pick, minimized
   let denHidden = false; // Johnnie's Den, minimized
+  let itemsHidden = false; // the equipment pick (chests, monster loot), minimized
   let commanderPreview: string | null = null; // the commander looked at on the start-of-game pick
   let bloodOpen = false; // Alice's Blood Pact picker
   // The unfolded part of the commander panel (its power's text or its card's), if any.
@@ -137,7 +146,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
   // A drag just ended; swallow the click the browser fires after it.
   let swallowClick = false;
 
-  root.innerHTML = `
+  root.innerHTML = iconize(`
     <div class="slot" data-slot="hud"></div>
     <div class="layout">
       <div class="col-left">
@@ -157,7 +166,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     </div>
     <div class="slot" data-slot="shop"></div>
     <div class="slot" data-slot="overlays"></div>
-    <div class="toast"></div>`;
+    <div class="toast"></div>`);
   const slot = (name: string) => root.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
 
   const me = () => state.players.find((p) => p.id === playerId)!;
@@ -173,6 +182,46 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (!res.ok) toast(res.error);
     else if (action.type === 'reroll' && (me().freeRerolls ?? 0) > Math.max(0, free - 1)) toast('💎 Premium Client: free refresh banked', 'info');
     render();
+  }
+
+  // Dracula's altar: discard a reward (the draw is made at once), then play the draw out: a highlight hops between the
+  // rewards left at random, slowing down, and stops on the one won.
+  function discardAltarReward(key: DemonAltarKey, discard: number): void {
+    if (altarSpin) return;
+    const before = me().demonAltars?.[key];
+    if (!before) return;
+    const tiles = [...before.rewards];
+    const used = before.used;
+    dispatch({ type: 'demonAltar', altar: key, discard });
+    const altar = me().demonAltars?.[key];
+    if (!altar?.last || altar.used === used) return; // refused (a toast says why)
+    const won = tiles.indexOf(altar.last.won);
+    altarSpin = { key, tiles, discarded: discard, at: null, won, done: false, text: altar.last.text };
+    const left = tiles.map((_, i) => i).filter((i) => i !== discard);
+    // Hops: random tiles (never the same twice running), the gaps growing; the last lands on the reward won.
+    const hops: number[] = [];
+    for (let k = 0, at = -1; k < 10; k++) {
+      const pool = left.filter((i) => i !== at);
+      at = pool[Math.floor(Math.random() * pool.length)];
+      hops.push(at);
+    }
+    if (hops[hops.length - 1] === won) hops.pop();
+    hops.push(won);
+    let step = 0;
+    const tick = () => {
+      if (!altarSpin) return;
+      if (step >= hops.length) {
+        altarSpin.done = true;
+        render();
+        return;
+      }
+      altarSpin.at = hops[step];
+      for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-spin-idx]')) el.classList.toggle('spin-hi', Number(el.dataset.spinIdx) === altarSpin.at);
+      step++;
+      spinTimer = window.setTimeout(tick, 60 + 18 * step + (step > hops.length - 4 ? 120 * (step - hops.length + 4) : 0));
+    };
+    render();
+    spinTimer = window.setTimeout(tick, 250); // a beat for the discard to sink in
   }
 
   // A picked card flies from the dialog into its slot in the commander panel's card tray.
@@ -203,7 +252,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
 
   function toast(msg: string, kind: 'error' | 'info' = 'error'): void {
     const el = root.querySelector<HTMLElement>('.toast')!;
-    el.textContent = msg;
+    el.innerHTML = iconize(msg.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`));
     el.classList.toggle('info', kind === 'info');
     el.classList.add('show');
     clearTimeout(toastTimer);
@@ -254,11 +303,11 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     // Repaints are rebuilds; a long panel stays where it was scrolled to.
     const scrolled = panel.firstElementChild?.scrollTop ?? 0;
     panel.innerHTML =
-      railPanel === 'synergy' ? traitsPanelHtml(p)
+      iconize(railPanel === 'synergy' ? traitsPanelHtml(p)
       : railPanel === 'damage' ? meterHtml(meter, meterTab)
       : railPanel === 'equipment' ? armoryHtml(p, picked, draggingGear)
       : railPanel === 'lineup' ? lineupPanelHtml(loadSavedTeams(), lineup?.name ?? null, p)
-      : '';
+      : '');
     if (panel.firstElementChild) panel.firstElementChild.scrollTop = scrolled;
   }
 
@@ -297,26 +346,26 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     if (skillFor !== selectedUid) skillOpen = false;
     if (picked?.kind === 'item' && !p.items.some((i) => i.uid === (picked as { uid: number }).uid)) picked = null;
 
-    slot('hud').innerHTML = hudHtml(state, p, opponent?.name ?? null, combat ? fightTick ?? 0 : null);
-    slot('rail').innerHTML = railHtml(railPanel, p);
+    slot('hud').innerHTML = iconize(hudHtml(state, p, opponent?.name ?? null, combat ? fightTick ?? 0 : null, legendOpen));
+    slot('rail').innerHTML = iconize(railHtml(railPanel, p));
     renderPanel();
-    slot('shop').innerHTML = shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool, new Set(lineup ? lineupGuide(lineup).map((g) => g.defId) : []));
-    slot('grave').innerHTML = `<div class="graves">${essenceAltarHtml(p)}${graveHtml(p)}${sideShopsHtml(p)}</div>`;
+    slot('shop').innerHTML = iconize(shopDockHtml(p, state.round, combat !== null, state.chosen, incomeOpen, state.pool, new Set(lineup ? lineupGuide(lineup).map((g) => g.defId) : [])));
+    slot('grave').innerHTML = iconize(`<div class="graves">${essenceAltarHtml(p)}${graveHtml(p)}${sideShopsHtml(p)}</div>`);
     // You, bottom left, right above your gold.
-    slot('commander').innerHTML = `<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen, state.powerTiers, hpBefore ? shieldBefore : (p.shield ?? 0))}</div>`;
-    slot('side').innerHTML = `<div class="side">
+    slot('commander').innerHTML = iconize(`<div class="left-commander">${commanderPanelHtml(p, shownHp(p), state.round, commanderOpen, state.powerTiers, hpBefore ? shieldBefore : (p.shield ?? 0))}</div>`);
+    slot('side').innerHTML = iconize(`<div class="side">
       ${playersHtml(
         state.players.filter((o) => o.id !== playerId),
         shownHp,
         combat?.opponentId ?? null,
       )}
       ${selectedUid !== null ? unitDetailHtml(p, selectedUid, state.chosen, skillOpen) : ''}
-    </div>`;
+    </div>`);
     // Later entries sit on top: a trait opened from the gallery shows over it.
     // Overlays are rebuilt on every render; keep where each scrollable one was scrolled to.
     const scrolled = new Map<string, [number, number]>();
     for (const el of slot('overlays').querySelectorAll<HTMLElement>('[data-keep-scroll]')) scrolled.set(el.dataset.keepScroll!, [el.scrollTop, el.scrollLeft]);
-    slot('overlays').innerHTML = [
+    slot('overlays').innerHTML = iconize([
       galleryOpen ? galleryHtml(p, state.chosen, galleryTab, state.powerTiers, cardTier) : '',
       matchOpen && !over ? matchDetailHtml(state, playerId, matchFresh) : '', // under a trait opened from it
       openTrait ? traitDetailHtml(openTrait, p, state.chosen) : '',
@@ -343,11 +392,12 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       p.commander && p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? powerOfferHtml(state, p) : '',
       p.commander && p.factionOrbOffer?.length && !p.powerOffer && !p.cardOffer?.length && !combat && !cardsHidden ? factionOrbOfferHtml(p) : '',
       // One pick at a time: the basic item after the commander card.
-      p.commander && ((!p.cardOffer?.length && !p.powerOffer && !p.factionOrbOffer?.length) || cardsHidden) && p.itemOffer?.length && !combat ? itemOfferHtml(p) : '',
+      p.commander && ((!p.cardOffer?.length && !p.powerOffer && !p.factionOrbOffer?.length) || cardsHidden) && p.itemOffer?.length && !combat && !itemsHidden ? itemOfferHtml(p) : '',
       boxOpen() ? boxHtml(state, p, boxShown, boxSelected, boxFresh) : '',
+      demonAltarOpen ? demonAltarModalHtml(p, state.round, demonAltarOpen, altarSpin) : '', // on top: its reward's pick waits under it
       termOpen ? termPopupHtml(termOpen) : '', // over whatever text opened it
       over ? gameOverHtml(p, state.players.length, state) : '',
-    ].join('');
+    ].join(''));
     layoutMasonry(slot('overlays'));
     // Show the next Box round pick after a beat.
     if (boxOpen() && boxShown < state.box!.picks.length && !boxTimer) {
@@ -408,6 +458,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
     combat = null;
     hpBefore = null;
     denHidden = false;
+    itemsHidden = false; // new loot opens up
     // A stage's last fight: the Box round first (Continue comes back here).
     if (boxOpen()) {
       boxShown = 0;
@@ -427,7 +478,7 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       .filter((b) => b.playerId === playerId)
       .map((b) => {
         const got = [b.looted && UNIT_BY_ID[b.looted].name, b.gold && `${b.gold} gold`].filter(Boolean).join(' + ');
-        return got ? `${TRAITS[b.trait].icon} ${TRAITS[b.trait].name}: ${got}` : '';
+        return got ? `${TRAITS[b.trait].name}: ${got}` : '';
       })
       .filter(Boolean);
     if (mine.length) toast(mine.join(' · '), 'info');
@@ -562,6 +613,9 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       } else if (a === 'hideDen' || a === 'showDen') {
         denHidden = a === 'hideDen';
         render();
+      } else if (a === 'hideItems' || a === 'showItems') {
+        itemsHidden = a === 'hideItems';
+        render();
       } else if (a === 'hideCards' || a === 'showCards') {
         cardsHidden = a === 'hideCards';
         render();
@@ -685,6 +739,14 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
         const unit = orbFor!;
         orbFor = null;
         dispatch({ type: 'useOrb', unit, trait: btn.dataset.orbTrait! });
+      } else if (a === 'toggleLegend') {
+        legendOpen = !legendOpen;
+        localStorage.setItem('legendOpen', legendOpen ? '1' : '0');
+        // Flip the class in place (no re-render) so the slide animates.
+        btn.closest('.stage-legend')?.classList.toggle('closed', !legendOpen);
+        btn.setAttribute('aria-expanded', String(legendOpen));
+        btn.title = `${legendOpen ? 'Hide' : 'Show'} this stage's rounds`;
+        btn.closest('.stage-legend')?.querySelector('.legend-icons')?.setAttribute('aria-hidden', String(!legendOpen));
       } else if (a === 'openGallery' || a === 'closeGallery') showGallery(a === 'openGallery');
       else if (a === 'openMatch' || a === 'closeMatch') {
         matchOpen = a === 'openMatch';
@@ -705,6 +767,22 @@ export async function mountApp(root: HTMLElement, state: GameState, playerId: st
       else if (a === 'newGame') location.reload();
       else if (a === 'reroll' || a === 'levelUp' || a === 'toggleLock') dispatch({ type: a });
       else if (a === 'fullHouse') dispatch({ type: 'fullHouse', tier: Number(btn.dataset.tier) });
+      else if (a === 'scout') dispatch({ type: 'scout', unit: Number(btn.dataset.unit) });
+      else if (a === 'openDemonAltar') {
+        demonAltarOpen = btn.dataset.altar as DemonAltarKey;
+        altarSpin = null;
+        render();
+      } else if (a === 'closeDemonAltar') {
+        clearTimeout(spinTimer);
+        demonAltarOpen = null;
+        altarSpin = null;
+        render();
+      } else if (a === 'altarSpinDone') {
+        // Continue with another activation ready; Done closes the altar.
+        if (demonAltarOpen && !altarCharges(state.round, me(), demonAltarOpen)) demonAltarOpen = null;
+        altarSpin = null;
+        render();
+      } else if (a === 'demonAltar') discardAltarReward(btn.dataset.altar as DemonAltarKey, Number(btn.dataset.discard));
       else if (a === 'pickCommander') dispatch({ type: 'pickCommander', commander: btn.dataset.commander! });
       else if (a === 'enhance') dispatch({ type: 'enhance', trait: btn.dataset.enhance! });
       else if (a === 'claimEnhance') dispatch({ type: 'claimEnhance', level: Number(btn.dataset.level) });

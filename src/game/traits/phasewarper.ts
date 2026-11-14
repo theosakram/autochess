@@ -11,7 +11,6 @@ export const PHASEWARPER = {
 export const phasewarper: TraitDef = {
   id: 'phasewarper',
   name: 'Phasewarper',
-  icon: '🌀',
   kind: 'role',
   breakpoints: [2, 3],
   desc:

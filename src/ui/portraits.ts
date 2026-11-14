@@ -89,5 +89,5 @@ export const portraitOf = (defId: string) => PORTRAITS[defId] ?? (UNIT_BY_ID[def
 export function portraitHtml(defId: string, className = ''): string {
   const icon = HERO_SVGS[defId];
   const color = icon?.plate ?? `#${TIER_COLORS[UNIT_BY_ID[defId].tier].toString(16).padStart(6, '0')}`;
-  return `<span class="portrait ${className}${icon ? ' has-svg' : ''}" style="--plate:${color}">${icon ? svgImg(icon.svg, icon.className) : portraitOf(defId)}</span>`;
+  return `<span class="portrait ${className}${icon ? ' has-svg' : ''}"${icon ? '' : ' data-emoji'} style="--plate:${color}">${icon ? svgImg(icon.svg, icon.className) : portraitOf(defId)}</span>`;
 }

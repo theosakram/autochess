@@ -1,4 +1,4 @@
-import { baseReward, GOLD_PER_XP, INTEREST_PER_10, LOSE_STREAK_BONUS, MAX_INTEREST, MAX_LEVEL, WIN_STREAK_BONUS, XP_TO_LEVEL } from './config';
+import { baseReward, GOLD_PER_XP, INTEREST_PER_10, LOSE_STREAK_BONUS, MAX_INTEREST, MAX_LEVEL, stageOf, WIN_STREAK_BONUS, XP_TO_LEVEL } from './config';
 import { heroCapBonusOf, interestCapOf, levelRefreshesOf, xpCutOf } from './powerCards';
 import { markedUid, powersOf } from './commanders';
 import type { Player } from './types';
@@ -49,10 +49,33 @@ export function streakBonus(streak: number): number {
   return table[Math.min(Math.abs(streak), table.length - 1)];
 }
 
-// What the end of round `round` pays: basic reward (by its stage), interest on gold banked, streak bonus.
-export function roundIncome(p: Player, round: number): { base: number; interest: number; streak: number; payday: number; total: number } {
-  const parts = { base: baseReward(round), interest: interest(p.gold, interestCapOf(p)), streak: streakBonus(p.streak ?? 0), payday: paydayGold(p) };
-  return { ...parts, total: parts.base + parts.interest + parts.streak + parts.payday };
+// Interest this player earns on `gold` banked (none for Lance).
+export const interestOf = (p: Player, gold: number): number => (powersOf(p).noInterest ? 0 : interest(gold, interestCapOf(p)));
+
+// Commander gold at the end of round `round`: Lance's stage bonus, and his card's gold from its level on.
+export function commanderGold(p: Player, round: number): number {
+  const pw = powersOf(p);
+  const stage = pw.stageGold ? pw.stageGold[Math.min(stageOf(round), pw.stageGold.length) - 1] : 0;
+  const level = pw.levelGold && p.level >= pw.levelGold.level ? pw.levelGold.gold : 0;
+  return stage + level;
+}
+
+// What the end of round `round` pays: basic reward (by its stage), interest on gold banked, streak bonus,
+// commander gold (`commander: false` leaves it out: the starting gold isn't a round's end).
+export function roundIncome(p: Player, round: number, commander = true): { base: number; interest: number; streak: number; payday: number; bonus: number; total: number } {
+  const parts = { base: baseReward(round), interest: interestOf(p, p.gold), streak: streakBonus(p.streak ?? 0), payday: paydayGold(p), bonus: commander ? commanderGold(p, round) : 0 };
+  return { ...parts, total: parts.base + parts.interest + parts.streak + parts.payday + parts.bonus };
+}
+
+// Lance: the round is over, so all gold goes into xp, up to the level cap (what's left at the cap stays).
+export function burnGold(p: Player): void {
+  if (!powersOf(p).burnGold) return;
+  for (let cost = levelUpCost(p); cost !== null && p.gold > 0; cost = levelUpCost(p)) {
+    const xp = Math.floor(Math.min(p.gold, cost) / GOLD_PER_XP);
+    if (xp <= 0) break;
+    p.gold -= xp * GOLD_PER_XP;
+    addXp(p, xp);
+  }
 }
 
 // Payday: what the next end of round pays from the cards still owing.
@@ -71,10 +94,21 @@ export function addXp(p: Player, amount: number): void {
   while (need !== null && p.xp >= need) {
     p.xp -= need;
     p.level++;
+    levelRewards(p);
     // Golden Era: free shop refreshes with each level.
     const free = levelRefreshesOf(p);
     if (free) p.freeRerolls = (p.freeRerolls ?? 0) + free;
     need = xpToNext(p);
   }
   if (need === null) p.xp = 0;
+}
+
+// What reaching a new level pays: Val's Scout charge (at its levels), and his card's free buy and gold.
+function levelRewards(p: Player): void {
+  const pw = powersOf(p);
+  if (pw.scout?.levels.includes(p.level)) p.scoutCharges = (p.scoutCharges ?? 0) + 1;
+  if (pw.levelReward) {
+    p.gold += pw.levelReward.gold;
+    p.freeBuy = (p.freeBuy ?? 0) + pw.levelReward.free;
+  }
 }

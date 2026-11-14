@@ -10,7 +10,6 @@ export const DEADEYE = {
 export const deadeye: TraitDef = {
   id: 'deadeye',
   name: 'Deadeye',
-  icon: '🎯',
   kind: 'role',
   breakpoints: [2, 4, 6],
   desc: 'All allies gain {chance} crit chance on basic attacks. Deadeyes crit for +{damage} damage.',

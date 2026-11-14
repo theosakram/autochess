@@ -1,4 +1,5 @@
 import { bloodMods } from './blood';
+import { enhancedChestOffer } from './demonAltar';
 import { coreHolder, essenceMods } from './essence';
 import { johnnieMods } from './johnnie';
 import { enhanceMods } from './freya';
@@ -111,6 +112,12 @@ export function openChest(state: GameState, p: Player): void {
     p.loot--;
     p.itemOffer = lootOffer(state);
     p.offerFrom = 'loot';
+    return;
+  }
+  if (p.enhancedChests) {
+    p.enhancedChests = p.enhancedChests - 1 || undefined;
+    p.itemOffer = enhancedChestOffer(state);
+    p.offerFrom = 'enhancedChest';
     return;
   }
   if (!p.chests?.waiting) return;
@@ -230,12 +237,11 @@ function resolveField(p: Player, levels: TraitLevels, chosen: Record<string, str
     if (ice) mods.push({ stat: 'attackSpeed', add: ice.attackSpeed });
     // Angela: protected heroes hit harder with their skills.
     if (protect && blessed.has(u.uid)) mods.push({ stat: 'skillAmp', add: protect.skillAmp });
-    // Lung: the hero in the Dueling Ring, faster, and stronger for each duel won.
+    // Lung: the hero in the Dueling Ring is faster; a hero is stronger for each duel it won, wherever it stands.
     const duel = powersOf(p).duel;
-    if (duel && cell === duel.cell) {
-      const won = Math.min(p.duelWins ?? 0, duel.maxWins) * duel.perWin;
-      mods.push({ stat: 'attackSpeed', add: duel.attackSpeed }, ...(won ? [{ stat: 'atk' as const, pct: won }, { stat: 'ap' as const, pct: won }] : []));
-    }
+    if (duel && cell === duel.cell) mods.push({ stat: 'attackSpeed', add: duel.attackSpeed });
+    const won = duel ? Math.min(u.duelWins ?? 0, duel.maxWins) * duel.perWin : 0;
+    if (won) mods.push({ stat: 'atk', pct: won }, { stat: 'ap', pct: won });
     // Katarina's card: the Supreme Blade's holder.
     const itemBoost = powersOf(p).itemBoost;
     if (itemBoost && items.some((i) => baseItemOf(i.id) === itemBoost.item)) mods.push(...itemBoost.mods);

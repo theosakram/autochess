@@ -1,10 +1,13 @@
 import { pct } from '../traits/format';
-import type { SkillDef } from './types';
+import type { SkillDef, SkillFighter } from './types';
 
-// Lunox (4g Gustiwana / Stargazer). Per star, index 0 = 1★.
+// Lunox (4g Gustiwana / Stargazer): dash, boom, boom, boom. Per star, index 0 = 1★.
+// Like Harley's Shade Bolts, a timed volley of skill bolts while she keeps fighting: her mana refills during
+// it, so with enough mana she dashes and starts the next volley before this one ends.
 export const POWER_OF_CHAOS = {
-  ap: [4.5, 5, 13.5], // of magic attack per Chaos Assault
-  assaults: 3,
+  ap: [4.5, 5, 13.5], // of magic attack, magic, per Chaos Bolt
+  bolts: 3,
+  every: 0.35, // seconds: after the dash, between bolts
 };
 
 const EFFECT = 'chaosassault';
@@ -13,28 +16,26 @@ export const powerOfChaos: SkillDef = {
   id: 'powerofchaos',
   name: 'Power of Chaos',
   desc:
-    `Her next ${POWER_OF_CHAOS.assaults} attacks become Chaos Assaults, enhanced basic attacks at the nearest enemy, ` +
-    'each dealing {ap} of magic attack as magic damage. The first one dashes her to a safe location first. ' +
-    'Killing an enemy grants 1 more Chaos Assault.',
+    `Dashes to a safe location, then fires ${POWER_OF_CHAOS.bolts} Chaos Bolts, ${POWER_OF_CHAOS.every}s apart, each at the nearest enemy ` +
+    'for {ap} of magic attack as magic damage. A bolt that kills fires 1 more. She keeps attacking, and gaining mana, meanwhile.',
   damage: { ap: 'magic' },
   values: () => ({ ap: POWER_OF_CHAOS.ap.map(pct) }),
   cast(api, caster) {
-    caster.skill.left = POWER_OF_CHAOS.assaults;
-    caster.skill.dashed = 0;
-    api.showMarks(caster, caster.skill.left, EFFECT);
-  },
-  // While charged, each attack is a Chaos Assault instead.
-  enhancedAttack(api, caster) {
-    if (!(caster.skill.left > 0)) return false;
-    if (!caster.skill.dashed) {
-      caster.skill.dashed = 1;
-      const safe = api.safestCell(caster);
-      if (safe.x !== caster.x || safe.y !== caster.y) api.dashTo(caster, safe);
-    }
-    const target = api.nearestEnemy(caster);
-    caster.skill.left--;
-    if (target && api.basicHit(caster, target, caster.stats.ap * POWER_OF_CHAOS.ap[caster.star - 1], 'magic', EFFECT)) caster.skill.left++;
-    api.showMarks(caster, caster.skill.left, EFFECT);
-    return true;
+    const safe = api.safestCell(caster);
+    if (safe.x !== caster.x || safe.y !== caster.y) api.dashTo(caster, safe);
+    const raw = caster.stats.ap * POWER_OF_CHAOS.ap[caster.star - 1];
+    let left = POWER_OF_CHAOS.bolts;
+    // One bolt, then the next one scheduled while any are left (so a kill can add one).
+    const bolt = () => {
+      const target: SkillFighter | null = api.nearestEnemy(caster);
+      if (!target) return;
+      left--;
+      api.showProjectile(caster, target, 0.2, EFFECT);
+      if (api.hit(caster, target, raw, 'magic', EFFECT)) left++;
+      api.showMarks(caster, left, EFFECT);
+      if (left > 0) api.repeat(caster, POWER_OF_CHAOS.every, 1, bolt);
+    };
+    api.showMarks(caster, left, EFFECT);
+    api.repeat(caster, POWER_OF_CHAOS.every, 1, bolt);
   },
 };

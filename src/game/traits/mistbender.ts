@@ -9,7 +9,6 @@ export const MISTBENDER = {
 export const mistbender: TraitDef = {
   id: 'mistbender',
   name: 'Mistbender',
-  icon: '🌫️',
   kind: 'faction',
   breakpoints: [1, 3], // a single Mistbender already earns coins
   desc: 'Fielding any Mistbender opens the Mist Shop beside the board. Every time a Mistbender uses its skill, gain {coins} Mist coins.',

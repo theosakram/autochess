@@ -31,7 +31,7 @@ import {
 import { copiesOf, mergeUnits, pooledOf } from './merge';
 import { openChest, stageItems } from './inventory';
 import { cardRolls } from './luckyDice';
-import { addXp, recordFight, roundIncome, isAlive } from './player';
+import { addXp, burnGold, recordFight, roundIncome, isAlive } from './player';
 import { nextInt, shuffle } from './rng';
 import { drawUnit, refreshShop, returnShop, rollFreeHero } from './shop';
 import { applyAction, claimShopSlot, canClaimToBoard, trimBoard } from './actions';
@@ -136,13 +136,16 @@ export function startRound(state: GameState): RoundBonus[] {
   grantOrbs(state);
   const alive = state.players.filter(isAlive);
   for (const p of alive) {
+    // Free buys last one round (Opening Promotion's first; Val's and Harley's are added after this).
+    p.freeBuy = freeBuyOf(p) ? 1 : undefined;
     if (state.round > 1) addXp(p, PASSIVE_XP);
     // The end of the round just played pays out (on round 1: stage I's basic reward, the starting gold).
-    p.gold += roundIncome(p, Math.max(1, state.round - 1)).total;
+    // Lance: what's left of last round's gold goes into levels first.
+    if (state.round > 1) burnGold(p);
+    p.gold += roundIncome(p, Math.max(1, state.round - 1), state.round > 1).total;
     // Healing Fountain: the commander heals, up to full.
     p.hp = Math.min(START_HP, p.hp + roundHealOf(p));
     // That paid one round of each Payday owed.
-    p.freeBuy = freeBuyOf(p) ? 1 : undefined; // Opening Promotion (Harley's are added below)
     if (p.payday) p.payday = p.payday.map((d) => ({ ...d, rounds: d.rounds - 1 })).filter((d) => d.rounds > 0);
     // A locked shop keeps what's left in it for this round, then unlocks.
     if (p.shopLocked) p.shopLocked = false;
@@ -297,12 +300,13 @@ function afterFight(p: Player, result: CombatResult, side: Side): void {
   countDuels(p, result, side);
 }
 
-// Lung: each duel the Dueling Ring's hero won adds to the bonus, up to the cap.
+// Lung: each duel won adds to the bonus of the hero that won it (the one in the ring), up to the cap.
 export function countDuels(p: Player, result: CombatResult, side: Side): void {
   const duel = powersOf(p).duel;
-  if (!duel) return;
+  const hero = duel ? p.board[duel.cell] : null;
+  if (!duel || !hero) return;
   const won = result.events.filter((e) => e.type === 'effect' && e.effect === 'duelWin' && result.fighters.find((f) => f.id === e.by)?.side === side).length;
-  if (won) p.duelWins = Math.min(duel.maxWins, (p.duelWins ?? 0) + won);
+  if (won) hero.duelWins = Math.min(duel.maxWins, (hero.duelWins ?? 0) + won);
 }
 
 // Plunderer's Claw: gold for each enemy its holder hooked (its cost), until the claw's counter reaches the cap.

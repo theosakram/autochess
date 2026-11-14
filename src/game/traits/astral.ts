@@ -12,7 +12,6 @@ export const ASTRAL = {
 export const astral: TraitDef = {
   id: 'astral',
   name: 'Astral',
-  icon: '🌌',
   kind: 'faction',
   breakpoints: [2, 4, 6, 10],
   desc:
@@ -33,5 +32,5 @@ export const astral: TraitDef = {
       { stat: 'spellLifesteal', add: ASTRAL.sovereignLifesteal[i] },
     ];
   },
-  leader: { title: 'Astral Sovereign', icon: '🌠', count: (level) => ASTRAL.sovereigns[level - 1] },
+  leader: { title: 'Astral Sovereign', count: (level) => ASTRAL.sovereigns[level - 1] },
 };

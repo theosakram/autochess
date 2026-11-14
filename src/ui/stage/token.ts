@@ -1,11 +1,11 @@
 import { Container, Graphics, GraphicsContext, Rectangle, Text, Ticker } from 'pixi.js';
 import { baseItemOf, ITEMS } from '../../game/items';
-import { TRAITS } from '../../game/traits';
 import { UNIT_BY_ID } from '../../game/units';
 import { portraitOf } from '../portraits';
+import { emojiView } from './emojiView';
 import { HERO_SVGS } from '../icons';
 import { itemSvg } from '../itemIcons';
-import { badgeSvg, BEARER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
+import { badgeSvg, BEARER_BADGES, LEADER_BADGES, TRAIT_BADGES, type TraitBadge } from '../traitBadges';
 import { bloodStars } from '../../game/blood';
 import { FORESHORTENING, WORLD } from './layout';
 import { physiqueOf, PLINTHS } from './physique';
@@ -226,8 +226,7 @@ const carried = (s: TokenSpec) =>
   '🌫️'.repeat(s.mistOrbs?.length ?? 0) +
   (s.crowned ? '👑' : '') +
   (s.merc ? '💼' : '') +
-  (s.signature ? '🏅' : '') +
-  (s.leads ?? []).map((id) => TRAITS[id].leader?.icon ?? '').join('');
+  (s.signature ? '🏅' : '');
 
 // Pieces this small (in pixels per cell) skip the trait badges: they'd be unreadable specks.
 const BADGE_MIN_SIZE = 60;
@@ -305,20 +304,22 @@ export function makeToken(s: TokenSpec): TokenView {
   const small = Math.max(9, u * 0.14);
   if (u >= BADGE_MIN_SIZE) {
     const size = small * 1.2;
-    [...def.traits.map((id) => TRAIT_BADGES[id]), ...(def.honorary ? [BEARER_BADGES[def.honorary.trait]] : [])].forEach((b, i) => {
+    [
+      ...def.traits.map((id) => TRAIT_BADGES[id]),
+      ...(def.honorary ? [BEARER_BADGES[def.honorary.trait]] : []),
+      ...(s.leads ?? []).flatMap((id) => (LEADER_BADGES[id] ? [LEADER_BADGES[id]] : [])), // a trait's leader, last
+    ].forEach((b, i) => {
       const badge = drawBadge(b, size);
       badge.position.set(-w / 2, -h / 2 + size / 2 + i * (size + 1)); // down the shield's left edge
       turn.addChild(badge);
     });
   }
-  const label = (value: string, x: number, y: number, ax: number, ay: number) => {
-    const t = text(value, small, COLORS.text);
-    t.anchor.set(ax, ay);
-    t.position.set(x, y);
-    body.addChild(t);
-  };
   const icons = carried(s);
-  if (icons) label(icons, w / 2 + 2, -h / 2, 1, 0.3);
+  if (icons) {
+    const row = emojiView(icons, small, 1, 0.3);
+    row.position.set(w / 2 + 2, -h / 2);
+    body.addChild(row);
+  }
   // Items in a row on top of the shield, under the bars.
   let itemsH = 0;
   if (s.itemIds?.length) {

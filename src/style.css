@@ -48,52 +48,114 @@ kbd {
   color: var(--muted);
 }
 
+/* The HUD: a dark lacquered bar with a gold hairline; every control is a bevelled pill in one family. */
 .hud {
+  --hud-gold: #ffc93c;
+  --hud-pill: linear-gradient(#2b2f3a, #15171d);
+  --hud-bevel: inset 0 1px 0 #ffffff1c, inset 0 -1px 0 #00000066, 0 0 0 1px #00000099, 0 2px 6px #00000055;
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   flex: none;
   align-items: center;
   gap: 20px;
-  padding: 6px 16px;
-  background: var(--panel);
-  border-radius: 8px;
+  padding: 8px 14px;
+  background:
+    radial-gradient(120% 140% at 50% -40%, #ffc93c14, transparent 60%),
+    linear-gradient(#20242e, #16181f);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 #ffffff12, inset 0 0 0 1px #ffffff0a, 0 4px 14px #00000066;
   color: var(--muted);
 }
-.hud b { color: var(--text); font-size: 20px; line-height: 1; }
-.hud b.gold { color: #ffc93c; }
-.hud-stat { display: flex; flex-direction: column; gap: 1px; cursor: default; }
-.hud-stat > small { color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
-.hud-stat > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-.hud-stat span small { color: var(--muted); font-size: 12px; }
-.hud-stat small.warn { color: #ffb04d; font-weight: 600; }
-/* More heroes on the board than may fight. */
-.hud-stat b.over { color: #f85149; }
-.xp-bar, .hp-bar { display: inline-block; width: 72px; height: 8px; border-radius: 4px; background: var(--cell); overflow: hidden; }
-.xp-bar span, .hp-bar span { display: block; height: 100%; }
-.xp-bar span { background: #7c6cf0; }
-.hp-bar span { background: #4ccb6d; }
-.hud-book {
-  padding: 6px 14px;
-  border: 1px solid #3a3f4d;
-  border-radius: 6px;
-  background: var(--cell);
-  font-weight: 600;
+/* The gold hairline along the bottom, brightest in the middle. */
+.hud::after {
+  content: ''; position: absolute; left: 8%; right: 8%; bottom: 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, #ffc93c66 30%, #ffe08a 50%, #ffc93c66 70%, transparent);
 }
-.hud-book:hover { border-color: var(--accent); }
+.hud b { color: var(--text); font-size: 20px; line-height: 1; }
+.hud small { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1; }
+.hud b i, .hud small i { font-style: normal; color: var(--muted); font-weight: 600; }
+
+/* A stat chip: glyph, then a tiny caption over the number. */
+.hud-chip { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px 0 10px; border-radius: 999px; background: var(--hud-pill); box-shadow: var(--hud-bevel); cursor: default; white-space: nowrap; }
+.hud-chip > svg { flex: none; width: 22px; height: 22px; fill: currentColor; }
+.hud-chip > span { display: flex; flex-direction: column; gap: 3px; }
+.hud-chip b { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hud-chip b i { font-size: 13px; }
+.hud-chip b em { margin-left: 4px; font-size: 12px; font-style: normal; color: #7ee2a0; }
+.hud-heroes { color: #c9cfdd; }
+.hud-heroes.over { color: #f85149; box-shadow: var(--hud-bevel), 0 0 0 1px #f8514988; }
+.hud-heroes.over b { color: #f85149; }
+.hud-warn { color: #ffb04d; }
+.hud-heroes.over .hud-warn { color: #f85149; }
+.hud-orbs { padding: 0 14px 0 10px; }
+.hud-orbs .svg-icon.emo { width: 22px; height: 22px; }
+.hud .vs b { color: #ff6b6b; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Level: a gold ring filling with XP around the level number, then the bar and its count. */
+.hud-level { display: flex; align-items: center; gap: 10px; cursor: default; }
+.level-badge {
+  position: relative; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  background: conic-gradient(var(--hud-gold) calc(var(--xp) * 1%), #2c303b 0);
+  box-shadow: 0 0 0 1px #000000aa, 0 0 10px #ffc93c33;
+}
+.level-badge::before { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: radial-gradient(circle at 50% 30%, #343947, #14161c); box-shadow: inset 0 1px 0 #ffffff1c; }
+.hud .level-badge b { position: relative; color: var(--hud-gold); font-size: 20px; font-weight: 900; text-shadow: 0 1px 0 #000, 0 0 8px #ffc93c55; }
+.level-xp { display: flex; flex-direction: column; gap: 5px; }
+.hp-bar { display: inline-block; width: 84px; height: 6px; border-radius: 3px; background: #0d0f14; box-shadow: inset 0 1px 2px #000, 0 1px 0 #ffffff10; overflow: hidden; }
+.hp-bar span { display: block; height: 100%; border-radius: inherit; transition: width 0.3s ease; }
+.hp-bar span { background: #4ccb6d; }
+.hud .xp-num { font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.hud .xp-num i { font-size: 11px; }
+
+/* Icon-only buttons, top right: same pill family, gold on hover, a clear focus ring. */
+.hud-btns { display: flex; gap: 8px; }
+.hud-icon-btn {
+  display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--hud-pill); box-shadow: var(--hud-bevel); color: #d8dce6; cursor: pointer;
+  transition: color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.hud-icon-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.hud-icon-btn:hover { color: var(--hud-gold); box-shadow: var(--hud-bevel), 0 0 0 1px #ffc93c88, 0 0 12px #ffc93c44; }
+.hud-icon-btn:active { transform: translateY(1px); }
+.hud-icon-btn:focus-visible, .legend-toggle:focus-visible { outline: 2px solid var(--hud-gold); outline-offset: 2px; }
 
 /* The current stage's rounds, in the middle of the HUD: past dim, current gold, ahead grey. */
-.hud-side { display: flex; align-items: center; gap: 28px; min-width: 0; }
+.hud-side { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .hud-right { justify-content: flex-end; }
-.stage-legend { display: flex; align-items: center; gap: 14px; padding: 4px 14px 4px 16px; border-radius: 999px; background: #00000033; cursor: default; }
-.legend-round-label { display: grid; grid-template-columns: auto auto; column-gap: 8px; align-items: baseline; }
-.legend-round-label small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
-.legend-round-label b { color: #ffc93c; }
-.legend-icons { display: flex; align-items: center; gap: 4px; }
-.legend-round { position: relative; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #6b7184; }
-.legend-round svg { width: 18px; height: 18px; }
-.legend-round.past { color: #4a4f5e; opacity: 0.7; }
-.legend-round.current { color: #ffc93c; background: #ffc93c22; box-shadow: 0 0 0 1px #ffc93c88; }
-.legend-link { width: 10px; height: 2px; border-radius: 1px; background: #3a3f4d; }
+.stage-legend { position: relative; z-index: 20; display: flex; flex-direction: column; align-items: center; width: min(520px, 36vw); cursor: default; }
+.legend-top { display: flex; align-items: center; width: 100%; }
+.legend-round-label, .legend-toggle {
+  flex: none; display: grid; place-items: center; height: 26px; border-radius: 999px;
+  background: var(--hud-pill); box-shadow: var(--hud-bevel); z-index: 1;
+}
+.legend-round-label { min-width: 58px; height: 30px; padding: 0 14px; margin-right: -8px; color: #f2f2f2; font-weight: 800; font-size: 15px; letter-spacing: 0.04em; white-space: nowrap; }
+.legend-toggle { width: 58px; height: 30px; padding: 0; margin-left: -8px; transition: color 0.15s ease; border: 0; cursor: pointer; color: #f2f2f2; }
+.legend-toggle:hover { color: #ffc93c; }
+.legend-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.15s; }
+.stage-legend.closed .legend-toggle svg { transform: rotate(180deg); }
+/* The timer bar between them: a dark track, a thin orange-to-gold fill, the seconds in a pill over its middle. */
+.round-timer { position: relative; flex: 1; display: grid; place-items: center; height: 18px; padding: 0 14px; background: #15171dcc; box-shadow: inset 0 0 0 1px #000000a0; }
+.round-timer-fill { position: absolute; left: 14px; top: 5px; bottom: 5px; max-width: calc(100% - 28px); border-radius: 2px; background: linear-gradient(90deg, #f08a3c, #ffd23f); transition: width 0.3s linear; }
+.round-timer.idle .round-timer-fill { opacity: 0.45; }
+.round-timer b { position: relative; min-width: 64px; padding: 1px 12px; border-radius: 999px; text-align: center; background: var(--hud-pill); box-shadow: var(--hud-bevel); color: #ffc93c; font-size: 22px; text-shadow: 0 0 10px #ffc93c55; font-weight: 800; font-variant-numeric: tabular-nums; }
+.round-timer.overtime .round-timer-fill { background: linear-gradient(90deg, #c22, #ff5a5a); }
+.round-timer.overtime b { color: #ff5a5a; animation: timer-pulse 1s ease-in-out infinite; }
+/* The icons hang under the bar, out of flow, so showing/hiding them never moves the layout. */
+.legend-icons {
+  position: absolute; top: calc(100% + 2px); left: 50%; display: flex; align-items: center; gap: 14px;
+  padding: 3px 14px; border-radius: 999px; background: #15171db0;
+  transform: translateX(-50%); transform-origin: top center;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0s;
+}
+.stage-legend.closed .legend-icons {
+  opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-50%) translateY(-8px) scaleY(0.6);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+.legend-round { position: relative; display: grid; place-items: center; width: 22px; height: 22px; color: #e6e8ee; filter: drop-shadow(0 1px 1px #000); }
+.legend-round svg { width: 20px; height: 20px; }
+.legend-round.past { color: #8a8f9c; opacity: 0.6; }
+.legend-round.current { color: #ffc93c; filter: drop-shadow(0 0 4px #ffc93c88); }
 
 /* The left column is as wide as the sidebar and its open panel. */
 .layout {
@@ -871,7 +933,6 @@ p.aura-line { margin: 2px 0 0; font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .crossover th, .crossover td, .dialog button.grid-unit { transition: none; } }
 .opponents li.current .opp-name { color: #d65151; font-weight: 600; }
 
-.hud .vs b { color: #d65151; }
 
 .armory-items { display: flex; flex-direction: column; gap: 6px; }
 .armory-items { min-width: 36px; min-height: 100%; }
@@ -1502,9 +1563,6 @@ button.commander-tab:hover { border-color: var(--accent); }
 /* The shop pool modal: heroes by cost, copies left as a bar. */
 .dock-icon.pool { --tint: #7fb3ff; }
 /* The round timer in the HUD: red, pulsing, in overtime. */
-.round-timer b { font-variant-numeric: tabular-nums; }
-.round-timer.overtime { color: #ff5a5a; }
-.round-timer.overtime b { animation: timer-pulse 1s ease-in-out infinite; }
 @keyframes timer-pulse { 50% { opacity: 0.55; } }
 .pool-popup { max-width: 860px; }
 .pool-tier { margin: 10px 0; }
@@ -1580,6 +1638,61 @@ button.commander-tab:hover { border-color: var(--accent); }
 .grove-actions { display: flex; gap: 6px; }
 .grove-btn { flex: 1; margin-top: 4px; padding: 4px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--cell); font-size: 12px; }
 .grove-btn:disabled { opacity: 0.45; cursor: default; }
+/* Dracula's Demon Altar: its rewards as tiles, edged and tinted in their tier's colour. */
+/* The panel's button per altar (opens the modal). */
+.duel-line { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.duel-line-icon { display: inline-block; flex: none; width: 18px; height: 18px; }
+.demon-altar-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 6px; padding: 5px 8px;
+  border: 1px solid #3a2a33; border-radius: 8px; background: #1a1418; color: #e8e6ef; font: inherit; font-size: 12px; cursor: pointer;
+}
+.demon-altar-btn b { flex: 1; text-align: left; }
+.demon-altar-btn:hover { border-color: #8a3a3a; background: #241a1e; }
+.demon-altar-btn.ready { border-color: #d9452b; box-shadow: 0 0 10px #d9452b44; }
+.demon-altar-btn-icon { display: inline-block; flex: none; width: 22px; height: 22px; }
+/* The modal. */
+.demon-altar-modal { width: min(380px, 92vw); }
+.demon-altar-title { display: flex; align-items: center; gap: 8px; padding-right: 28px; }
+.demon-altar-title .altar-count { margin-left: auto; }
+.demon-altar-modal .altar-rewards { gap: 8px; margin: 10px 0 4px; }
+.demon-altar-modal .altar-reward { padding: 8px 4px 6px; }
+.demon-altar-modal .altar-reward .altar-reward-icon { width: 34px; height: 34px; }
+.demon-altar-modal .altar-reward small { font-size: 12px; }
+.demon-altar-modal .altar-hint, .demon-altar-modal .altar-last { font-size: 12px; }
+.altar-reward { transition: transform 0.08s, box-shadow 0.08s, opacity 0.25s, filter 0.25s; }
+.altar-reward.discarded { border-color: #444; background: #15121a; }
+.altar-reward.discarded > :not(.altar-x) { opacity: 0.3; filter: grayscale(1); }
+/* Over the dialog's own button look. */
+.demon-altar-modal button.altar-reward {
+  border: 1px solid color-mix(in srgb, var(--tier) 70%, transparent); border-top-width: 3px; border-radius: 6px;
+  background: linear-gradient(color-mix(in srgb, var(--tier) 18%, #15121a), #15121a); color: #e8e6ef;
+}
+.demon-altar-modal button.altar-reward:hover { border-color: #ff5a4d; background: linear-gradient(#4a1a1e, #15121a); }
+.altar-x { position: absolute; inset: 0; display: grid; place-items: center; color: #ff4d3d; font-size: 34px; font-weight: 800; text-shadow: 0 0 6px #000; }
+.altar-reward.spin-hi { border-color: #fff; transform: scale(1.07); box-shadow: 0 0 0 2px #fff, 0 0 16px var(--tier); z-index: 1; }
+.altar-reward.won { border-color: #ffd23f; transform: scale(1.08); box-shadow: 0 0 0 2px #ffd23f, 0 0 22px #ffd23f; animation: altar-won 1.1s ease-in-out infinite; z-index: 1; }
+@keyframes altar-won { 50% { box-shadow: 0 0 0 2px #ffd23f, 0 0 34px #ffd23fcc; } }
+.altar-rolling { color: #ff8a6b; }
+.altar-result { margin: 8px 0 0; font-size: 13px; text-align: center; }
+.altar-result b { color: #ffd23f; }
+.altar-done { display: block; width: 100%; margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) { .altar-reward.won { animation: none; } }
+.altar-rewards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 6px 0 2px; }
+.altar-reward {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0;
+  padding: 4px 3px 4px; border: 1px solid color-mix(in srgb, var(--tier) 70%, transparent); border-top-width: 3px; border-radius: 6px;
+  background: linear-gradient(color-mix(in srgb, var(--tier) 18%, #15121a), #15121a); color: #e8e6ef; font: inherit;
+}
+.altar-reward small { font-size: 11px; line-height: 1.15; text-align: center; }
+.altar-reward .altar-reward-icon { display: block; width: 24px; height: 24px; }
+button.altar-reward { cursor: pointer; }
+button.altar-reward:hover { border-color: #ff5a4d; background: linear-gradient(#4a1a1e, #15121a); }
+.altar-discard { position: absolute; top: 2px; right: 4px; color: #ff6b5e; font-size: 11px; font-weight: 700; opacity: 0; transition: opacity 0.15s; }
+button.altar-reward:hover .altar-discard { opacity: 1; }
+button.altar-reward:hover .altar-reward-icon { opacity: 0.55; }
+.altar-hint, .altar-last { margin: 4px 0 0; font-size: 11px; line-height: 1.35; color: var(--muted); text-align: left; }
+.altar-last s { opacity: 0.7; }
+.altar-last b { color: #e8e6ef; }
 
 /* A commander's power and card texts, folded (pick screen, gallery). One open at a time per commander. */
 .commander-folds { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 6px; text-align: left; }
@@ -1606,12 +1719,15 @@ button.commander-tab:hover { border-color: var(--accent); }
 @keyframes altar-pulse { 50% { background: #ff8a4d; box-shadow: 0 0 10px #ff6a2dcc; } }
 
 /* The streak, right of the stage legend. */
-.hud-streak { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 74px; padding: 2px 10px; margin-left: 2px; border-left: 1px solid #3a3f4d; cursor: default; }
-.hud-streak small { color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
-.hud .hud-streak b { font-size: 18px; }
-.hud .hud-streak.win b { color: #ffa56b; text-shadow: 0 0 8px #ff7a3a66; }
-.hud .hud-streak.lose b { color: #7cbcff; text-shadow: 0 0 8px #3a8fe066; }
-.hud .hud-streak.none b { color: #4a4f5e; }
+.hud-streak { min-width: 96px; }
+.hud-streak.win { color: #ff9a4d; }
+.hud-streak.win > svg { filter: drop-shadow(0 0 5px #ff7a3a99); }
+.hud .hud-streak.win b { color: #ffb27a; }
+.hud-streak.lose { color: #6fb4ff; }
+.hud-streak.lose > svg { filter: drop-shadow(0 0 5px #3a8fe099); }
+.hud .hud-streak.lose b { color: #a2cfff; }
+.hud-streak.none { color: #4a4f5e; }
+.hud .hud-streak.none b { color: #5a6070; }
 
 .twilight-line { color: #c8b6ff; }
 
@@ -2298,6 +2414,7 @@ button.commander-tab:hover { border-color: var(--accent); }
 .cmd-svg { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; }
 /* A hand-drawn item icon, sized like the emoji it replaces. */
 .item-svg { display: inline-block; width: 1.3em; height: 1.3em; vertical-align: -0.25em; }
+.svg-icon.emo { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; } /* a drawn emoji (icons/emoji.ts), sized like the text */
 .md-commander .cmd-svg { width: 32px; height: 32px; vertical-align: middle; }
 /* An iridescent icon's gradient slowly shifts hue (off for reduced motion). */
 .svg-icon.iridescent { animation: icon-iridescent 6s linear infinite; }
@@ -2449,3 +2566,7 @@ button.commander-tab:hover { border-color: var(--accent); }
 .crossover td.merged { vertical-align: middle; background: linear-gradient(180deg, var(--cell), color-mix(in srgb, var(--accent) 6%, var(--cell)) 50%, var(--cell)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
 .grid-unit .grid-roles { display: flex; gap: 3px; margin-top: 3px; }
 .crossover td.merged .grid-unit .grid-roles .trait-badge { width: 15px; height: 15px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .legend-icons, .legend-toggle svg, .hud-icon-btn, .round-timer-fill { transition: none; }
+}
